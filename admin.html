@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Flex Cyberpunk - Admin</title>
+<style>
+:root{--bg:#05060f;--card:#0c1024;--line:#1b2450;--tx:#e8ecff;--mut:#8a94c8;--pink:#ff00b4;--cyan:#00ebff;--ok:#00ff80;--bad:#ff3a6e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,Segoe UI,Roboto,sans-serif;padding:16px;padding-top:max(16px,env(safe-area-inset-top))}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:1px}
+h1 span{color:var(--pink)}
+h2{font-size:15px;color:var(--cyan);margin:22px 0 8px;text-transform:uppercase;letter-spacing:1px}
+.sub{color:var(--mut);font-size:13px;margin-bottom:14px}
+button{background:var(--pink);color:#000;border:0;border-radius:10px;padding:12px 18px;font-size:16px;font-weight:700}
+button.alt{background:transparent;color:var(--cyan);border:2px solid var(--cyan)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card b{display:block;font-size:26px;color:var(--cyan)}
+.card small{color:var(--mut);font-size:12px}
+.bars{display:flex;align-items:flex-end;gap:4px;height:120px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 8px 6px}
+.bar{flex:1;background:linear-gradient(var(--pink),#7a0058);border-radius:4px 4px 0 0;min-height:2px;position:relative}
+.bar i{position:absolute;top:-16px;left:0;right:0;text-align:center;font-style:normal;font-size:10px;color:var(--mut)}
+.lab{display:flex;gap:4px;font-size:10px;color:var(--mut);margin-top:4px}
+.lab span{flex:1;text-align:center}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-weight:600;font-size:12px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.err{background:#2a0a16;border:1px solid var(--bad);color:#ffb4c6;padding:12px;border-radius:10px;margin:12px 0}
+.hide{display:none}
+.ev{font-size:13px;color:var(--mut);padding:5px 0;border-bottom:1px solid var(--line)}
+</style>
+</head>
+<body>
+<h1>FLEX <span>CYBERPUNK</span> - Admin</h1>
+<div class="sub" id="who">Connecte-toi avec ton compte Google administrateur.</div>
+
+<div id="login">
+  <button id="btnIn">Se connecter avec Google</button>
+</div>
+
+<div id="err" class="err hide"></div>
+
+<div id="dash" class="hide">
+  <div style="display:flex;gap:8px;margin-bottom:6px">
+    <button class="alt" id="btnRef">Actualiser</button>
+    <button class="alt" id="btnOut">Déconnexion</button>
+  </div>
+  <div class="sub" id="maj"></div>
+
+  <h2>Visiteurs uniques</h2>
+  <div class="grid">
+    <div class="card"><b id="v1">-</b><small>dernières 24 h</small></div>
+    <div class="card"><b id="v7">-</b><small>7 jours</small></div>
+    <div class="card"><b id="v30">-</b><small>30 jours</small></div>
+    <div class="card"><b id="vt">-</b><small>visites (30 jours)</small></div>
+  </div>
+
+  <h2>Joueurs connectés (compte Google)</h2>
+  <div class="grid">
+    <div class="card"><b id="p1">-</b><small>dernières 24 h</small></div>
+    <div class="card"><b id="p7">-</b><small>7 jours</small></div>
+    <div class="card"><b id="p30">-</b><small>30 jours</small></div>
+    <div class="card"><b id="g7">-</b><small>parties lancées (7 j)</small></div>
+  </div>
+
+  <h2>Visiteurs par jour (14 jours)</h2>
+  <div class="bars" id="bars"></div>
+  <div class="lab" id="lab"></div>
+
+  <h2>Par niveau (30 jours)</h2>
+  <div class="card wrap">
+    <table>
+      <thead><tr><th>Niveau</th><th>Lancés</th><th>Gagnés</th><th>Perdus</th><th>Réussite</th></tr></thead>
+      <tbody id="lv"></tbody>
+    </table>
+  </div>
+
+  <h2>Dernière activité</h2>
+  <div class="card" id="recent"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+var CFG={apiKey:"AIzaSyCVozZHuFiU0Ho64lJhpNkE2V7B9JdPVWw",authDomain:"flex-cyberpunk-c49e8.firebaseapp.com",projectId:"flex-cyberpunk-c49e8",storageBucket:"flex-cyberpunk-c49e8.firebasestorage.app",messagingSenderId:"62235176856",appId:"1:62235176856:web:eef7cda18333fe1a3645ed"};
+firebase.initializeApp(CFG);
+var auth=firebase.auth(), db=firebase.firestore();
+var $=function(i){return document.getElementById(i);};
+
+function showErr(m){var e=$("err");e.textContent=m;e.classList.remove("hide");}
+function clearErr(){$("err").classList.add("hide");}
+
+$("btnIn").onclick=function(){
+  clearErr();
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function(e){showErr("Connexion impossible : "+(e.code||e));});
+};
+$("btnOut").onclick=function(){auth.signOut();};
+$("btnRef").onclick=function(){charger();};
+
+auth.onAuthStateChanged(function(u){
+  if(u){
+    $("who").textContent="Connecté : "+(u.email||u.displayName);
+    $("login").classList.add("hide");
+    $("dash").classList.remove("hide");
+    charger();
+  }else{
+    $("who").textContent="Connecte-toi avec ton compte Google administrateur.";
+    $("login").classList.remove("hide");
+    $("dash").classList.add("hide");
+  }
+});
+
+function jourCle(d){return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function uniq(arr){var s={};arr.forEach(function(x){if(x)s[x]=1;});return Object.keys(s).length;}
+
+function charger(){
+  clearErr();
+  var depuis=new Date(Date.now()-30*86400000);
+  db.collection("events").where("t",">=",depuis).orderBy("t","desc").limit(15000).get().then(function(snap){
+    var ev=[];
+    snap.forEach(function(d){var x=d.data();if(x.t){ev.push({t:x.t.toDate(),type:x.type,lvl:x.lvl||0,vid:x.vid,uid:x.uid});}});
+    afficher(ev, snap.size>=15000);
+  }).catch(function(e){
+    if(e.code==="permission-denied"){showErr("Accès refusé : ce compte n'est pas l'administrateur.");}
+    else{showErr("Erreur : "+(e.code||e.message||e));}
+  });
+}
+
+function afficher(ev, tronque){
+  var now=Date.now(), H=3600000, D=86400000;
+  function dans(ms){return ev.filter(function(e){return now-e.t.getTime()<=ms;});}
+  var e1=dans(D), e7=dans(7*D), e30=ev;
+  function vis(a){return uniq(a.map(function(e){return e.vid;}));}
+  function pl(a){return uniq(a.map(function(e){return e.uid;}));}
+  $("v1").textContent=vis(e1); $("v7").textContent=vis(e7); $("v30").textContent=vis(e30);
+  $("vt").textContent=e30.filter(function(e){return e.type==="visit";}).length;
+  $("p1").textContent=pl(e1); $("p7").textContent=pl(e7); $("p30").textContent=pl(e30);
+  $("g7").textContent=e7.filter(function(e){return e.type==="level_start";}).length;
+
+  // courbe 14 jours
+  var jours=[], i;
+  for(i=13;i>=0;i--){jours.push(new Date(now-i*D));}
+  var par={};
+  ev.forEach(function(e){var k=jourCle(e.t);(par[k]=par[k]||{})[e.vid]=1;});
+  var vals=jours.map(function(d){return par[jourCle(d)]?Object.keys(par[jourCle(d)]).length:0;});
+  var mx=Math.max.apply(null,vals.concat([1]));
+  $("bars").innerHTML=vals.map(function(v){return '<div class="bar" style="height:'+Math.max(2,Math.round(v/mx*95))+'px"><i>'+(v||"")+'</i></div>';}).join("");
+  $("lab").innerHTML=jours.map(function(d){return "<span>"+d.getDate()+"</span>";}).join("");
+
+  // niveaux
+  var lv={};
+  ev.forEach(function(e){
+    if(e.type==="level_start"||e.type==="level_win"||e.type==="level_lose"){
+      var o=lv[e.lvl]=lv[e.lvl]||{s:0,w:0,l:0};
+      if(e.type==="level_start")o.s++; else if(e.type==="level_win")o.w++; else o.l++;
+    }
+  });
+  var cles=Object.keys(lv).map(Number).sort(function(a,b){return a-b;});
+  $("lv").innerHTML=cles.length?cles.map(function(k){
+    var o=lv[k], fin=o.w+o.l, tx=fin?Math.round(o.w/fin*100):null;
+    return "<tr><td>Niveau "+k+"</td><td>"+o.s+"</td><td class='ok'>"+o.w+"</td><td class='bad'>"+o.l+"</td><td>"+(tx===null?"-":tx+" %")+"</td></tr>";
+  }).join(""):"<tr><td colspan='5' style='text-align:center;color:#8a94c8'>Pas encore de données</td></tr>";
+
+  // activité récente
+  var noms={visit:"Visite",login:"Connexion Google",level_start:"Niveau lancé",level_win:"Niveau gagné",level_lose:"Niveau perdu"};
+  $("recent").innerHTML=ev.slice(0,15).map(function(e){
+    var h=e.t.toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    return '<div class="ev">'+h+" - "+(noms[e.type]||e.type)+(e.lvl?" "+e.lvl:"")+(e.uid?" (connecté)":"")+"</div>";
+  }).join("")||'<div class="ev">Aucune activité pour le moment.</div>';
+
+  $("maj").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR")+(tronque?" - attention : données tronquées (15 000 événements)":"");
+}
+</script>
+</body>
+</html>

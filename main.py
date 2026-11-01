@@ -25,6 +25,516 @@ if IS_WEB:
         _DOSSIER_DONNEES = ""
 
 
+# --- Web : le dossier de jeu est une mémoire temporaire. On recopie donc les sauvegardes dans le localStorage du navigateur
+#     (mémoire permanente) et on les restaure au démarrage.
+_CLOUD = {"mode": "guest", "dirty": False, "last": 0.0, "gel": False}
+_LS = None
+_SYNC_ETAT = {}
+if IS_WEB:
+    try:
+        import platform as _pfs
+        _LS = _pfs.window.localStorage
+    except Exception:
+        _LS = None
+
+
+def _restaurer_sauvegardes():
+    if _LS is None:
+        return
+    try:
+        brut = _LS.getItem("flexsave:index")
+        noms = json.loads(str(brut)) if brut is not None else []
+        for nom in noms:
+            nom = os.path.basename(str(nom))
+            val = _LS.getItem("flexsave:" + nom)
+            if not nom.endswith(".json") or val is None:
+                continue
+            with open(os.path.join(_DOSSIER_DONNEES or ".", nom), "w", encoding="utf-8") as f:
+                f.write(str(val))
+            _SYNC_ETAT[nom] = str(val)
+    except Exception as e:
+        print("restauration impossible :", e)
+
+
+def _sync_sauvegardes():
+    if _LS is None or _CLOUD["gel"]:
+        return
+    try:
+        base = _DOSSIER_DONNEES or "."
+        for nom in os.listdir(base):
+            if not nom.endswith(".json"):
+                continue
+            with open(os.path.join(base, nom), "r", encoding="utf-8") as f:
+                txt = f.read()
+            if _SYNC_ETAT.get(nom) != txt:
+                _LS.setItem("flexsave:" + nom, txt)
+                _SYNC_ETAT[nom] = txt
+                _LS.setItem("flexsave:index", json.dumps(sorted(_SYNC_ETAT.keys())))
+                _LS.setItem("flexsave_t", str(int(_time.time() * 1000)))
+                _CLOUD["dirty"] = True
+    except Exception:
+        pass
+
+
+if IS_WEB:
+    _restaurer_sauvegardes()
+
+
+# ==================== CONNEXION GOOGLE + SAUVEGARDE EN LIGNE (Firebase) — version web uniquement ====================
+_JS_FIREBASE = r"""
+(function(){
+if(window.flexAuth){return;}
+var A=window.flexAuth={ready:false,uid:"",name:"",err:"",busy:false,cloud:"",cloudState:"",pushState:""};
+var CFG={apiKey:"AIzaSyCVozZHuFiU0Ho64lJhpNkE2V7B9JdPVWw",authDomain:"flex-cyberpunk-c49e8.firebaseapp.com",projectId:"flex-cyberpunk-c49e8",storageBucket:"flex-cyberpunk-c49e8.firebasestorage.app",messagingSenderId:"62235176856",appId:"1:62235176856:web:eef7cda18333fe1a3645ed"};
+var V="10.14.1";
+var urls=["app","auth","firestore"].map(function(n){return "https://www.gstatic.com/firebasejs/"+V+"/firebase-"+n+"-compat.js";});
+function code(e){return (e&&e.code)?e.code:String(e);}
+function fail(m){A.err=m;A.ready=true;}
+function load(i){
+  if(i>=urls.length){init();return;}
+  var s=document.createElement("script");
+  s.src=urls[i];
+  s.onload=function(){load(i+1);};
+  s.onerror=function(){fail("chargement-script-"+i);};
+  document.head.appendChild(s);
+}
+function init(){
+  try{
+    firebase.initializeApp(CFG);
+    A.auth=firebase.auth();
+    A.db=firebase.firestore();
+    A.auth.onAuthStateChanged(function(u){
+      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);}}catch(e){}}else{A.uid="";A.name="";}
+      A.ready=true;
+    });
+    setTimeout(function(){A.ready=true;},6000);
+  }catch(e){fail(String(e));}
+}
+A.signIn=function(){
+  A.err="";A.busy=true;
+  try{
+    var p=new firebase.auth.GoogleAuthProvider();
+    A.auth.signInWithPopup(p).then(function(){A.busy=false;}).catch(function(e){A.busy=false;A.err=code(e);});
+  }catch(e){A.busy=false;A.err=String(e);}
+};
+A.signOut=function(){try{A.auth.signOut();}catch(e){}};
+A.pull=function(){
+  A.cloudState="loading";A.cloud="";
+  try{
+    A.db.collection("saves").doc(A.auth.currentUser.uid).get().then(function(d){
+      A.cloud=d.exists?JSON.stringify(d.data()):"";A.cloudState="done";
+    }).catch(function(e){A.err=code(e);A.cloudState="error";});
+  }catch(e){A.err=String(e);A.cloudState="error";}
+};
+A.push=function(txt){
+  A.pushState="loading";
+  try{
+    var data=JSON.parse(txt);
+    A.db.collection("saves").doc(A.auth.currentUser.uid).set(data).then(function(){A.pushState="done";}).catch(function(e){A.err=code(e);A.pushState="error";});
+  }catch(e){A.err=String(e);A.pushState="error";}
+};
+var B=document.createElement("button");
+B.id="flexgbtn";
+B.setAttribute("aria-label","Se connecter avec Google");
+B.style.cssText="position:fixed;display:none;opacity:0;z-index:100000;border:0;padding:0;margin:0;background:transparent;";
+document.body.appendChild(B);
+B.onclick=function(){A.signIn();};
+A.showBtn=function(x,y,w,h,rw){
+  var c=document.getElementById("canvas")||document.querySelector("canvas");
+  if(!c){return;}
+  var r=c.getBoundingClientRect();var k=r.width/rw;
+  B.style.left=(r.left+x*k)+"px";B.style.top=(r.top+y*k)+"px";
+  B.style.width=(w*k)+"px";B.style.height=(h*k)+"px";B.style.display="block";
+};
+A.hideBtn=function(){B.style.display="none";};
+var Q=[];
+var vid="";
+try{vid=localStorage.getItem("flex_vid")||"";if(!vid){vid=Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem("flex_vid",vid);}}catch(e){vid="anon";}
+function send(e){
+  try{
+    A.db.collection("events").add({t:firebase.firestore.FieldValue.serverTimestamp(),type:e.type,lvl:e.lvl|0,vid:vid,uid:A.uid||""}).catch(function(){});
+  }catch(x){}
+}
+A.log=function(type,lvl){
+  var e={type:String(type),lvl:lvl|0};
+  if(A.db){send(e);}else{if(Q.length<50){Q.push(e);}}
+};
+A.flush=function(){while(Q.length){send(Q.shift());}};
+var T0=setInterval(function(){
+  if(A.db){
+    clearInterval(T0);
+    try{
+      if(!sessionStorage.getItem("flex_visit")){sessionStorage.setItem("flex_visit","1");A.log("visit",0);}
+    }catch(e){A.log("visit",0);}
+    A.flush();
+  }
+},500);
+load(0);
+})();
+"""
+
+
+def _injecter_firebase():
+    try:
+        _pfs.window.eval(_JS_FIREBASE)
+    except Exception:
+        try:
+            s = _pfs.window.document.createElement("script")
+            s.textContent = _JS_FIREBASE
+            _pfs.window.document.head.appendChild(s)
+        except Exception as e:
+            print("Firebase indisponible :", e)
+
+
+def _stat(type_, niveau=0):
+    """Envoie une statistique anonyme (visite, connexion, début/fin de niveau). Ne plante jamais le jeu."""
+    if not IS_WEB:
+        return
+    try:
+        _pfs.window.flexAuth.log(type_, int(niveau))
+    except Exception:
+        pass
+
+
+def _fa():
+    try:
+        return _pfs.window.flexAuth
+    except Exception:
+        return None
+
+
+def _cloud_local():
+    files = {}
+    base = _DOSSIER_DONNEES or "."
+    try:
+        for nom in os.listdir(base):
+            if nom.endswith(".json"):
+                with open(os.path.join(base, nom), "r", encoding="utf-8") as f:
+                    files[nom] = f.read()
+    except Exception:
+        pass
+    niveau = 0
+    try:
+        niveau = int(json.loads(files.get("progression_flex.json", "{}")).get("niveau", 0))
+    except Exception:
+        pass
+    t = 0
+    try:
+        t = int(float(str(_LS.getItem("flexsave_t") or 0)))
+    except Exception:
+        pass
+    return files, niveau, t
+
+
+def _cloud_push(fa):
+    files, niveau, t = _cloud_local()
+    if not files:
+        return
+    if not t:
+        t = int(_time.time() * 1000)
+        try:
+            _LS.setItem("flexsave_t", str(t))
+        except Exception:
+            pass
+    fa.push(json.dumps({"files": files, "niveau": niveau, "t": t}))
+    try:
+        _LS.setItem("flexsave_owner", str(fa.uid or ""))
+    except Exception:
+        pass
+
+
+def _cloud_appliquer(cloud):
+    """Copie la sauvegarde en ligne dans la mémoire du navigateur ; elle sera relue au rechargement."""
+    _CLOUD["gel"] = True
+    noms = []
+    for nom, txt in (cloud.get("files") or {}).items():
+        nom = os.path.basename(str(nom))
+        if nom.endswith(".json"):
+            _LS.setItem("flexsave:" + nom, str(txt))
+            noms.append(nom)
+    _LS.setItem("flexsave:index", json.dumps(sorted(noms)))
+    _LS.setItem("flexsave_t", str(int(cloud.get("t", 0) or 0)))
+    try:
+        _LS.setItem("flexsave_owner", str(_fa().uid or ""))
+        _pfs.window.sessionStorage.setItem("flexskip", "1")
+    except Exception:
+        pass
+
+
+def _cloud_decider(fa, brut):
+    """Compare la sauvegarde locale et celle en ligne. Retourne 'reload' (le jeu doit redémarrer) ou 'ok'."""
+    uid = str(fa.uid or "")
+    files, niveau, t = _cloud_local()
+    proprio = ""
+    try:
+        proprio = str(_LS.getItem("flexsave_owner") or "")
+    except Exception:
+        pass
+    etranger = bool(proprio) and proprio != uid
+    if etranger:                       # ces données locales appartiennent à un AUTRE compte : on ne les mélange jamais
+        files, niveau, t = {}, 0, 0
+    cloud = None
+    if brut:
+        try:
+            cloud = json.loads(brut)
+        except Exception:
+            cloud = None
+
+    def _redemarrer():
+        try:
+            _pfs.window.sessionStorage.setItem("flexskip", "1")
+            _pfs.window.location.reload()
+        except Exception:
+            pass
+
+    if not cloud or not cloud.get("files"):
+        if etranger:                   # nouveau compte sans sauvegarde : on repart de zéro
+            _CLOUD["gel"] = True
+            _cloud_effacer_local()
+            _LS.setItem("flexsave_owner", uid)
+            _redemarrer()
+            return "reload"
+        if files:
+            _cloud_push(fa)
+        else:
+            _LS.setItem("flexsave_owner", uid)
+        return "ok"
+    try:
+        c_niveau = int(cloud.get("niveau", 0) or 0)
+        c_t = int(cloud.get("t", 0) or 0)
+    except Exception:
+        c_niveau, c_t = 0, 0
+    if (not files) or c_niveau > niveau or (c_niveau == niveau and c_t > t):
+        _cloud_appliquer(cloud)
+        try:
+            _pfs.window.location.reload()
+        except Exception:
+            pass
+        return "reload"
+    if niveau > c_niveau or t > c_t:
+        _cloud_push(fa)
+    else:
+        _LS.setItem("flexsave_owner", uid)
+    return "ok"
+
+
+def _cloud_tick():
+    c = _CLOUD
+    if c["mode"] != "user" or not c["dirty"] or c["gel"]:
+        return
+    now = _time.time()
+    if now - c["last"] < 8:
+        return
+    fa = _fa()
+    if fa is None or not str(fa.uid or ""):
+        return
+    c["dirty"] = False
+    c["last"] = now
+    try:
+        _cloud_push(fa)
+    except Exception:
+        pass
+
+
+def _cloud_effacer_local():
+    try:
+        brut = _LS.getItem("flexsave:index")
+        for nom in (json.loads(str(brut)) if brut is not None else []):
+            _LS.removeItem("flexsave:" + os.path.basename(str(nom)))
+        _LS.removeItem("flexsave:index")
+        _LS.removeItem("flexsave_t")
+        _LS.removeItem("flexsave_owner")
+    except Exception:
+        pass
+
+
+_MSG_ERREURS = {
+    "auth/popup-blocked": "Fenêtre bloquée : autorise les pop-ups pour ce site",
+    "auth/popup-closed-by-user": "Connexion annulée",
+    "auth/cancelled-popup-request": "Connexion annulée",
+    "auth/unauthorized-domain": "Domaine non autorisé dans Firebase",
+    "auth/network-request-failed": "Pas de connexion internet",
+    "permission-denied": "Accès refusé par les règles de sécurité",
+    "unavailable": "Service en ligne indisponible",
+}
+
+
+async def ecran_connexion():
+    _CLOUD["gate"] = True          # pas de plein écran pendant la connexion (sinon la fenêtre Google peut être bloquée)
+    try:
+        await _ecran_connexion_interne()
+    finally:
+        _CLOUD["gate"] = False
+        try:
+            _fa().hideBtn()
+        except Exception:
+            pass
+
+
+async def _ecran_connexion_interne():
+    """Écran affiché avant le menu : connexion Google ou 'Jouer sans compte'. Sans effet hors navigateur."""
+    if not IS_WEB or _LS is None:
+        return
+    try:
+        if str(_pfs.window.sessionStorage.getItem("flexskip") or "") == "1":      # on vient de restaurer la sauvegarde en ligne
+            _pfs.window.sessionStorage.removeItem("flexskip")
+            _CLOUD["mode"] = "user"
+            return
+    except Exception:
+        pass
+    W, H = ecran.get_width(), ecran.get_height()
+    f_titre = pygame.font.SysFont(None, max(36, int(H * 0.17)))
+    f_btn = pygame.font.SysFont(None, max(24, int(H * 0.065)))
+    f_pet = pygame.font.SysFont(None, max(18, int(H * 0.042)))
+    ROSE, CYAN, BLANC, GRIS = (255, 0, 170), (0, 190, 255), (240, 245, 255), (140, 150, 170)
+    etat, t_etat, t0, dernier = "menu", _time.time(), _time.time(), 0.0
+    lance = False
+    erreur_txt = ""
+    horloge = pygame.time.Clock()
+    while True:
+        await asyncio.sleep(0)
+        fa = _fa()
+        now = _time.time()
+        pret = bool(fa is not None and fa.ready) or (now - t0 > 8)
+        uid = str(fa.uid or "") if fa is not None else ""
+        nom = str(fa.name or "") if fa is not None else ""
+        err = str(fa.err or "") if fa is not None else ""
+        occupe = bool(fa.busy) if fa is not None else False
+        if etat == "menu" and occupe and not uid:        # le clic sur le bouton HTML a lancé la connexion
+            etat, t_etat = "connexion", now
+        message, boutons = "", []
+        if etat == "menu":
+            if not pret:
+                message, boutons = "Chargement du service de connexion...", [("Jouer sans compte", "guest", CYAN)]
+            elif uid:
+                message, boutons = "Connecté : " + nom, [("Continuer", "go", ROSE), ("Se déconnecter", "out", CYAN)]
+            else:
+                message = _MSG_ERREURS.get(err, err) if err else "Connecte-toi pour garder ta progression sur tous tes téléphones"
+                boutons = [("Se connecter avec Google", "google", ROSE), ("Jouer sans compte", "guest", CYAN)]
+        elif etat == "connexion":
+            message, boutons = "Connexion en cours...", [("Annuler", "annuler", CYAN)]
+            if uid:
+                etat, lance, t_etat = "pull", False, now
+            elif not occupe and now - t_etat > 1.0:
+                etat = "menu"
+        elif etat == "pull":
+            message = "Synchronisation de ta sauvegarde..."
+            if not lance:
+                lance = True
+                fa.pull()
+            else:
+                cs = str(fa.cloudState or "")
+                if cs == "done":
+                    if _cloud_decider(fa, str(fa.cloud or "")) == "reload":
+                        etat, t_etat = "reload", now
+                    else:
+                        _CLOUD["mode"] = "user"
+                        return
+                elif cs == "error" or now - t_etat > 12:
+                    erreur_txt = _MSG_ERREURS.get(err, err or "délai dépassé")
+                    etat = "erreur"
+        elif etat == "erreur":
+            message, boutons = "Sauvegarde en ligne indisponible : " + erreur_txt, [("Continuer quand même", "go_err", ROSE)]
+        elif etat == "reload":
+            message = "Restauration de ta sauvegarde... le jeu redémarre"
+        elif etat == "out_push":
+            message = "Envoi de ta sauvegarde avant déconnexion..."
+            if not lance:
+                lance = True
+                try:
+                    _cloud_push(fa)
+                except Exception:
+                    pass
+            elif str(fa.pushState or "") != "loading" or now - t_etat > 4:
+                _CLOUD["gel"] = True
+                fa.signOut()
+                etat, t_etat = "out_wait", now
+        elif etat == "out_wait":
+            message = "Déconnexion..."
+            if not uid or now - t_etat > 3:
+                _cloud_effacer_local()
+                try:
+                    _pfs.window.location.reload()
+                except Exception:
+                    pass
+                etat = "reload"
+        # --- dessin ---
+        ecran.fill((4, 4, 12))
+        for i in range(8):
+            y = int(H * (0.62 + i * i * 0.0065))
+            pygame.draw.line(ecran, (10, 40, 70), (0, y), (W, y), 1)
+        cx = W // 2
+        for dx, couleur in ((-3, ROSE), (3, CYAN), (0, BLANC)):
+            t = f_titre.render("FLEX CYBERPUNK", True, couleur)
+            ecran.blit(t, (cx - t.get_width() // 2 + dx, int(H * 0.10)))
+        rects = []
+        bw, bh = int(H * 1.05), int(H * 0.13)
+        y0 = int(H * 0.36)
+        for i, (lib, cle, couleur) in enumerate(boutons):
+            r = pygame.Rect(cx - bw // 2, y0 + i * int(H * 0.19), bw, bh)
+            rects.append((r, cle))
+            plein = (couleur == ROSE)
+            pygame.draw.rect(ecran, couleur if plein else (10, 12, 24), r, border_radius=18)
+            pygame.draw.rect(ecran, couleur, r, 4, border_radius=18)
+            t = f_btn.render(lib, True, (0, 0, 0) if plein else couleur)
+            ecran.blit(t, (r.centerx - t.get_width() // 2, r.centery - t.get_height() // 2))
+        try:
+            g_rect = None
+            for r, cle in rects:
+                if cle == "google":
+                    g_rect = r
+            if fa is not None and g_rect is not None and etat == "menu" and not occupe:
+                f = _FX
+                fa.showBtn(f["ox"] + g_rect.x * f["sc"], f["oy"] + g_rect.y * f["sc"], g_rect.w * f["sc"], g_rect.h * f["sc"], f["rw"])
+            elif fa is not None:
+                fa.hideBtn()
+        except Exception:
+            pass
+        if message:
+            t = f_pet.render(message, True, BLANC)
+            ecran.blit(t, (cx - t.get_width() // 2, int(H * 0.86)))
+        if err and etat == "menu" and not message.startswith(_MSG_ERREURS.get(err, "§§")):
+            t = f_pet.render(err, True, GRIS)
+            ecran.blit(t, (cx - t.get_width() // 2, int(H * 0.92)))
+        pygame.display.flip()
+        horloge.tick(30)
+        # --- clics ---
+        clic = None
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            px = py = None
+            if e.type == pygame.MOUSEBUTTONDOWN:
+                px, py = e.pos
+            elif e.type == pygame.FINGERDOWN:
+                px, py = e.x * W, e.y * H
+            if px is not None and now - dernier > 0.4:
+                for r, cle in rects:
+                    if r.collidepoint(px, py):
+                        clic, dernier = cle, now
+                        break
+        if clic == "guest":
+            _CLOUD["mode"] = "guest"
+            return
+        if clic == "google" and fa is not None:
+            fa.signIn()
+            etat, t_etat = "connexion", now
+        elif clic == "annuler":
+            etat = "menu"
+        elif clic == "go":
+            etat, lance, t_etat = "pull", False, now
+        elif clic == "go_err":
+            _CLOUD["mode"] = "user"
+            return
+        elif clic == "out":
+            etat, lance, t_etat = "out_push", False, now
+
+
+if IS_WEB:
+    _injecter_firebase()
+
+
 def chemin_donnees(nom):
     return os.path.join(_DOSSIER_DONNEES, nom) if _DOSSIER_DONNEES else nom
 
@@ -146,18 +656,23 @@ if IS_WEB:
     _K = _DPR if _param("hd", 1) >= 0.5 else 1.0     # canvas à la vraie résolution de l'écran
     if _h > _w:
         _w, _h = _h, _w
-    _K = min(_K, (2800000.0 / max(1.0, _w * _h)) ** 0.5)       # plafond de pixels (fluidité)
-    _U = max(0.5, min(3.0, _param("u", 1.6)))                  # ...?u=1.2 : interface 20% plus grande
-    _VW_F, _VH_F = _w * _K / _U, _h * _K / _U
+    try:     # taille de l'écran entier du téléphone : le jeu est préparé pour le plein écran
+        _sw, _sh = float(_pf.window.screen.width), float(_pf.window.screen.height)
+    except Exception:
+        _sw, _sh = _w, _h
+    if _sh > _sw:
+        _sw, _sh = _sh, _sw
+    _K = min(_K, (2800000.0 / max(1.0, _sw * _sh)) ** 0.5)     # plafond de pixels (fluidité)
+    _U = max(0.5, min(3.0, _param("u", 1.0)))                  # ...?u=1.2 : interface 20% plus grande
+    # taille du jeu = taille de l'écran (en px CSS) x 1.64 : même taille réelle des boutons sur tous les téléphones
+    _VW_F, _VH_F = _sw * 1.64 / _U, _sh * 1.64 / _U
     _hq = _param("h", 0)
     if 500 <= _hq <= 3200:
         _VH_F = _hq
-        _VW_F = _hq * max(1.2, min(2.8, _w / max(1.0, _h)))
+        _VW_F = _hq * (_sw / _sh)
     HAUTEUR = max(400, int(round(_VH_F)))
     LARGEUR = max(400, int(round(_VW_F)))
-    _REQ = (max(200, int(_INNER[0] * _K)), max(200, int(_INNER[1] * _K)))
-    if abs(_U - 1.0) < 1e-6 and not (500 <= _hq <= 3200):     # cas normal : jeu et canvas ont exactement la même taille
-        LARGEUR, HAUTEUR = max(_REQ), min(_REQ)
+    _REQ = (max(200, int(_sw * _K)), max(200, int(_sh * _K)))   # canvas = écran entier (le navigateur l'adapte à la fenêtre)
 
 ecran = pygame.display.set_mode(_REQ if IS_WEB else (LARGEUR, HAUTEUR), 0 if IS_WEB else pygame.FULLSCREEN)
 # Sur certains téléphones (encoche / caméra) la surface réellement affichée est plus petite que celle annoncée :
@@ -180,13 +695,21 @@ if IS_WEB:
 
     def _flip_web():
         _FX["k"] = _FX.get("k", 0) + 1
+        _tn = _time.time()
+        if "t0" not in _FX:
+            _FX["t0"] = _FX["tf"] = _tn
+            _FX["fps"] = 0
+        if _FX["k"] % 30 == 0:
+            _dt = _tn - _FX["tf"]
+            _FX["tf"] = _tn
+            if _dt > 0:
+                _FX["fps"] = int(30 / _dt)
+        if _FX["k"] % 30 == 0:
+            _sync_sauvegardes()
+            _cloud_tick()
         if _FX["k"] % 20 == 0:      # la fenêtre a changé (rotation du téléphone...) : on réajuste le canvas
             try:
-                _iw, _ih = int(_pf.window.innerWidth), int(_pf.window.innerHeight)
-                if _iw > 100 and _ih > 100 and (_iw, _ih) != _FX.get("req", (_iw, _ih)):
-                    pygame.display.set_mode((int(_iw * _K), int(_ih * _K)), 0)
-                    _style_canvas(_iw, _ih)
-                _FX["req"] = (_iw, _ih)
+                _FX["port"] = bool(_pf.window.innerHeight > _pf.window.innerWidth)
             except Exception:
                 pass
         reel = _maj_fx()
@@ -202,11 +725,11 @@ if IS_WEB:
             if _POLICE_DBG["f"] is None:
                 _POLICE_DBG["f"] = pygame.font.Font(None, 30)
             if _DBG:     # étiquette de version + tailles (diagnostic)
-                t = _POLICE_DBG["f"].render("w12 R%dx%d V%dx%d I%s" % (f["rw"], f["rh"], _VW, _VH, str(globals().get("_INNER"))), True, (255, 255, 0), (0, 0, 0))
+                t = _POLICE_DBG["f"].render("w18 R%dx%d V%dx%d I%s S%s F%s T%d" % (f["rw"], f["rh"], _VW, _VH, str(globals().get("_INNER")), "-" if _LS is None else len(_SYNC_ETAT), f.get("fps", 0), int(_time.time() - f.get("t0", _time.time()))), True, (255, 255, 0), (0, 0, 0))
                 reel.blit(t, (4, max(0, f["rh"] - t.get_height() - 4)))
                 if f["n"] < 1200:
                     pygame.draw.rect(reel, (255, 255, 0), (0, 0, f["rw"], f["rh"]), 3)
-            if f["rh"] > f["rw"]:
+            if f.get("port"):
                 t = _POLICE_DBG["f"].render("Tourne le telephone en paysage, puis recharge la page", True, (255, 255, 255), (200, 0, 80))
                 reel.blit(t, (max(0, (f["rw"] - t.get_width()) // 2), f["rh"] - 60))
         except Exception:
@@ -216,6 +739,17 @@ if IS_WEB:
     def _event_get_web(*a, **k):
         evs = _EVENT_REEL(*a, **k)
         f = _FX
+        for e in evs:
+            try:
+                if e.type in (pygame.FINGERDOWN, pygame.MOUSEBUTTONDOWN) and not _CLOUD.get("gate") and not _pf.window.document.fullscreenElement:
+                    _pf.window.document.documentElement.requestFullscreen()      # cache la barre de Chrome
+                    try:
+                        _pf.window.screen.orientation.lock("landscape")
+                    except Exception:
+                        pass
+                break
+            except Exception:
+                break
         if f["sc"]:
             for e in evs:
                 try:
@@ -1474,6 +2008,7 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     MISSION.update(drones=0, recompense=None, versee=False, duree=max(1, temps_restant_frames))
     if MODE_GRAPHIQUE == "REALISTE":
         img_joueur_actuel = img_joueur_droite
+    _stat("level_start", niveau_actuel)
 # 5. SYSTÈME DE PROFIL JOUEUR 
 CHEMIN_PROFIL = chemin_donnees("profil_flex.json")
 NATIONALITES = ["France", "Belgique", "Suisse", "Canada", "Maroc", "Algérie", "Tunisie",
@@ -2841,6 +3376,7 @@ def demarrer_ecran_fin(victoire):
     """Appelé une seule fois quand la mission se termine : prépare étoiles, record ou conseil."""
     FIN["t0"] = pygame.time.get_ticks()
     FIN["record"] = False
+    _stat("level_win" if victoire else "level_lose", niveau_actuel)
     if victoire:
         ratio = max(0, temps_restant_frames) / float(MISSION["duree"])
         etoiles = 3 if ratio >= 0.45 else (2 if ratio >= 0.20 else 1)
@@ -3150,6 +3686,7 @@ appliquer_skin()
 async def main():
     global DRAW, ECHELLE, _cache_boss, _cache_drones, _cible, _dt_logique, _echelle_active, _ecoule, _ecran_reel, _k_logique, _maintenant, _pas, _tm0, _tm1, _tm2, _tm3, ang, ang_drone, ang_orbite, ang_q, angle_affichage_boss, angle_arrondi_boss, angle_boss, angle_visée_x, angle_visée_y, astuce, b, bh, boss_angle_precedent, boss_fx_faite, boss_surface_cache, boss_vaincu, boss_vie, boss_x, boss_y, boule, bw, bx, bx0, bx_e, bx_ecran, by, by0, by_e, by_ecran, case, cbx, cby, centre_avatar, cfx, cfy, ci, cible, clic_detecte, clic_x, clic_y, clignote, col_sortie, colonne_max, colonne_min, core_accessible, couleur_aura_boss, couleur_bordure, couleur_ligne, couleur_lueur_core, couleur_node, couleur_timer, curseur, cx, cy, d, d_boss, d_rep, db, decal_x, decal_y, defil_max, defilement_niveaux, delai_max, delai_min, demi, dernier_x_glissement_niveaux, dir_x, dir_y, dist, dist_dir, dist_min, drone_rot, dx, dy, ecran, en_pause, ennemis_restants_a_spawner, espacement_infos, est_boss_node, etat_actuel, event, ex, ex_spawn, ey_spawn, fps_bas_consecutifs, frames_total, fx_ecran, fy_ecran, glissement_niveaux_actif, gris_credit, hack_reussi, haut_piste, hauteur_contenu, hauteur_visible, id_touch_joystick, id_touch_tir, idx, idx_max_affiche, idx_max_clic, idx_min_affiche, idx_min_clic, img_joueur_actuel, index_nationalite, indication_niveaux, indice, info_drones, jauge_hack, joueur_x, joueur_y, joystick_actif, jx_e, jy_e, k_cadre, k_seg, k_traine, largeur_barre_boss, largeur_rempli, largeur_v, lc, lg, li, ligne_max, ligne_min, lignes, lignes_infos, lint, long_piste, long_pouce, lr, lueurs, lx, ly, manette_x, manette_y, masque, message_defaite, minuteur_cadence_tir, minuteur_potion, minuteur_spawn, minuteur_tir_boss, mort_fx_faite, ms, musique_lancee, nb_colonnes_carte, nb_lignes_carte, niveau_max_atteint, niveau_sauvegarde_affichage, ombres_actives, ox, oy, p_core, p_sortie, panneau_largeur, panneau_x, partie_gagnee, partie_perdue, pas, photo_profil_surface, points_chemin, police_l, police_texte, potion, pulsation, pulsation_feu, pulsation_node, pulse_boss, px_ecran, px_potion, py_ecran, py_potion, r_bouclier, ratio_vie_boss, rayon_affiche, rect_timer, rx, ry, saisie_pseudo_active, sec, secondes_restantes, surf_nat, surf_pseudo, t_ms, tag, tag_boss, tb, temps_restant_frames, texte_ligne, texte_node, texte_pseudo, texte_timer, th_hack, ti, ti_icone, til, tir_maintenu, tirer_balle, tl, tn, tp, tp5, txt_vie_boss, type_glissement_niveaux, victoire_fx_faite, vitesse_deplacement_boss, vx, vy, x_actuel_glissement, x_barre, x_barre_boss, x_node, x_node_clic, x_v, xk, y_depart_infos, y_node, y_node_clic, y_nouveau, y_pouce, y_zone, yy
     await ecran_de_demarrage()
+    await ecran_connexion()
     _cache_drones = {}
     _cache_boss = {}
     frames_total = 0
