@@ -12,22 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Choisir le jeu le plus recent
+      - name: Preparer le jeu
         run: |
-          best=$(for f in *.py; do echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -1 | cut -d' ' -f2-)
-          echo "Jeu utilise : $best"
-          if [ "$best" != "main.py" ]; then cp -f "$best" main.py; fi
+          mkdir game
+          cp main.py game/
+          cp *.png *.wav *.ogg game/
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pip install pygbag
-      - run: python -m pygbag --build .
+      - run: python -m pygbag --build game
+      - name: Ajouter la page admin
+        run: cp admin.html game/build/web/admin.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: build/web
+          path: game/build/web
   deploy:
     needs: build
     runs-on: ubuntu-latest
