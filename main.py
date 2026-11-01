@@ -84,7 +84,7 @@ if IS_WEB:
 _JS_FIREBASE = r"""
 (function(){
 if(window.flexAuth){return;}
-var A=window.flexAuth={ready:false,uid:"",name:"",err:"",busy:false,cloud:"",cloudState:"",pushState:""};
+var A=window.flexAuth={ready:false,uid:"",name:"",err:"",busy:false,cloud:"",cloudState:"",pushState:"",pseudo:""};
 var CFG={apiKey:"AIzaSyCVozZHuFiU0Ho64lJhpNkE2V7B9JdPVWw",authDomain:"flex-cyberpunk-c49e8.firebaseapp.com",projectId:"flex-cyberpunk-c49e8",storageBucket:"flex-cyberpunk-c49e8.firebasestorage.app",messagingSenderId:"62235176856",appId:"1:62235176856:web:eef7cda18333fe1a3645ed"};
 var V="10.14.1";
 var urls=["app","auth","firestore"].map(function(n){return "https://www.gstatic.com/firebasejs/"+V+"/firebase-"+n+"-compat.js";});
@@ -104,7 +104,7 @@ function init(){
     A.auth=firebase.auth();
     A.db=firebase.firestore();
     A.auth.onAuthStateChanged(function(u){
-      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);}}catch(e){}}else{A.uid="";A.name="";}
+      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);}}catch(e){}try{A.profile(u);}catch(e){}}else{A.uid="";A.name="";A.pseudo="";}
       A.ready=true;
     });
     setTimeout(function(){A.ready=true;},6000);
@@ -153,8 +153,37 @@ try{vid=localStorage.getItem("flex_vid")||"";if(!vid){vid=Math.random().toString
 function send(e){
   try{
     A.db.collection("events").add({t:firebase.firestore.FieldValue.serverTimestamp(),type:e.type,lvl:e.lvl|0,vid:vid,uid:A.uid||""}).catch(function(){});
+    if((e.type==="level_win"||e.type==="level_lose")&&A.uid&&A.pseudo){
+      var f={last:firebase.firestore.FieldValue.serverTimestamp()};
+      f[e.type==="level_win"?"wins":"losses"]=firebase.firestore.FieldValue.increment(1);
+      A.db.collection("players").doc(A.uid).set(f,{merge:true}).catch(function(){});
+    }
   }catch(x){}
 }
+function choisir(u,msg,essai){
+  if(essai>4){return;}
+  var p=window.prompt((msg?msg+"\n\n":"")+"Choisis ton pseudo pour le classement (3 à 16 caractères : lettres, chiffres, espace, _ ou -) :","");
+  if(p===null){return;}
+  p=p.trim();
+  if(!/^[A-Za-z0-9_ -]{3,16}$/.test(p)){choisir(u,"Pseudo invalide.",essai+1);return;}
+  var b=A.db.batch();
+  b.set(A.db.collection("pseudos").doc(p.toLowerCase()),{uid:u.uid});
+  b.set(A.db.collection("players").doc(u.uid),{pseudo:p,photo:(u.photoURL||"").slice(0,400),wins:0,losses:0,last:firebase.firestore.FieldValue.serverTimestamp()});
+  b.commit().then(function(){A.pseudo=p;}).catch(function(){choisir(u,"Ce pseudo est déjà pris. Essaie un autre.",essai+1);});
+}
+A.profile=function(u){
+  var ref=A.db.collection("players").doc(u.uid);
+  ref.get().then(function(d){
+    if(d.exists){
+      var x=d.data();
+      A.pseudo=x.pseudo||"";
+      var ph=(u.photoURL||"").slice(0,400);
+      if(ph&&x.photo!==ph){ref.update({photo:ph}).catch(function(){});}
+    }else{
+      choisir(u,"",0);
+    }
+  }).catch(function(){});
+};
 A.log=function(type,lvl){
   var e={type:String(type),lvl:lvl|0};
   if(A.db){send(e);}else{if(Q.length<50){Q.push(e);}}

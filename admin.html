@@ -32,6 +32,13 @@ th{color:var(--mut);font-weight:600;font-size:12px}
 .ok{color:var(--ok)}.bad{color:var(--bad)}
 .err{background:#2a0a16;border:1px solid var(--bad);color:#ffb4c6;padding:12px;border-radius:10px;margin:12px 0}
 .hide{display:none}
+.rk{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.rk:last-child{border-bottom:0}
+.rk .n{width:26px;text-align:center;font-weight:800;color:var(--pink);font-size:18px}
+.rk img,.rk .av{width:42px;height:42px;border-radius:50%;object-fit:cover;background:var(--line);flex:none}
+.rk .nm{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rk .sc{text-align:right;font-size:13px;color:var(--mut)}
+.rk .sc b{color:var(--ok);font-size:15px}
 .ev{font-size:13px;color:var(--mut);padding:5px 0;border-bottom:1px solid var(--line)}
 </style>
 </head>
@@ -51,6 +58,10 @@ th{color:var(--mut);font-weight:600;font-size:12px}
     <button class="alt" id="btnOut">Déconnexion</button>
   </div>
   <div class="sub" id="maj"></div>
+
+  <h2>Top 10 des meilleurs joueurs</h2>
+  <div class="card" id="top"><div class="ev">Chargement...</div></div>
+  <div class="sub" id="nbj" style="margin-top:6px"></div>
 
   <h2>Visiteurs uniques</h2>
   <div class="grid">
@@ -119,8 +130,29 @@ auth.onAuthStateChanged(function(u){
 function jourCle(d){return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
 function uniq(arr){var s={};arr.forEach(function(x){if(x)s[x]=1;});return Object.keys(s).length;}
 
+function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+
+function chargerClassement(){
+  db.collection("players").orderBy("wins","desc").limit(1000).get().then(function(snap){
+    var j=[];
+    snap.forEach(function(d){var x=d.data();j.push({pseudo:x.pseudo||"?",photo:x.photo||"",w:x.wins||0,l:x.losses||0});});
+    var actifs=j.filter(function(x){return x.w+x.l>0;});
+    actifs.sort(function(a,b){return (b.w-a.w)||(a.l-b.l);});
+    var top=actifs.slice(0,10);
+    $("top").innerHTML=top.length?top.map(function(x,i){
+      var img=/^https:\/\//.test(x.photo)?'<img src="'+esc(x.photo)+'" referrerpolicy="no-referrer" alt="">':'<div class="av"></div>';
+      var medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1);
+      return '<div class="rk"><div class="n">'+medal+'</div>'+img+'<div class="nm">'+esc(x.pseudo)+'</div><div class="sc"><b>'+x.w+'</b> victoires<br>'+x.l+' défaites</div></div>';
+    }).join(""):'<div class="ev">Aucun joueur classé pour le moment.</div>';
+    $("nbj").textContent=j.length+" joueur(s) inscrit(s) avec un pseudo.";
+  }).catch(function(e){
+    $("top").innerHTML='<div class="ev">Classement indisponible : '+esc(e.code||e.message||e)+'</div>';
+  });
+}
+
 function charger(){
   clearErr();
+  chargerClassement();
   var depuis=new Date(Date.now()-30*86400000);
   db.collection("events").where("t",">=",firebase.firestore.Timestamp.fromDate(depuis)).orderBy("t","desc").limit(5000).get().then(function(snap){
     var ev=[];
