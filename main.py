@@ -160,17 +160,119 @@ function send(e){
     }
   }catch(x){}
 }
-function choisir(u,msg,essai){
-  if(essai>4){return;}
-  var p=window.prompt((msg?msg+"\n\n":"")+"Choisis ton pseudo pour le classement (3 à 16 caractères : lettres, chiffres, espace, _ ou -) :","");
-  if(p===null){return;}
-  p=p.trim();
-  if(!/^[A-Za-z0-9_ -]{3,16}$/.test(p)){choisir(u,"Pseudo invalide.",essai+1);return;}
+function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
+var CSS="*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}"+
+"body{display:flex;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;color:#eaf0ff;background:radial-gradient(ellipse at center,rgba(22,8,44,.94),rgba(3,4,12,.98) 70%);overflow:hidden}"+
+"body:before{content:'';position:fixed;left:0;top:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,rgba(0,235,255,.05) 0,rgba(0,235,255,.05) 1px,transparent 1px,transparent 4px);pointer-events:none}"+
+".pn{position:relative;width:min(92%,460px);max-height:94%;overflow:auto;padding:16px 18px;text-align:center;background:linear-gradient(160deg,rgba(14,18,40,.97),rgba(6,8,20,.97));border:2px solid #00ebff;border-radius:16px;box-shadow:0 0 24px rgba(0,235,255,.45),inset 0 0 22px rgba(255,0,180,.12)}"+
+".pn.col{display:flex;flex-direction:column;overflow:hidden}"+
+".t{font-size:clamp(22px,6vw,32px);font-weight:900;letter-spacing:2px;color:#fff;text-shadow:-3px 0 #ff00b4,3px 0 #00ebff}"+
+".s{margin:4px 0 10px;font-size:12px;letter-spacing:3px;color:#ff00b4;font-weight:700}"+
+".av{width:56px;height:56px;border-radius:50%;border:2px solid #00ff80;box-shadow:0 0 12px rgba(0,255,128,.6);margin:0 auto 8px;display:block;object-fit:cover}"+
+".h{font-size:14px;color:#b8c4ee;margin-bottom:10px;line-height:1.35}"+
+"input{width:100%;padding:12px 14px;font-size:20px;text-align:center;color:#fff;font-weight:700;letter-spacing:1px;background:#070a18;border:2px solid #00ebff;border-radius:10px;outline:none;box-shadow:0 0 10px rgba(0,235,255,.35)}"+
+"input:focus{border-color:#ff00b4;box-shadow:0 0 14px rgba(255,0,180,.6)}"+
+".r{font-size:11px;color:#7f8bbd;margin-top:6px}"+
+".e{min-height:18px;margin:8px 0 2px;font-size:13px;color:#ff3a6e;font-weight:700}"+
+".ok{color:#00ff80}"+
+".b{display:flex;gap:10px;margin-top:8px}"+
+"button{flex:1;padding:13px 8px;font-size:16px;font-weight:900;letter-spacing:1px;border-radius:10px;cursor:pointer;font-family:inherit}"+
+".bp{background:#ff00b4;color:#05050a;border:2px solid #ff00b4;box-shadow:0 0 16px rgba(255,0,180,.7);animation:pu 1.6s infinite}"+
+".bs{background:transparent;color:#00ebff;border:2px solid #00ebff}"+
+"button:disabled{opacity:.5}@keyframes pu{50%{box-shadow:0 0 26px rgba(255,0,180,1)}}"+
+".lg{text-align:left;margin:6px 0;overflow-y:auto;flex:1 1 auto;min-height:0;-webkit-overflow-scrolling:touch}"+
+".rw{display:flex;align-items:center;gap:10px;padding:6px 10px;margin:5px 0;background:rgba(0,235,255,.06);border:1px solid rgba(0,235,255,.25);border-radius:10px}"+
+".rw.me{background:rgba(255,0,180,.16);border-color:#ff00b4;box-shadow:0 0 10px rgba(255,0,180,.5)}"+
+".rw.first{border-color:#ffdc00;box-shadow:0 0 12px rgba(255,220,0,.5)}"+
+".n{width:34px;text-align:center;font-size:22px;font-weight:900;color:#ff00b4}"+
+".nm{flex:1;min-width:0;font-weight:800;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+".sc{text-align:right;font-size:12px;color:#8a94c8;line-height:1.3}.sc b{color:#00ff80;font-size:15px}"+
+".mo{font-size:13px;color:#00ebff;margin:6px 0 2px;font-weight:700;text-align:center}";
+function fermer(){var f=document.getElementById("flexui");if(f&&f.parentNode){f.parentNode.removeChild(f);}}
+function ouvrir(cb){
+  fermer();
+  var f=document.createElement("iframe");
+  f.id="flexui";
+  f.style.cssText="position:fixed;left:0;top:0;width:100%;height:100%;border:0;z-index:2147483647;background:transparent";
+  f.srcdoc="<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><style>"+CSS+"</style></head><body><div id='box'></div></body></html>";
+  f.onload=function(){try{cb(f.contentDocument);}catch(e){fermer();}};
+  document.body.appendChild(f);
+}
+var MSG={invalid:"Pseudo invalide : 3 &agrave; 16 caract&egrave;res (lettres, chiffres, espace, _ ou -).",taken:"Ce pseudo est d&eacute;j&agrave; pris ou refus&eacute;. Essaies-en un autre.",error:"Erreur. R&eacute;essaie dans un instant.",auth:"Tu n'es plus connect&eacute;."};
+A.savePseudo=function(p,cb){
+  var u=A.auth.currentUser;
+  if(!u){cb("auth");return;}
+  p=String(p||"").trim();
+  if(!/^[A-Za-z0-9_ -]{3,16}$/.test(p)){cb("invalid");return;}
   var b=A.db.batch();
   b.set(A.db.collection("pseudos").doc(p.toLowerCase()),{uid:u.uid});
   b.set(A.db.collection("players").doc(u.uid),{pseudo:p,photo:(u.photoURL||"").slice(0,400),wins:0,losses:0,last:firebase.firestore.FieldValue.serverTimestamp()});
-  b.commit().then(function(){A.pseudo=p;}).catch(function(){choisir(u,"Ce pseudo est déjà pris. Essaie un autre.",essai+1);});
+  b.commit().then(function(){A.pseudo=p;cb("ok");}).catch(function(e){cb(code(e)==="permission-denied"?"taken":"error");});
+};
+function dlgPseudo(u){
+  ouvrir(function(d){
+    var photo=u.photoURL?"<img class='av' referrerpolicy='no-referrer' src='"+esc(u.photoURL)+"'>":"";
+    d.getElementById("box").innerHTML="<div class='pn'><div class='t'>FLEX CYBERPUNK</div><div class='s'>IDENTIT&Eacute; DU JOUEUR</div>"+photo+
+      "<div class='h'>Choisis ton pseudo pour le classement.<br>Il sera visible par tous les joueurs.</div>"+
+      "<input id='p' maxlength='16' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='TON PSEUDO'>"+
+      "<div class='r'>3 &agrave; 16 caract&egrave;res : lettres, chiffres, espace, _ ou -</div><div class='e' id='e'></div>"+
+      "<div class='b'><button id='ok' class='bp'>VALIDER</button><button id='no' class='bs'>PLUS TARD</button></div></div>";
+    var inp=d.getElementById("p"),e=d.getElementById("e"),ok=d.getElementById("ok");
+    ok.onclick=function(){
+      e.className="e";e.innerHTML="Enregistrement...";ok.disabled=true;
+      A.savePseudo(inp.value,function(r){
+        if(r==="ok"){e.className="e ok";e.innerHTML="Bienvenue, "+esc(A.pseudo)+" !";setTimeout(fermer,1100);}
+        else{e.className="e";e.innerHTML=MSG[r]||MSG.error;ok.disabled=false;}
+      });
+    };
+    inp.onkeydown=function(ev){if(ev.key==="Enter"){ok.onclick();}};
+    d.getElementById("no").onclick=fermer;
+    setTimeout(function(){try{inp.focus();}catch(x){}},300);
+  });
 }
+function plur(n,s){return n+" "+s+(n>1?"s":"");}
+function dlgInfo(titre,texte){
+  ouvrir(function(d){
+    d.getElementById("box").innerHTML="<div class='pn'><div class='t'>"+titre+"</div><div class='h' style='margin-top:14px'>"+texte+"</div><div class='b'><button id='x' class='bs'>FERMER</button></div></div>";
+    d.getElementById("x").onclick=fermer;
+  });
+}
+A.showRank=function(){
+  if(!A.uid){dlgInfo("CLASSEMENT","Connecte-toi avec ton compte Google pour voir le classement et y participer.");return;}
+  ouvrir(function(d){
+    var box=d.getElementById("box");
+    box.innerHTML="<div class='pn'><div class='t'>CLASSEMENT</div><div class='h' style='margin-top:14px'>Chargement...</div></div>";
+    A.db.collection("players").orderBy("wins","desc").limit(300).get().then(function(snap){
+      var j=[];
+      snap.forEach(function(x){var v=x.data();j.push({id:x.id,p:v.pseudo||"?",w:v.wins||0,l:v.losses||0});});
+      j=j.filter(function(x){return x.w+x.l>0;});
+      j.sort(function(a,b){return (b.w-a.w)||(a.l-b.l);});
+      var top=j.slice(0,10),med=["&#129351;","&#129352;","&#129353;"],html="";
+      top.forEach(function(x,i){
+        html+="<div class='rw"+(x.id===A.uid?" me":"")+(i===0?" first":"")+"'><div class='n'>"+(i<3?med[i]:(i+1))+"</div><div class='nm'>"+esc(x.p)+"</div><div class='sc'><b>"+plur(x.w,"victoire")+"</b><br>"+plur(x.l,"d&eacute;faite")+"</div></div>";
+      });
+      if(!top.length){html="<div class='h' style='text-align:center;margin-top:10px'>Personne n'est encore class&eacute;. Sois le premier !</div>";}
+      var moi="",idx=-1,i2;
+      for(i2=0;i2<j.length;i2++){if(j[i2].id===A.uid){idx=i2;break;}}
+      var bouton="<button id='x' class='bs'>FERMER</button>";
+      if(!A.pseudo){
+        moi="<div class='mo'>Tu n'as pas encore de pseudo.</div>";
+        bouton="<button id='ps' class='bp'>CHOISIR MON PSEUDO</button><button id='x' class='bs'>FERMER</button>";
+      }else if(idx>=10){
+        moi="<div class='mo'>Ton rang : #"+(idx+1)+" - "+plur(j[idx].w,"victoire")+", "+plur(j[idx].l,"d&eacute;faite")+"</div>";
+      }else if(idx<0){
+        moi="<div class='mo'>Gagne un niveau pour entrer au classement !</div>";
+      }
+      box.innerHTML="<div class='pn col'><div class='t'>CLASSEMENT</div><div class='s'>TOP 10 DES JOUEURS</div><div class='lg'>"+html+"</div>"+moi+"<div class='b'>"+bouton+"</div></div>";
+      d.getElementById("x").onclick=fermer;
+      var ps=d.getElementById("ps");
+      if(ps){ps.onclick=function(){var u=A.auth.currentUser;if(u){dlgPseudo(u);}};}
+    }).catch(function(){
+      box.innerHTML="<div class='pn'><div class='t'>CLASSEMENT</div><div class='h' style='margin-top:14px'>Classement indisponible pour le moment.</div><div class='b'><button id='x' class='bs'>FERMER</button></div></div>";
+      d.getElementById("x").onclick=fermer;
+    });
+  });
+};
 A.profile=function(u){
   var ref=A.db.collection("players").doc(u.uid);
   ref.get().then(function(d){
@@ -180,7 +282,7 @@ A.profile=function(u){
       var ph=(u.photoURL||"").slice(0,400);
       if(ph&&x.photo!==ph){ref.update({photo:ph}).catch(function(){});}
     }else{
-      choisir(u,"",0);
+      dlgPseudo(u);
     }
   }).catch(function(){});
 };
@@ -213,6 +315,16 @@ def _injecter_firebase():
             _pfs.window.document.head.appendChild(s)
         except Exception as e:
             print("Firebase indisponible :", e)
+
+
+def _ouvrir_classement():
+    """Ouvre la fenêtre du classement (page web par-dessus le jeu)."""
+    if not IS_WEB:
+        return
+    try:
+        _pfs.window.flexAuth.showRank()
+    except Exception:
+        pass
 
 
 def _stat(type_, niveau=0):
@@ -2321,6 +2433,7 @@ rect_bouton_suivant = pygame.Rect(LARGEUR // 2 + 20, HAUTEUR // 2 + 60, 240, 65)
 rect_icone_profil = pygame.Rect(LARGEUR - 110, 30, 70, 70)
 rect_icone_infos = pygame.Rect(40, 30, 70, 70)
 rect_icone_params = pygame.Rect(130, 30, 70, 70)
+rect_icone_classement = pygame.Rect(220, 30, 70, 70)
 rect_recharger_photo = pygame.Rect(LARGEUR // 2 - 140, 280, 280, 45)
 rect_champ_pseudo = pygame.Rect(LARGEUR // 2 - 220, 350, 440, 60)
 rect_fleche_gauche = pygame.Rect(LARGEUR // 2 - 220, 450, 60, 60)
@@ -3932,6 +4045,8 @@ async def main():
                 lancer_transition(("etat", ETAT_PROFIL))
             elif rect_icone_infos.collidepoint(clic_x, clic_y):
                 lancer_transition(("etat", ETAT_INFOS))
+            elif IS_WEB and rect_icone_classement.collidepoint(clic_x, clic_y):
+                _ouvrir_classement()
             elif rect_icone_params.collidepoint(clic_x, clic_y):
                 lancer_transition(("params", ETAT_MENU))
         elif etat_actuel == ETAT_NIVEAUX and clic_detecte:
@@ -4241,6 +4356,19 @@ async def main():
             DRAW.circle(ecran, GRIS_HACKER, rect_icone_params.center, 35)
             DRAW.circle(ecran, VIOLET_CYBER, rect_icone_params.center, 35, 3)
             dessiner_icone_engrenage(rect_icone_params.centerx, rect_icone_params.centery, 27, VIOLET_CYBER)
+
+            if IS_WEB:
+                cx_t, cy_t = rect_icone_classement.center
+                dessiner_halo(cx_t, cy_t, 60, JAUNE_CYBER, 0.45, 2)
+                DRAW.circle(ecran, GRIS_HACKER, (cx_t, cy_t), 35)
+                DRAW.circle(ecran, JAUNE_CYBER, (cx_t, cy_t), 35, 3)
+                DRAW.circle(ecran, JAUNE_CYBER, (cx_t - 15, cy_t - 6), 7, 3)
+                DRAW.circle(ecran, JAUNE_CYBER, (cx_t + 15, cy_t - 6), 7, 3)
+                DRAW.polygon(ecran, JAUNE_CYBER, [(cx_t - 13, cy_t - 15), (cx_t + 13, cy_t - 15), (cx_t + 9, cy_t + 2), (cx_t + 4, cy_t + 7), (cx_t - 4, cy_t + 7), (cx_t - 9, cy_t + 2)])
+                DRAW.rect(ecran, JAUNE_CYBER, (cx_t - 3, cy_t + 7, 6, 7))
+                DRAW.rect(ecran, JAUNE_CYBER, (cx_t - 11, cy_t + 14, 22, 5))
+                t_top = rendu_texte(police_petite, "TOP 10", True, JAUNE_CYBER)
+                ecran.blit(t_top, (cx_t - t_top.get_width() // 2, rect_icone_classement.bottom + 6))
 
         elif etat_actuel == ETAT_NIVEAUX:
             dessiner_fond_menu()

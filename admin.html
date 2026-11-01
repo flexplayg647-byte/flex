@@ -142,7 +142,7 @@ function chargerClassement(){
     $("top").innerHTML=top.length?top.map(function(x,i){
       var img=/^https:\/\//.test(x.photo)?'<img src="'+esc(x.photo)+'" referrerpolicy="no-referrer" alt="">':'<div class="av"></div>';
       var medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1);
-      return '<div class="rk"><div class="n">'+medal+'</div>'+img+'<div class="nm">'+esc(x.pseudo)+'</div><div class="sc"><b>'+x.w+'</b> victoires<br>'+x.l+' défaites</div></div>';
+      return '<div class="rk"><div class="n">'+medal+'</div>'+img+'<div class="nm">'+esc(x.pseudo)+'</div><div class="sc"><b>'+x.w+'</b> victoire'+(x.w>1?'s':'')+'<br>'+x.l+' défaite'+(x.l>1?'s':'')+'</div></div>';
     }).join(""):'<div class="ev">Aucun joueur classé pour le moment.</div>';
     $("nbj").textContent=j.length+" joueur(s) inscrit(s) avec un pseudo.";
   }).catch(function(e){
