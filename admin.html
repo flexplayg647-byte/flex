@@ -122,13 +122,13 @@ function uniq(arr){var s={};arr.forEach(function(x){if(x)s[x]=1;});return Object
 function charger(){
   clearErr();
   var depuis=new Date(Date.now()-30*86400000);
-  db.collection("events").where("t",">=",depuis).orderBy("t","desc").limit(15000).get().then(function(snap){
+  db.collection("events").where("t",">=",firebase.firestore.Timestamp.fromDate(depuis)).orderBy("t","desc").limit(5000).get().then(function(snap){
     var ev=[];
     snap.forEach(function(d){var x=d.data();if(x.t){ev.push({t:x.t.toDate(),type:x.type,lvl:x.lvl||0,vid:x.vid,uid:x.uid});}});
-    afficher(ev, snap.size>=15000);
+    afficher(ev, snap.size>=5000);
   }).catch(function(e){
     if(e.code==="permission-denied"){showErr("Accès refusé : ce compte n'est pas l'administrateur.");}
-    else{showErr("Erreur : "+(e.code||e.message||e));}
+    else{showErr("Erreur : "+(e.code||"")+" "+(e.message||e));}
   });
 }
 
@@ -174,7 +174,7 @@ function afficher(ev, tronque){
     return '<div class="ev">'+h+" - "+(noms[e.type]||e.type)+(e.lvl?" "+e.lvl:"")+(e.uid?" (connecté)":"")+"</div>";
   }).join("")||'<div class="ev">Aucune activité pour le moment.</div>';
 
-  $("maj").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR")+(tronque?" - attention : données tronquées (15 000 événements)":"");
+  $("maj").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR")+(tronque?" - attention : données tronquées (5 000 événements)":"");
 }
 </script>
 </body>
