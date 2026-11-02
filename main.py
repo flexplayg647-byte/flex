@@ -104,7 +104,7 @@ function init(){
     A.auth=firebase.auth();
     A.db=firebase.firestore();
     A.auth.onAuthStateChanged(function(u){
-      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);}}catch(e){}try{A.profile(u);}catch(e){}}else{A.uid="";A.name="";A.pseudo="";}
+      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);}}catch(e){}try{A.profile(u);}catch(e){}try{A.loadSkins();}catch(e){}}else{A.uid="";A.name="";A.pseudo="";A.skins=[];A.skinActif="";}
       A.ready=true;
     });
     setTimeout(function(){A.ready=true;},6000);
@@ -286,6 +286,132 @@ A.profile=function(u){
     }
   }).catch(function(){});
 };
+var WORKER="https://flex-licence.flexplayg647.workers.dev";
+var BUY="https://eiuforef.mychariow.shop/prd_uj80vrr1/checkout";
+var SKD=[{"id":"recrue","n":"Recrue","r":"C","s":"H","l":[["p","survie","PEAU D'ACIER","Survit \u00e0 1 drone de plus avant de tomber."]]},{"id":"sergent_du_desert","n":"Sergent du D\u00e9sert","r":"C","s":"H","l":[["p","bouclier","BOUCLIER LOURD","Absorbe 1 coup de boss avant de subir des d\u00e9g\u00e2ts."],["e","grenades","GRENADES x3","Explosion en zone anti-drones."]]},{"id":"rodeur_urbain","n":"R\u00f4deur Urbain","r":"C","s":"H","l":[["p","sprint","TURBO","Course ultra-rapide pendant 3 secondes \u00e0 chaque niveau."]]},{"id":"fantassin_polaire","n":"Fantassin Polaire","r":"C","s":"H","l":[["p","or","CHASSEUR D'OR","+10 % de pi\u00e8ces gagn\u00e9es \u00e0 chaque mission."]]},{"id":"chasseur_de_primes","n":"Chasseur de Primes","r":"C","s":"H","l":[["p","perforant","TIR PERFORANT","Chaque balle traverse 1 drone d'un seul coup."],["e","munitions","MUNITIONS","Tir 20 % plus rapide."]]},{"id":"mercenaire_rouge","n":"Mercenaire Rouge","r":"R","s":"H","l":[["p","sprint","TURBO","Course ultra-rapide pendant 5 secondes \u00e0 chaque niveau."],["e","grenades","GRENADES x3 + MUNITIONS","Explosion en zone anti-drones. Tir 20 % plus rapide."]]},{"id":"tireur_delite","n":"Tireur d'\u00c9lite","r":"R","s":"H","l":[["p","perforant","TIR PERFORANT","Chaque balle traverse 2 drones d'un seul coup."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","antenne","BROUILLEUR","Ralentit les drones proches de 25 %."]]},{"id":"punk_anarchiste","n":"Punk Anarchiste","r":"R","s":"H","l":[["p","radar","RADAR TACTIQUE","R\u00e9v\u00e8le tous les drones pendant 4 secondes, une fois par niveau."],["e","grenades","GRENADES x3","Explosion en zone anti-drones."]]},{"id":"pilote_jet","n":"Pilote Jet","r":"R","s":"H","l":[["p","fantome","PHASE","Traverse les murs pendant 2 secondes, une fois par niveau."],["e","holo","\u00c9CRAN HOLO","Piratage +50 % et alerte drones."]]},{"id":"gladiateur","n":"Gladiateur","r":"R","s":"H","l":[["p","survie","PEAU D'ACIER","Survit \u00e0 2 drones de plus avant de tomber."]]},{"id":"cow_boy_cyber","n":"Cow-boy Cyber","r":"R","s":"H","l":[["p","or","CHASSEUR D'OR","+20 % de pi\u00e8ces gagn\u00e9es \u00e0 chaque mission."],["e","holo","\u00c9CRAN HOLO + MUNITIONS","Piratage +50 % et alerte drones. Tir 20 % plus rapide."]]},{"id":"colosse_dacier","n":"Colosse d'Acier","r":"E","s":"H","l":[["p","bouclier","BOUCLIER LOURD","Absorbe 3 coups de boss avant de subir des d\u00e9g\u00e2ts."],["e","roquettes","ROQUETTES x2","Gros d\u00e9g\u00e2ts sur le boss."]]},{"id":"cyber_ninja","n":"Cyber-Ninja","r":"E","s":"H","l":[["p","fantome","PHASE","Traverse les murs pendant 4 secondes, une fois par niveau."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","drone","DRONE ALLI\u00c9","Tire seul sur les ennemis proches."]]},{"id":"fantome","n":"Fant\u00f4me","r":"E","s":"H","l":[["p","ralenti","TEMPS RALENTI","Ralentit les ennemis pendant 4 secondes, une fois par niveau."],["e","antenne","BROUILLEUR","Ralentit les drones proches de 25 %."]]},{"id":"samourai_neon","n":"Samoura\u00ef N\u00e9on","r":"E","s":"H","l":[["p","sprint","TURBO","Course ultra-rapide pendant 6 secondes \u00e0 chaque niveau."],["e","holo","\u00c9CRAN HOLO","Piratage +50 % et alerte drones."]]},{"id":"chevalier_toxique","n":"Chevalier Toxique","r":"E","s":"H","l":[["p","survie","PEAU D'ACIER","Survit \u00e0 3 drones de plus avant de tomber."],["e","roquettes","ROQUETTES x2 + GRENADES x3","Gros d\u00e9g\u00e2ts sur le boss. Explosion en zone anti-drones."]]},{"id":"commandant_dore","n":"Commandant Dor\u00e9","r":"L","s":"H","l":[["p","bouclier","BOUCLIER LOURD","Absorbe 2 coups de boss avant de subir des d\u00e9g\u00e2ts."],["p","or","CHASSEUR D'OR","+30 % de pi\u00e8ces gagn\u00e9es \u00e0 chaque mission."],["e","munitions","MUNITIONS","Tir 20 % plus rapide."]]},{"id":"titan_solaire","n":"Titan Solaire","r":"L","s":"H","l":[["p","bouclier","BOUCLIER LOURD","Absorbe 3 coups de boss avant de subir des d\u00e9g\u00e2ts."],["p","survie","PEAU D'ACIER","Survit \u00e0 3 drones de plus avant de tomber."],["e","roquettes","ROQUETTES x2 + MUNITIONS","Gros d\u00e9g\u00e2ts sur le boss. Tir 20 % plus rapide."]]},{"id":"seigneur_du_vide","n":"Seigneur du Vide","r":"L","s":"H","l":[["p","fantome","PHASE","Traverse les murs pendant 6 secondes, une fois par niveau."],["p","ralenti","TEMPS RALENTI","Ralentit les ennemis pendant 4 secondes, une fois par niveau."],["e","drone","DRONE ALLI\u00c9","Tire seul sur les ennemis proches."]]},{"id":"eclaireur_bronze","n":"\u00c9claireur Bronze","r":"C","s":"H","l":[["p","radar","RADAR TACTIQUE","R\u00e9v\u00e8le tous les drones pendant 3 secondes, une fois par niveau."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","antenne","BROUILLEUR","Ralentit les drones proches de 25 %."]]},{"id":"eclaireuse","n":"\u00c9claireuse","r":"C","s":"F","l":[["p","sprint","TURBO","Course ultra-rapide pendant 3 secondes \u00e0 chaque niveau."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","grenades","GRENADES x3","Explosion en zone anti-drones."]]},{"id":"amazone_des_neiges","n":"Amazone des Neiges","r":"R","s":"F","l":[["p","ralenti","TEMPS RALENTI","Ralentit les ennemis pendant 3 secondes, une fois par niveau."],["e","munitions","MUNITIONS","Tir 20 % plus rapide."]]},{"id":"pilote_rose","n":"Pilote Rose","r":"R","s":"F","l":[["p","fantome","PHASE","Traverse les murs pendant 2 secondes, une fois par niveau."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","holo","\u00c9CRAN HOLO","Piratage +50 % et alerte drones."]]},{"id":"chasseresse_verte","n":"Chasseresse Verte","r":"R","s":"F","l":[["p","perforant","TIR PERFORANT","Chaque balle traverse 2 drones d'un seul coup."],["e","munitions","MUNITIONS","Tir 20 % plus rapide."]]},{"id":"alchimiste","n":"Alchimiste","r":"R","s":"F","l":[["p","or","CHASSEUR D'OR","+20 % de pi\u00e8ces gagn\u00e9es \u00e0 chaque mission."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","holo","\u00c9CRAN HOLO","Piratage +50 % et alerte drones."]]},{"id":"valkyrie","n":"Valkyrie","r":"E","s":"F","l":[["p","fantome","PHASE","Traverse les murs pendant 5 secondes, une fois par niveau."]]},{"id":"ninja_violette","n":"Ninja Violette","r":"E","s":"F","l":[["p","sprint","TURBO","Course ultra-rapide pendant 6 secondes \u00e0 chaque niveau."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","holo","\u00c9CRAN HOLO","Piratage +50 % et alerte drones."]]},{"id":"cyber_chat","n":"Cyber-Chat","r":"E","s":"F","l":[["p","radar","RADAR TACTIQUE","R\u00e9v\u00e8le tous les drones pendant 6 secondes, une fois par niveau."],["t","faufile","FAUFIL\u00c9","30 % plus fin. Au mur : +20 % vitesse, boss rat\u00e9 1 fois sur 2."],["e","drone","DRONE ALLI\u00c9","Tire seul sur les ennemis proches."]]},{"id":"reine_ecarlate","n":"Reine \u00c9carlate","r":"L","s":"F","l":[["p","or","CHASSEUR D'OR","+30 % de pi\u00e8ces gagn\u00e9es \u00e0 chaque mission."],["p","ralenti","TEMPS RALENTI","Ralentit les ennemis pendant 4 secondes, une fois par niveau."]]},{"id":"deesse_solaire","n":"D\u00e9esse Solaire","r":"L","s":"F","l":[["p","bouclier","BOUCLIER LOURD","Absorbe 3 coups de boss avant de subir des d\u00e9g\u00e2ts."],["p","fantome","PHASE","Traverse les murs pendant 5 secondes, une fois par niveau."],["e","drone","DRONE ALLI\u00c9","Tire seul sur les ennemis proches."]]}];
+var SHEET="skins_sheet.png";
+try{SHEET=new URL("skins_sheet.png",location.href).href;}catch(e){}
+A.skins=[];A.skinActif="";
+try{A.equipped=localStorage.getItem("flex_skin")||"";}catch(e){A.equipped="";}
+var RN={C:["COMMUN","C",1,"#aab0be"],R:["RARE","B",2,"#00c8ff"],E:["\u00c9PIQUE","A",3,"#be46ff"],L:["L\u00c9GENDAIRE","S",4,"#ffc828"]};
+var ICO={bouclier:"&#128737;",survie:"&#10084;",fantome:"&#128123;",sprint:"&#9889;",perforant:"&#127919;",or:"&#128176;",radar:"&#128225;",ralenti:"&#9203;",faufile:"&#127939;",grenades:"&#128163;",roquettes:"&#128640;",holo:"&#128187;",drone:"&#129302;",antenne:"&#128225;",munitions:"&#128165;"};
+var LBL={p:"SUPER POUVOIR",t:"TALENT NATUREL",e:"&Eacute;QUIPEMENT ACTIF"};
+var LCOL={p:"#ffd646",t:"#78ffaa",e:"#ff8c3c"};
+var MSG2={auth:"Tu n'es plus connect&eacute;. Reconnecte-toi avec Google.",format:"Cl&eacute; invalide : v&eacute;rifie les caract&egrave;res.",cle_inconnue:"Cl&eacute; introuvable. V&eacute;rifie qu'elle est copi&eacute;e en entier.",cle_deja_utilisee:"Cette cl&eacute; a d&eacute;j&agrave; servi.",deja_possede:"Tu poss&egrave;des d&eacute;j&agrave; ce personnage.",revoquee:"Cette cl&eacute; n'est plus valide.",expiree:"Cette cl&eacute; n'est plus valide.",mauvais_produit:"Cette cl&eacute; ne correspond pas &agrave; ce produit.",trop_d_essais:"Trop d'essais. R&eacute;essaie dans une heure.",skin:"Personnage inconnu.",serveur:"Service indisponible. R&eacute;essaie dans un instant.",reseau:"Pas de connexion. R&eacute;essaie dans un instant.",activation_refusee:"Activation refus&eacute;e. Contacte le support.",chariow:"Service indisponible. R&eacute;essaie dans un instant."};
+CSS+="#box{width:100%;height:100%;display:flex;align-items:center;justify-content:center}"+
+".pn.wide{width:min(96%,920px)}"+
+".hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:10px}"+
+".hd .t{font-size:clamp(18px,4.5vw,26px)}"+
+".gr{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;overflow-y:auto;flex:1 1 auto;min-height:0;padding:4px 2px;-webkit-overflow-scrolling:touch}"+
+".tl{background:rgba(8,10,24,.9);border:2px solid;border-radius:12px;padding:6px 4px 8px;text-align:center;cursor:pointer}"+
+".sp{margin:0 auto}"+
+".tn{font-size:12px;font-weight:800;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+".tb{font-size:10px;font-weight:800;letter-spacing:1px;margin-top:2px}"+
+".dt{display:flex;gap:12px;flex:1 1 auto;min-height:0;overflow:hidden}"+
+".dl{width:42%;max-width:230px;text-align:center;flex:none}"+
+".dr{flex:1;min-width:0;overflow-y:auto;text-align:left;-webkit-overflow-scrolling:touch}"+
+".ln{display:flex;gap:8px;align-items:center;background:rgba(10,14,32,.95);border:1px solid rgba(0,235,255,.3);border-radius:10px;padding:7px 9px;margin:0 0 6px}"+
+".ln .ic{font-size:22px;width:30px;text-align:center}"+
+".ln .lb{font-size:9px;letter-spacing:1px;color:#00ebff;font-weight:800}"+
+".ln .tt{font-size:14px;font-weight:900}"+
+".ln .ds{font-size:12px;color:#d7def5}"+
+".rr{display:inline-block;padding:2px 10px;border-radius:8px;font-weight:900;font-size:12px;color:#05070f;margin-top:4px}"+
+".kb{font-size:20px;letter-spacing:2px;text-transform:uppercase}"+
+"@media (max-width:560px){.dt{flex-direction:column;overflow-y:auto}.dl{width:100%;max-width:none}.dr{overflow:visible}}";
+function spr(i,sz){var c=i%6,r=Math.floor(i/6);return "width:"+sz+"px;height:"+sz+"px;background:url("+SHEET+") -"+(c*sz)+"px -"+(r*sz)+"px / "+(6*sz)+"px "+(6*sz)+"px no-repeat;";}
+function refreshActive(){A.skinActif=(A.equipped&&A.skins.indexOf(A.equipped)>=0)?A.equipped:"";}
+function possede(id){return id===""||A.skins.indexOf(id)>=0;}
+A.equip=function(id){A.equipped=id;try{localStorage.setItem("flex_skin",id);}catch(e){}refreshActive();};
+function tokenThen(cb){try{A.auth.currentUser.getIdToken().then(cb).catch(function(){cb(null);});}catch(e){cb(null);}}
+function api(path,body,cb){
+  fetch(WORKER+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(cb).catch(function(){cb({ok:false,error:"reseau"});});
+}
+A.loadSkins=function(cb){
+  tokenThen(function(t){
+    if(!t){if(cb){cb();}return;}
+    api("/me",{idToken:t},function(r){
+      if(r&&r.ok){A.skins=r.skins||[];}
+      refreshActive();
+      if(cb){cb();}
+    });
+  });
+};
+var gridOpen=false;
+function skinDe(i){return i===30?{id:"",n:"CLASSIQUE",r:"C",s:"H",l:[]}:SKD[i];}
+function dlgSkins(){
+  gridOpen=true;
+  ouvrir(function(d){
+    var h="",ordre=[30],i;
+    for(i=0;i<30;i++){ordre.push(i);}
+    ordre.forEach(function(i){
+      var s=skinDe(i),rn=RN[s.r],own=possede(s.id),eq=(A.skinActif===s.id);
+      var badge=eq?"<span style='color:#ff00b4'>&Eacute;QUIP&Eacute;</span>":own?"<span style='color:#00ff80'>POSS&Eacute;D&Eacute;</span>":"<span style='color:#8a94c8'>&#128274; VERROUILL&Eacute;</span>";
+      h+="<div class='tl' data-i='"+i+"' style='border-color:"+rn[3]+"'><div class='sp' style='"+spr(i,96)+"'></div><div class='tn'>"+esc(s.n)+"</div><div class='tb'>"+badge+"</div></div>";
+    });
+    d.getElementById("box").innerHTML="<div class='pn col wide'><div class='hd'><div class='t'>PERSONNAGES</div><button id='x' class='bs' style='flex:none;padding:8px 14px'>FERMER</button></div><div class='gr'>"+h+"</div></div>";
+    d.getElementById("x").onclick=function(){gridOpen=false;fermer();};
+    var tl=d.querySelectorAll(".tl"),k;
+    for(k=0;k<tl.length;k++){(function(el){el.onclick=function(){dlgDetail(parseInt(el.getAttribute("data-i"),10));};})(tl[k]);}
+  });
+}
+function dlgDetail(i){
+  gridOpen=false;
+  var s=skinDe(i);
+  ouvrir(function(d){
+    var rn=RN[s.r],own=possede(s.id),eq=(A.skinActif===s.id),lines="",k;
+    for(k=0;k<s.l.length;k++){
+      var L=s.l[k];
+      lines+="<div class='ln'><div class='ic'>"+(ICO[L[1]]||"")+"</div><div><div class='lb'>"+LBL[L[0]]+"</div><div class='tt' style='color:"+LCOL[L[0]]+"'>"+esc(L[2])+"</div><div class='ds'>"+esc(L[3])+"</div></div></div>";
+    }
+    if(!s.l.length){lines="<div class='ln'><div class='ic'>&#127894;</div><div><div class='lb'>PERSONNAGE DE BASE</div><div class='ds'>Le soldat classique, gratuit pour tous.</div></div></div>";}
+    var stars="",q;
+    for(q=0;q<4;q++){stars+=(q<rn[2]?"&#9733;":"&#9734;");}
+    var btn="<button id='bk' class='bs'>RETOUR</button>";
+    if(own){btn+=eq?"<button class='bp' disabled>&Eacute;QUIP&Eacute;</button>":"<button id='eq' class='bp'>&Eacute;QUIPER</button>";}
+    else{btn+="<button id='ob' class='bp'>OBTENIR</button><button id='ck' class='bs'>J'AI UNE CL&Eacute;</button>";}
+    d.getElementById("box").innerHTML="<div class='pn col wide' style='border-color:"+rn[3]+"'><div class='hd'><div class='t'>"+esc(s.n.toUpperCase())+"</div><div class='rr' style='background:"+rn[3]+"'>"+rn[0]+" &middot; RANG "+rn[1]+" "+stars+"</div></div>"+
+      "<div class='dt'><div class='dl'><div class='sp' style='"+spr(i,190)+"'></div></div><div class='dr' id='dr'>"+lines+"</div></div><div class='e' id='e'></div><div class='b'>"+btn+"</div></div>";
+    d.getElementById("bk").onclick=dlgSkins;
+    var eqb=d.getElementById("eq");
+    if(eqb){eqb.onclick=function(){A.equip(s.id);dlgDetail(i);};}
+    var ob=d.getElementById("ob");
+    if(ob){ob.onclick=function(){window.open(BUY,"_blank");};}
+    var ck=d.getElementById("ck");
+    if(ck){ck.onclick=function(){
+      if(!A.uid){d.getElementById("e").innerHTML="Connecte-toi d'abord avec Google pour utiliser une cl&eacute;.";return;}
+      panneauCle(d,i,s);
+    };}
+  });
+}
+function panneauCle(d,i,s){
+  d.getElementById("dr").innerHTML="<div class='h'>Colle la cl&eacute; re&ccedil;ue par e-mail apr&egrave;s ton achat. Elle d&eacute;bloquera : <b>"+esc(s.n)+"</b>.</div><input id='kc' class='kb' maxlength='64' autocomplete='off' autocapitalize='characters' spellcheck='false' placeholder='XXXX-XXXX-XXXX-XXXX'><div class='r'>Une cl&eacute; = un personnage, une seule utilisation.</div>";
+  var b=d.querySelector(".b");
+  b.innerHTML="<button id='bk2' class='bs'>ANNULER</button><button id='vl' class='bp'>VALIDER</button>";
+  var e=d.getElementById("e"),vl=d.getElementById("vl"),inp=d.getElementById("kc");
+  d.getElementById("bk2").onclick=function(){dlgDetail(i);};
+  vl.onclick=function(){
+    e.className="e";e.innerHTML="V&eacute;rification...";vl.disabled=true;
+    tokenThen(function(t){
+      if(!t){e.innerHTML=MSG2.auth;vl.disabled=false;return;}
+      api("/redeem",{idToken:t,key:inp.value,skin:s.id},function(r){
+        if(r&&r.ok){
+          A.skins=r.skins||A.skins;A.equip(s.id);
+          e.className="e ok";e.innerHTML="D&eacute;bloqu&eacute; ! Ton personnage est &eacute;quip&eacute;.";
+          setTimeout(function(){dlgDetail(i);},1400);
+        }else{
+          if(r&&r.error==="deja_possede"&&r.skins){A.skins=r.skins;refreshActive();}
+          e.className="e";e.innerHTML=MSG2[(r&&r.error)||"serveur"]||MSG2.serveur;vl.disabled=false;
+        }
+      });
+    });
+  };
+  inp.onkeydown=function(ev){if(ev.key==="Enter"){vl.onclick();}};
+  setTimeout(function(){try{inp.focus();}catch(x){}},300);
+}
+A.showSkins=function(){
+  dlgSkins();
+  if(A.uid){A.loadSkins(function(){if(gridOpen&&document.getElementById("flexui")){dlgSkins();}});}
+};
 A.log=function(type,lvl){
   var e={type:String(type),lvl:lvl|0};
   if(A.db){send(e);}else{if(Q.length<50){Q.push(e);}}
@@ -315,6 +441,49 @@ def _injecter_firebase():
             _pfs.window.document.head.appendChild(s)
         except Exception as e:
             print("Firebase indisponible :", e)
+
+
+SKIN_IDS = ["recrue", "sergent_du_desert", "rodeur_urbain", "fantassin_polaire", "chasseur_de_primes", "mercenaire_rouge", "tireur_delite", "punk_anarchiste", "pilote_jet", "gladiateur", "cow_boy_cyber", "colosse_dacier", "cyber_ninja", "fantome", "samourai_neon", "chevalier_toxique", "commandant_dore", "titan_solaire", "seigneur_du_vide", "eclaireur_bronze", "eclaireuse", "amazone_des_neiges", "pilote_rose", "chasseresse_verte", "alchimiste", "valkyrie", "ninja_violette", "cyber_chat", "reine_ecarlate", "deesse_solaire"]
+_skin_courant = None
+_planche_skins = None
+
+
+def _appliquer_skin():
+    """Met le sprite du joueur selon le skin équipé (planche skins_sheet.png)."""
+    global img_joueur_droite, img_joueur_gauche, img_joueur_actuel, _skin_courant, _planche_skins
+    if not IS_WEB:
+        return
+    try:
+        sid = str(_pfs.window.flexAuth.skinActif or "")
+    except Exception:
+        sid = ""
+    if sid == _skin_courant:
+        return
+    try:
+        if sid in SKIN_IDS:
+            if _planche_skins is None:
+                _planche_skins = pygame.image.load("skins_sheet.png").convert_alpha()
+            i = SKIN_IDS.index(sid)
+            morceau = _planche_skins.subsurface(pygame.Rect((i % 6) * 160, (i // 6) * 160, 160, 160)).copy()
+            img = pygame.transform.smoothscale(morceau, (TAILLE_PERSO, TAILLE_PERSO))
+        else:
+            img = _img_joueur_defaut
+        img_joueur_droite = img
+        img_joueur_gauche = pygame.transform.flip(img, True, False)
+        img_joueur_actuel = img_joueur_droite
+        _skin_courant = sid
+    except Exception as e:
+        print("Skin indisponible :", e)
+
+
+def _ouvrir_skins():
+    """Ouvre l'écran des personnages (page web par-dessus le jeu)."""
+    if not IS_WEB:
+        return
+    try:
+        _pfs.window.flexAuth.showSkins()
+    except Exception:
+        pass
 
 
 def _ouvrir_classement():
@@ -1229,6 +1398,7 @@ try:
     img_joueur_droite = pygame.transform.scale(img_joueur_droite, (TAILLE_PERSO, TAILLE_PERSO))
     img_joueur_gauche = pygame.transform.flip(img_joueur_droite, True, False)
     img_joueur_actuel = img_joueur_droite
+    _img_joueur_defaut = img_joueur_droite
 
     img_drone = pygame.image.load("drone__23_-removebg-preview.png").convert_alpha()
     img_drone = pygame.transform.scale(img_drone, (40, 40))
@@ -2149,6 +2319,7 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     MISSION.update(drones=0, recompense=None, versee=False, duree=max(1, temps_restant_frames))
     if MODE_GRAPHIQUE == "REALISTE":
         img_joueur_actuel = img_joueur_droite
+    _appliquer_skin()
     _stat("level_start", niveau_actuel)
 # 5. SYSTÈME DE PROFIL JOUEUR 
 CHEMIN_PROFIL = chemin_donnees("profil_flex.json")
@@ -2434,6 +2605,7 @@ rect_icone_profil = pygame.Rect(LARGEUR - 110, 30, 70, 70)
 rect_icone_infos = pygame.Rect(40, 30, 70, 70)
 rect_icone_params = pygame.Rect(130, 30, 70, 70)
 rect_icone_classement = pygame.Rect(220, 30, 70, 70)
+rect_icone_skins = pygame.Rect(310, 30, 70, 70)
 rect_recharger_photo = pygame.Rect(LARGEUR // 2 - 140, 280, 280, 45)
 rect_champ_pseudo = pygame.Rect(LARGEUR // 2 - 220, 350, 440, 60)
 rect_fleche_gauche = pygame.Rect(LARGEUR // 2 - 220, 450, 60, 60)
@@ -4047,6 +4219,8 @@ async def main():
                 lancer_transition(("etat", ETAT_INFOS))
             elif IS_WEB and rect_icone_classement.collidepoint(clic_x, clic_y):
                 _ouvrir_classement()
+            elif IS_WEB and rect_icone_skins.collidepoint(clic_x, clic_y):
+                _ouvrir_skins()
             elif rect_icone_params.collidepoint(clic_x, clic_y):
                 lancer_transition(("params", ETAT_MENU))
         elif etat_actuel == ETAT_NIVEAUX and clic_detecte:
@@ -4369,6 +4543,14 @@ async def main():
                 DRAW.rect(ecran, JAUNE_CYBER, (cx_t - 11, cy_t + 14, 22, 5))
                 t_top = rendu_texte(police_petite, "TOP 10", True, JAUNE_CYBER)
                 ecran.blit(t_top, (cx_t - t_top.get_width() // 2, rect_icone_classement.bottom + 6))
+                cx_s, cy_s = rect_icone_skins.center
+                dessiner_halo(cx_s, cy_s, 60, CYAN_NEON, 0.45, 2)
+                DRAW.circle(ecran, GRIS_HACKER, (cx_s, cy_s), 35)
+                DRAW.circle(ecran, CYAN_NEON, (cx_s, cy_s), 35, 3)
+                DRAW.circle(ecran, CYAN_NEON, (cx_s, cy_s - 8), 9)
+                DRAW.ellipse(ecran, CYAN_NEON, (cx_s - 16, cy_s + 3, 32, 22))
+                t_sk = rendu_texte(police_petite, "SKINS", True, CYAN_NEON)
+                ecran.blit(t_sk, (cx_s - t_sk.get_width() // 2, rect_icone_skins.bottom + 6))
 
         elif etat_actuel == ETAT_NIVEAUX:
             dessiner_fond_menu()
