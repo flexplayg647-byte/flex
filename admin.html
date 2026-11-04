@@ -39,6 +39,15 @@ th{color:var(--mut);font-weight:600;font-size:12px}
 .rk .nm{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rk .sc{text-align:right;font-size:13px;color:var(--mut)}
 .rk .sc b{color:var(--ok);font-size:15px}
+.bd{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;color:#05070f}
+.bd.ok{background:var(--ok)}.bd.ko{background:var(--bad)}.bd.ab{background:#8a94c8}.bd.at{background:#ffb347}
+.pb{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.pb button{padding:8px 14px;font-size:14px}
+.pb button.on{background:var(--cyan);color:#000}
+.sm{font-size:11px;color:var(--mut)}
+.rt{font-size:12px}.rt th,.rt td{padding:6px 4px}
+.pj{font-weight:800;color:#fff;font-size:13px}
+td.l,th.l{text-align:left}
 .ev{font-size:13px;color:var(--mut);padding:5px 0;border-bottom:1px solid var(--line)}
 </style>
 </head>
@@ -58,6 +67,35 @@ th{color:var(--mut);font-weight:600;font-size:12px}
     <button class="alt" id="btnOut">Déconnexion</button>
   </div>
   <div class="sub" id="maj"></div>
+
+  <h2>Revenus</h2>
+  <div class="pb" id="pb">
+    <button class="alt on" data-p="all">Tout</button>
+    <button class="alt" data-p="30">30 jours</button>
+    <button class="alt" data-p="7">7 jours</button>
+  </div>
+  <div id="rvErr" class="err hide"></div>
+  <div class="grid">
+    <div class="card"><b id="rvTot">-</b><small>revenus encaiss&eacute;s</small></div>
+    <div class="card"><b id="rvOk" style="color:var(--ok)">-</b><small>achats r&eacute;ussis</small></div>
+    <div class="card"><b id="rvKo" style="color:var(--bad)">-</b><small>achats &eacute;chou&eacute;s</small></div>
+    <div class="card"><b id="rvAt" style="color:#ffb347">-</b><small>abandonn&eacute;s / en attente</small></div>
+  </div>
+  <div class="sub" id="rvInfo" style="margin-top:6px"></div>
+  <h2>Derni&egrave;res ventes</h2>
+  <div class="card wrap">
+    <table class="rt">
+      <thead><tr><th class="l">Date</th><th>Montant</th><th class="l">Statut</th><th class="l">Acheteur</th><th class="l">Joueur</th></tr></thead>
+      <tbody id="rvVentes"><tr><td colspan="5" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
+    </table>
+  </div>
+  <h2>Skins activ&eacute;s dans le jeu</h2>
+  <div class="card wrap">
+    <table class="rt">
+      <thead><tr><th class="l">Date</th><th class="l">Joueur</th><th class="l">Skin</th><th class="l">Acheteur</th></tr></thead>
+      <tbody id="rvAct"><tr><td colspan="4" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
+    </table>
+  </div>
 
   <h2>Top 10 des meilleurs joueurs</h2>
   <div class="card" id="top"><div class="ev">Chargement...</div></div>
@@ -133,9 +171,9 @@ function uniq(arr){var s={};arr.forEach(function(x){if(x)s[x]=1;});return Object
 function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 
 function chargerClassement(){
-  db.collection("players").orderBy("wins","desc").limit(1000).get().then(function(snap){
+  return db.collection("players").orderBy("wins","desc").limit(1000).get().then(function(snap){
     var j=[];
-    snap.forEach(function(d){var x=d.data();j.push({pseudo:x.pseudo||"?",photo:x.photo||"",w:x.wins||0,l:x.losses||0});});
+    snap.forEach(function(d){var x=d.data();PSEUDOS[d.id]=x.pseudo||"?";j.push({pseudo:x.pseudo||"?",photo:x.photo||"",w:x.wins||0,l:x.losses||0});});
     var actifs=j.filter(function(x){return x.w+x.l>0;});
     actifs.sort(function(a,b){return (b.w-a.w)||(a.l-b.l);});
     var top=actifs.slice(0,10);
@@ -150,9 +188,65 @@ function chargerClassement(){
   });
 }
 
+var WORKER="https://flex-licence.flexplayg647.workers.dev";
+var PSEUDOS={};
+var NOMS_SKINS={recrue:"Recrue",sergent_du_desert:"Sergent du Désert",rodeur_urbain:"Rôdeur Urbain",fantassin_polaire:"Fantassin Polaire",chasseur_de_primes:"Chasseur de Primes",mercenaire_rouge:"Mercenaire Rouge",tireur_delite:"Tireur d'Élite",punk_anarchiste:"Punk Anarchiste",pilote_jet:"Pilote Jet",gladiateur:"Gladiateur",cow_boy_cyber:"Cow-boy Cyber",colosse_dacier:"Colosse d'Acier",cyber_ninja:"Cyber-Ninja",fantome:"Fantôme",samourai_neon:"Samouraï Néon",chevalier_toxique:"Chevalier Toxique",commandant_dore:"Commandant Doré",titan_solaire:"Titan Solaire",seigneur_du_vide:"Seigneur du Vide",eclaireur_bronze:"Éclaireur Bronze",eclaireuse:"Éclaireuse",amazone_des_neiges:"Amazone des Neiges",pilote_rose:"Pilote Rose",chasseresse_verte:"Chasseresse Verte",alchimiste:"Alchimiste",valkyrie:"Valkyrie",ninja_violette:"Ninja Violette",cyber_chat:"Cyber-Chat",reine_ecarlate:"Reine Écarlate",deesse_solaire:"Déesse Solaire"};
+var periode="all";
+function pad2(n){return (n<10?"0":"")+n;}
+function fmtMontant(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c}).format(v);}catch(e){return v.toFixed(2)+" "+c;}}
+function fmtDate(iso){var d=new Date(iso);return isNaN(d)?"-":d.toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
+function nomJoueur(uid){return PSEUDOS[uid]||("joueur "+String(uid).slice(0,6));}
+var ERR_REV={scope_manquant:"Ta clé API Chariow n'a pas tous les droits. Dans Chariow : Paramètres, API Keys, modifie ta clé et ajoute « sales.read » et « customers.pii.read ».",interdit:"Réservé à l'administrateur.",chariow:"Chariow ne répond pas pour le moment.",reseau:"Serveur de licences injoignable (Cloudflare). Vérifie qu'il est à jour.",auth:"Reconnecte-toi.",serveur:"Erreur du serveur de licences."};
+function erreurRevenus(r){
+  var e=$("rvErr");e.textContent=ERR_REV[r&&r.error]||("Erreur : "+(r&&r.error));e.classList.remove("hide");
+  $("rvVentes").innerHTML="<tr><td colspan='5' style='text-align:center;color:#8a94c8'>Indisponible</td></tr>";
+  $("rvAct").innerHTML="<tr><td colspan='4' style='text-align:center;color:#8a94c8'>Indisponible</td></tr>";
+}
+function chargerRevenus(){
+  $("rvErr").classList.add("hide");
+  var from=null;
+  if(periode!=="all"){var d=new Date(Date.now()-(periode==="30"?30:7)*86400000);from=d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());}
+  auth.currentUser.getIdToken().then(function(t){
+    return fetch(WORKER+"/revenus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idToken:t,from:from})}).then(function(r){return r.json();});
+  }).then(function(r){if(!r||!r.ok){erreurRevenus(r);return;}afficherRevenus(r);}).catch(function(){erreurRevenus({error:"reseau"});});
+}
+function badge(st){
+  if(st==="completed"||st==="settled"){return "<span class='bd ok'>R&eacute;ussi</span>";}
+  if(st==="failed"){return "<span class='bd ko'>&Eacute;chou&eacute;</span>";}
+  if(st==="abandoned"){return "<span class='bd ab'>Abandonn&eacute;</span>";}
+  return "<span class='bd at'>En attente</span>";
+}
+function afficherRevenus(r){
+  var cles=Object.keys(r.total||{});
+  $("rvTot").textContent=cles.length?cles.map(function(c){return fmtMontant(r.total[c],c);}).join(" + "):fmtMontant(0,"USD");
+  $("rvOk").textContent=r.compte.reussi;$("rvKo").textContent=r.compte.echoue;$("rvAt").textContent=r.compte.abandonne+r.compte.attente;
+  $("rvInfo").textContent=(periode==="all"?"Depuis le début":(periode==="30"?"30 derniers jours":"7 derniers jours"))+(r.tronque?" - attention : liste tronquée (trop de ventes)":"");
+  var h=r.ventes.slice(0,60).map(function(v){
+    var ok=(v.statut==="completed"||v.statut==="settled");
+    var joueur="";
+    if(v.activations&&v.activations.length){
+      joueur=v.activations.map(function(a){return "<span class='pj'>"+esc(nomJoueur(a.uid))+"</span><br><span class='sm'>"+esc(NOMS_SKINS[a.skin]||a.skin)+"</span>";}).join("<br>");
+    }else if(ok){joueur="<span class='sm'>Cl&eacute; pas encore activ&eacute;e</span>";}
+    return "<tr><td class='l'>"+esc(fmtDate(v.date))+"</td><td>"+esc(fmtMontant(v.montant.v,v.montant.c||"USD"))+"</td><td class='l'>"+badge(v.statut)+(v.erreur?"<br><span class='sm'>"+esc(v.erreur)+"</span>":"")+"</td><td class='l'>"+esc(v.client.nom||"-")+(v.client.email?"<br><span class='sm'>"+esc(v.client.email)+"</span>":"")+"</td><td class='l'>"+joueur+"</td></tr>";
+  }).join("");
+  $("rvVentes").innerHTML=h||"<tr><td colspan='5' style='text-align:center;color:#8a94c8'>Aucune vente pour le moment</td></tr>";
+  var a=r.activations.slice(0,60).map(function(l){
+    return "<tr><td class='l'>"+esc(fmtDate(l.t))+"</td><td class='l'><span class='pj'>"+esc(nomJoueur(l.uid))+"</span></td><td class='l'>"+esc(NOMS_SKINS[l.skin]||l.skin)+"</td><td class='l'>"+esc(l.nom||"-")+"</td></tr>";
+  }).join("");
+  $("rvAct").innerHTML=a||"<tr><td colspan='4' style='text-align:center;color:#8a94c8'>Aucune activation pour le moment</td></tr>";
+}
+(function(){
+  var bs=document.querySelectorAll("#pb button"),i;
+  for(i=0;i<bs.length;i++){(function(b){b.onclick=function(){
+    var k;for(k=0;k<bs.length;k++){bs[k].classList.remove("on");}
+    b.classList.add("on");periode=b.getAttribute("data-p");
+    if(auth.currentUser){chargerRevenus();}
+  };})(bs[i]);}
+})();
+
 function charger(){
   clearErr();
-  chargerClassement();
+  chargerClassement().then(chargerRevenus,chargerRevenus);
   var depuis=new Date(Date.now()-30*86400000);
   db.collection("events").where("t",">=",firebase.firestore.Timestamp.fromDate(depuis)).orderBy("t","desc").limit(5000).get().then(function(snap){
     var ev=[];

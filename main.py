@@ -320,6 +320,8 @@ CSS+="#box{width:100%;height:100%;display:flex;align-items:center;justify-conten
 "@media (max-width:560px){.dt{flex-direction:column;overflow-y:auto}.dl{width:100%;max-width:none}.dr{overflow:visible}}";
 function spr(i,sz){var c=i%6,r=Math.floor(i/6);return "width:"+sz+"px;height:"+sz+"px;background:url("+SHEET+") -"+(c*sz)+"px -"+(r*sz)+"px / "+(6*sz)+"px "+(6*sz)+"px no-repeat;";}
 function refreshActive(){A.skinActif=(A.equipped&&A.skins.indexOf(A.equipped)>=0)?A.equipped:"";}
+A.estAdmin=function(){try{var u=A.auth.currentUser;return !!(u&&u.email==="flexplayg647@gmail.com");}catch(e){return false;}};
+MSG2.interdit="R&eacute;serv&eacute; &agrave; l'administrateur.";
 function possede(id){return id===""||A.skins.indexOf(id)>=0;}
 A.equip=function(id){A.equipped=id;try{localStorage.setItem("flex_skin",id);}catch(e){}refreshActive();};
 function tokenThen(cb){try{A.auth.currentUser.getIdToken().then(cb).catch(function(){cb(null);});}catch(e){cb(null);}}
@@ -369,11 +371,22 @@ function dlgDetail(i){
     var btn="<button id='bk' class='bs'>RETOUR</button>";
     if(own){btn+=eq?"<button class='bp' disabled>&Eacute;QUIP&Eacute;</button>":"<button id='eq' class='bp'>&Eacute;QUIPER</button>";}
     else{btn+="<button id='ob' class='bp'>OBTENIR</button><button id='ck' class='bs'>J'AI UNE CL&Eacute;</button>";}
+    if(!own&&A.estAdmin()){btn+="<button id='ad' class='bs' style='border-color:#78ffaa;color:#78ffaa'>ADMIN : D&Eacute;BLOQUER</button>";}
     d.getElementById("box").innerHTML="<div class='pn col wide' style='border-color:"+rn[3]+"'><div class='hd'><div class='t'>"+esc(s.n.toUpperCase())+"</div><div class='rr' style='background:"+rn[3]+"'>"+rn[0]+" &middot; RANG "+rn[1]+" "+stars+"</div></div>"+
-      "<div class='dt'><div class='dl'><div class='sp' style='"+spr(i,190)+"'></div></div><div class='dr' id='dr'>"+lines+"</div></div><div class='e' id='e'></div><div class='b'>"+btn+"</div></div>";
+      "<div class='dt'><div class='dl'><div class='sp' style='"+spr(i,160)+"'></div></div><div class='dr' id='dr'>"+lines+"</div></div><div class='e' id='e'></div><div class='b'>"+btn+"</div></div>";
     d.getElementById("bk").onclick=dlgSkins;
     var eqb=d.getElementById("eq");
     if(eqb){eqb.onclick=function(){A.equip(s.id);dlgDetail(i);};}
+    var ad=d.getElementById("ad");
+    if(ad){ad.onclick=function(){
+      ad.disabled=true;
+      tokenThen(function(t){
+        api("/grant",{idToken:t,skin:s.id},function(r){
+          if(r&&r.ok){A.skins=r.skins||A.skins;A.equip(s.id);dlgDetail(i);}
+          else{ad.disabled=false;d.getElementById("e").innerHTML=MSG2[(r&&r.error)||"serveur"]||MSG2.serveur;}
+        });
+      });
+    };}
     var ob=d.getElementById("ob");
     if(ob){ob.onclick=function(){window.open(BUY,"_blank");};}
     var ck=d.getElementById("ck");
@@ -2248,20 +2261,6 @@ type_glissement_niveaux = None
 dernier_x_glissement_niveaux = 0
 
 
-def check_collision_murs(x, y):
-    gauche, droite = x - TAILLE_PERSO // 2, x + TAILLE_PERSO // 2
-    haut, bas = y - TAILLE_PERSO // 2, y + TAILLE_PERSO // 2
-    for cx, cy in [(gauche, haut), (droite, haut), (gauche, bas), (droite, bas)]:
-        case_x, case_y = int(cx // TAILLE_CASE), int(cy // TAILLE_CASE)
-        if not (0 <= case_x < len(CARTE[0]) and 0 <= case_y < len(CARTE)):
-            return True
-        if CARTE[case_y][case_x] == 1:
-            return True
-        if CARTE[case_y][case_x] == 3 and not hack_reussi:
-            return True
-    return False
-
-
 def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     global joueur_x, joueur_y, jauge_hack, hack_reussi, partie_gagnee, partie_perdue, niveau_actuel, niveau_max_atteint
     global CARTE, COULEUR_MUR, etat_actuel, liste_ennemis, balles, img_joueur_actuel, niveau_data
@@ -2320,6 +2319,7 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     if MODE_GRAPHIQUE == "REALISTE":
         img_joueur_actuel = img_joueur_droite
     _appliquer_skin()
+    _init_pouvoirs()
     _stat("level_start", niveau_actuel)
 # 5. SYSTÈME DE PROFIL JOUEUR 
 CHEMIN_PROFIL = chemin_donnees("profil_flex.json")
@@ -3170,6 +3170,20 @@ def subir_degats(message):
     global partie_perdue, message_defaite
     if ETAT_JOUEUR["invuln"] > 0:
         return False
+    if message in ("ÉCRASÉ PAR LE BOSS", "BRÛLÉ PAR LE BOSS") and POUV.get("boss_boucliers", 0) > 0:
+        POUV["boss_boucliers"] -= 1                 # pouvoir du personnage : absorbe un coup du boss
+        ETAT_JOUEUR["invuln"] = 90
+        creer_explosion(joueur_x, joueur_y, (120, 220, 255), 18, 6.0, 5.0)
+        if SON_ACTIF:
+            son_explosion.play()
+        return False
+    if message == "SYSTÈME CORROMPU" and POUV.get("survie", 0) > 0:
+        POUV["survie"] -= 1                         # pouvoir du personnage : survit à un drone de plus
+        ETAT_JOUEUR["invuln"] = 45
+        creer_explosion(joueur_x, joueur_y, (255, 120, 140), 18, 6.0, 4.0)
+        if SON_ACTIF:
+            son_explosion.play()
+        return False
     if ETAT_JOUEUR["bouclier"] > 0:
         ETAT_JOUEUR["bouclier"] -= 1
         ETAT_JOUEUR["invuln"] = 90
@@ -3186,8 +3200,9 @@ def subir_degats(message):
 
 def calculer_recompense(victoire):
     drones = MISSION["drones"]
+    mult_or = 1.0 + _cfg().get("or", 0) / 100.0                   # pouvoir « chasseur d'or »
     if not victoire:
-        return {"total": drones, "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
+        return {"total": int(drones * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
     n = niveau_actuel
     base = 30 + 8 * n
     temps = max(0, temps_restant_frames) // 60 // 2
@@ -3197,6 +3212,7 @@ def calculer_recompense(victoire):
     reduite = n in BOUTIQUE["faits"]
     if reduite:
         total //= 2
+    total = int(total * mult_or)
     return {"total": total, "base": base, "temps": temps, "drones": bonus_drones, "boss": boss, "reduite": reduite}
 
 
@@ -3486,6 +3502,457 @@ def dessiner_commandes(mx, my, tir_actif):
     DRAW.circle(ecran, ROUGE_ALERTE, (BTN_TIR_X, BTN_TIR_Y), BTN_TIR_RAYON, 5)
     tt = rendu_texte(police_bouton, "TIR", True, BLANC_NEON)
     ecran.blit(tt, (BTN_TIR_X - tt.get_width() // 2, BTN_TIR_Y - tt.get_height() // 2))
+
+
+# ===== POUVOIRS DEBUT
+POUVOIRS_SKINS = {
+    "recrue": {"survie": 1},
+    "sergent_du_desert": {"bouclier": 1, "grenades": 3},
+    "rodeur_urbain": {"sprint": 3},
+    "fantassin_polaire": {"or": 10},
+    "chasseur_de_primes": {"perforant": 1, "munitions": 1},
+    "mercenaire_rouge": {"sprint": 5, "grenades": 3, "munitions": 1},
+    "tireur_delite": {"perforant": 2, "faufile": 1, "antenne": 1},
+    "punk_anarchiste": {"radar": 4, "grenades": 3},
+    "pilote_jet": {"fantome": 2, "holo": 1},
+    "gladiateur": {"survie": 2},
+    "cow_boy_cyber": {"or": 20, "holo": 1, "munitions": 1},
+    "colosse_dacier": {"bouclier": 3, "roquettes": 2},
+    "cyber_ninja": {"fantome": 4, "faufile": 1, "drone": 1},
+    "fantome": {"ralenti": 4, "antenne": 1},
+    "samourai_neon": {"sprint": 6, "holo": 1},
+    "chevalier_toxique": {"survie": 3, "grenades": 3, "roquettes": 2},
+    "commandant_dore": {"bouclier": 2, "or": 30, "munitions": 1},
+    "titan_solaire": {"bouclier": 3, "survie": 3, "roquettes": 2, "munitions": 1},
+    "seigneur_du_vide": {"fantome": 6, "ralenti": 4, "drone": 1},
+    "eclaireur_bronze": {"radar": 3, "faufile": 1, "antenne": 1},
+    "eclaireuse": {"sprint": 3, "faufile": 1, "grenades": 3},
+    "amazone_des_neiges": {"ralenti": 3, "munitions": 1},
+    "pilote_rose": {"fantome": 2, "faufile": 1, "holo": 1},
+    "chasseresse_verte": {"perforant": 2, "munitions": 1},
+    "alchimiste": {"or": 20, "faufile": 1, "holo": 1},
+    "valkyrie": {"fantome": 5},
+    "ninja_violette": {"sprint": 6, "faufile": 1, "holo": 1},
+    "cyber_chat": {"radar": 6, "faufile": 1, "drone": 1},
+    "reine_ecarlate": {"or": 30, "ralenti": 4},
+    "deesse_solaire": {"bouclier": 3, "fantome": 5, "drone": 1},
+}
+
+
+# ================================================================ POUVOIRS DES PERSONNAGES
+# Chaque personnage (skin) a ses pouvoirs. Tout est regroupé ici ; le reste du jeu n'appelle que quelques fonctions.
+ACTIONS_ACTIVES = ("fantome", "sprint", "radar", "ralenti", "grenades", "roquettes")
+LIB_ACTION = {"fantome": "PHASE", "sprint": "TURBO", "radar": "RADAR", "ralenti": "TEMPS", "grenades": "GRENADE", "roquettes": "ROQUETTE"}
+COUL_ACTION = {"fantome": (120, 255, 230), "sprint": (255, 230, 60), "radar": (255, 200, 60), "ralenti": (110, 170, 255),
+               "grenades": (255, 150, 50), "roquettes": (255, 80, 70)}
+GRENADE_RAYON, GRENADE_DEGATS_BOSS = 150, 5.0            # dégâts au boss = 5 tirs
+ROQUETTE_RAYON, ROQUETTE_DEGATS_BOSS = 130, 30.0         # dégâts au boss = 3 rafales de 10 tirs
+POUV = {}
+_voile_ralenti = None
+
+
+def _init_pouvoirs():
+    """Prépare les pouvoirs du personnage équipé au début de chaque niveau."""
+    cfg = POUVOIRS_SKINS.get(_skin_courant or "", {}) if IS_WEB else {}
+    slots = [a for a in ACTIONS_ACTIVES if a in cfg][:3]
+    POUV.clear()
+    POUV.update(cfg=cfg, slots=slots, boss_boucliers=cfg.get("bouclier", 0), survie=cfg.get("survie", 0),
+                t_phase=0, t_sprint=0, t_radar=0, t_ralenti=0, utilise=set(), gren=cfg.get("grenades", 0),
+                roq=cfg.get("roquettes", 0), cd=0, objets=[], explos=[], contre_mur=False, coince=0,
+                sure=(joueur_x, joueur_y), ally_ang=0.0, ally=None, ally_cd=30, erreur=False)
+
+
+def _cfg():
+    return POUV.get("cfg") or {}
+
+
+def _perfo():
+    return STATS["perfo"] + _cfg().get("perforant", 0)
+
+
+def _cadence():
+    c = STATS["cadence"]
+    return max(3.0, c / 1.2) if _cfg().get("munitions") else c        # munitions : intervalle de tir divisé par 1,2 (tir 20 % plus rapide)
+
+
+def _hack():
+    return STATS["hack"] * (1.5 if _cfg().get("holo") else 1.0)
+
+
+def _facteur_vitesse():
+    f = 1.0
+    if POUV.get("t_sprint", 0) > 0:
+        f *= 1.8
+    if _cfg().get("faufile") and POUV.get("contre_mur"):
+        f *= 1.2
+    return f
+
+
+def _facteur_ennemi(x, y):
+    f = 0.45 if POUV.get("t_ralenti", 0) > 0 else 1.0
+    if _cfg().get("antenne") and math.hypot(x - joueur_x, y - joueur_y) < 260:
+        f *= 0.75
+    return f
+
+
+def _facteur_boule():
+    return 0.5 if POUV.get("t_ralenti", 0) > 0 else 1.0
+
+
+def _esquive_boule(boule):
+    """Faufilé : collé à un mur, une boule de feu du boss sur deux rate le joueur."""
+    if not (_cfg().get("faufile") and POUV.get("contre_mur")):
+        return False
+    if len(boule) < 5:
+        boule.append(random.random() < 0.5)
+    return bool(boule[4])
+
+
+def _collision_reelle(x, y):
+    demi = int(TAILLE_PERSO * (0.35 if _cfg().get("faufile") else 0.5))       # Faufilé : corps 30 % plus fin
+    gauche, droite, haut, bas = x - demi, x + demi, y - demi, y + demi
+    for cx, cy in [(gauche, haut), (droite, haut), (gauche, bas), (droite, bas)]:
+        case_x, case_y = int(cx // TAILLE_CASE), int(cy // TAILLE_CASE)
+        if not (0 <= case_x < len(CARTE[0]) and 0 <= case_y < len(CARTE)):
+            return True
+        if CARTE[case_y][case_x] == 1:
+            return True
+        if CARTE[case_y][case_x] == 3 and not hack_reussi:
+            return True
+    return False
+
+
+def check_collision_murs(x, y):
+    if POUV.get("t_phase", 0) > 0:
+        for cx, cy in ((x - 4, y - 4), (x + 4, y + 4)):         # en phase : seuls les bords de la carte arrêtent le joueur
+            if not (0 <= int(cx // TAILLE_CASE) < len(CARTE[0]) and 0 <= int(cy // TAILLE_CASE) < len(CARTE)):
+                return True
+        return False
+    return _collision_reelle(x, y)
+
+
+# ---------------------------------------------------------------- cibles, explosions
+def _cible_proche(portee, boss_prioritaire=False):
+    if boss_prioritaire and boss_actif and not boss_vaincu and math.hypot(boss_x - joueur_x, boss_y - joueur_y) < portee:
+        return (boss_x, boss_y)
+    meilleur, d_min = None, portee
+    for ex in liste_ennemis:
+        d = math.hypot(ex[0] - joueur_x, ex[1] - joueur_y)
+        if d < d_min:
+            meilleur, d_min = (ex[0], ex[1]), d
+    if boss_actif and not boss_vaincu:
+        d = math.hypot(boss_x - joueur_x, boss_y - joueur_y)
+        if d < d_min:
+            meilleur = (boss_x, boss_y)
+    return meilleur
+
+
+def _exploser(x, y, rayon, degats_boss, couleur, fort):
+    """Vraie explosion : détruit tous les drones dans le rayon et blesse le boss."""
+    global boss_vie, boss_vaincu
+    for ex in liste_ennemis[:]:
+        if math.hypot(ex[0] - x, ex[1] - y) <= rayon:
+            liste_ennemis.remove(ex)
+            MISSION["drones"] += 1
+            creer_explosion(ex[0], ex[1], ROUGE_ALERTE, 22, 7.0, 0.0)
+    if boss_actif and not boss_vaincu and math.hypot(boss_x - x, boss_y - y) <= rayon + RAYON_CORPS_BOSS:
+        boss_vie = round(boss_vie - degats_boss * STATS["degats"], 1)
+        creer_etincelles(boss_x, boss_y, ORANGE_MEC, 12)
+        if boss_vie <= 0:
+            boss_vie = 0
+            boss_vaincu = True
+            if SON_ACTIF:
+                son_victoire.play()
+    creer_explosion(x, y, couleur, 44 if fort else 32, 10.0, 11.0 if fort else 8.0)
+    POUV["explos"].append({"x": x, "y": y, "r": rayon, "n": 24, "n0": 24, "c": couleur})
+    if SON_ACTIF:
+        son_explosion.play()
+
+
+def _lancer_grenade():
+    cible = _cible_proche(430)
+    if cible:
+        vx, vy = cible[0] - joueur_x, cible[1] - joueur_y
+    else:
+        vx, vy = angle_visée_x * 220, angle_visée_y * 220
+    d = math.hypot(vx, vy) or 1.0
+    d_lancer = min(d, 360.0)
+    n = 36
+    POUV["objets"].append({"t": "gren", "x": joueur_x, "y": joueur_y, "vx": vx / d * d_lancer / n, "vy": vy / d * d_lancer / n, "n": n, "n0": n})
+
+
+def _lancer_roquette():
+    cible = _cible_proche(950, True)
+    if cible:
+        vx, vy = cible[0] - joueur_x, cible[1] - joueur_y
+    else:
+        vx, vy = angle_visée_x, angle_visée_y
+    d = math.hypot(vx, vy) or 1.0
+    POUV["objets"].append({"t": "roq", "x": joueur_x, "y": joueur_y, "vx": vx / d * 12.0, "vy": vy / d * 12.0, "n": 110, "n0": 110})
+    creer_etincelles(joueur_x, joueur_y, ORANGE_MEC, 8)
+
+
+def _activer_pouvoir(action):
+    if partie_perdue or partie_gagnee or en_pause or not POUV.get("cfg"):
+        return False
+    cfg = _cfg()
+    if action in ("fantome", "sprint", "radar", "ralenti"):
+        if action in POUV["utilise"] or action not in cfg:
+            return False
+        POUV["utilise"].add(action)
+        POUV["t_" + {"fantome": "phase", "sprint": "sprint", "radar": "radar", "ralenti": "ralenti"}[action]] = int(cfg[action] * 60)
+        creer_explosion(joueur_x, joueur_y, COUL_ACTION[action], 16, 5.0, 2.0)
+        return True
+    if POUV["cd"] > 0:
+        return False
+    if action == "grenades" and POUV["gren"] > 0:
+        POUV["gren"] -= 1
+        POUV["cd"] = 30
+        _lancer_grenade()
+        return True
+    if action == "roquettes" and POUV["roq"] > 0:
+        POUV["roq"] -= 1
+        POUV["cd"] = 30
+        _lancer_roquette()
+        return True
+    return False
+
+
+# ---------------------------------------------------------------- mise à jour (une fois par pas de logique)
+def _maj_objets():
+    for o in POUV["objets"][:]:
+        o["n"] -= 1
+        nx, ny = o["x"] + o["vx"], o["y"] + o["vy"]
+        cx, cy = int(nx // TAILLE_CASE), int(ny // TAILLE_CASE)
+        mur = not (0 <= cx < len(CARTE[0]) and 0 <= cy < len(CARTE)) or CARTE[cy][cx] == 1
+        if o["t"] == "gren":
+            if mur:
+                o["n"] = 0                       # la grenade s'arrête contre le mur et explose
+            else:
+                o["x"], o["y"] = nx, ny
+            if o["n"] <= 0:
+                POUV["objets"].remove(o)
+                _exploser(o["x"], o["y"], GRENADE_RAYON, GRENADE_DEGATS_BOSS, ORANGE_MEC, False)
+        else:
+            if not mur:
+                o["x"], o["y"] = nx, ny
+            touche = mur or o["n"] <= 0
+            if not touche:
+                for ex in liste_ennemis:
+                    if math.hypot(ex[0] - o["x"], ex[1] - o["y"]) < 34:
+                        touche = True
+                        break
+            if not touche and boss_actif and not boss_vaincu and math.hypot(boss_x - o["x"], boss_y - o["y"]) < RAYON_CORPS_BOSS:
+                touche = True
+            if QUALITE["niveau"] >= 1 and not touche:
+                creer_propulsion(o["x"], o["y"], -o["vx"] * 0.4, -o["vy"] * 0.4, ORANGE_MEC)
+            if touche:
+                POUV["objets"].remove(o)
+                _exploser(o["x"], o["y"], ROQUETTE_RAYON, ROQUETTE_DEGATS_BOSS, ROUGE_ALERTE, True)
+
+
+def _maj_ami():
+    if not _cfg().get("drone"):
+        return
+    POUV["ally_ang"] += 0.05
+    ax = joueur_x + math.cos(POUV["ally_ang"]) * 52
+    ay = joueur_y + math.sin(POUV["ally_ang"]) * 34 - 34
+    POUV["ally"] = (ax, ay)
+    POUV["ally_cd"] -= 1
+    if POUV["ally_cd"] <= 0:
+        meilleur, d_min = None, 420.0
+        for ex in liste_ennemis:
+            d = math.hypot(ex[0] - ax, ex[1] - ay)
+            if d < d_min:
+                meilleur, d_min = (ex[0], ex[1]), d
+        if boss_actif and not boss_vaincu and math.hypot(boss_x - ax, boss_y - ay) < d_min:
+            meilleur = (boss_x, boss_y)
+        if meilleur:
+            dx_, dy_ = meilleur[0] - ax, meilleur[1] - ay
+            d = math.hypot(dx_, dy_) or 1.0
+            balles.append([ax, ay, dx_ / d * 13, dy_ / d * 13, 0])
+            POUV["ally_cd"] = 28
+        else:
+            POUV["ally_cd"] = 10
+
+
+def _maj_pouvoirs():
+    """Appelée à chaque pas de logique (1/60 s) pendant une partie."""
+    global joueur_x, joueur_y
+    if not POUV or not POUV.get("cfg") or POUV.get("erreur"):
+        return
+    try:
+        for cle in ("t_sprint", "t_radar", "t_ralenti", "cd"):
+            if POUV[cle] > 0:
+                POUV[cle] -= 1
+        # phase : si elle se termine alors que le joueur est dans un mur, elle se prolonge jusqu'à ce qu'il en sorte
+        if POUV["t_phase"] > 0:
+            POUV["t_phase"] -= 1
+            if POUV["t_phase"] == 0 and _collision_reelle(joueur_x, joueur_y):
+                POUV["t_phase"] = 1
+                POUV["coince"] += 1
+                if POUV["coince"] > 240:
+                    joueur_x, joueur_y = POUV["sure"]
+                    POUV["t_phase"], POUV["coince"] = 0, 0
+        if not _collision_reelle(joueur_x, joueur_y):
+            POUV["sure"] = (joueur_x, joueur_y)
+            POUV["coince"] = 0
+        if _cfg().get("faufile") and POUV["t_phase"] <= 0:
+            POUV["contre_mur"] = any(_collision_reelle(joueur_x + a, joueur_y + b) for a, b in ((6, 0), (-6, 0), (0, 6), (0, -6)))
+        else:
+            POUV["contre_mur"] = False
+        _maj_objets()
+        _maj_ami()
+    except Exception as e:
+        POUV["erreur"] = True
+        print("Pouvoirs désactivés (erreur) :", e)
+
+
+# ---------------------------------------------------------------- dessin
+def _boutons_pouvoirs():
+    R = 44
+    pos = [(BTN_TIR_X - BTN_TIR_RAYON - 62, BTN_TIR_Y + 8), (BTN_TIR_X - 30, BTN_TIR_Y - BTN_TIR_RAYON - 60),
+           (BTN_TIR_X - BTN_TIR_RAYON - 150, BTN_TIR_Y + 12)]
+    res = []
+    for i, a in enumerate(POUV.get("slots", [])[:3]):
+        x = min(max(pos[i][0], R + 4), LARGEUR - R - 4)
+        y = min(max(pos[i][1], R + 4), HAUTEUR - R - 4)
+        res.append((a, int(x), int(y), R))
+    return res
+
+
+def _toucher_pouvoir(x, y):
+    """Vrai si le doigt est sur un bouton de pouvoir (et déclenche le pouvoir)."""
+    if etat_actuel != ETAT_JEU or not POUV.get("slots"):
+        return False
+    for a, bx, by, R in _boutons_pouvoirs():
+        if math.hypot(x - bx, y - by) <= R + 14:
+            _activer_pouvoir(a)
+            return True
+    return False
+
+
+def _fleche_bord(sx, sy, couleur):
+    cx, cy = LARGEUR / 2, HAUTEUR / 2
+    dx_, dy_ = sx - cx, sy - cy
+    if dx_ == 0 and dy_ == 0:
+        return
+    t = min((cx - 40) / max(abs(dx_), 1e-6), (cy - 40) / max(abs(dy_), 1e-6))
+    px, py = cx + dx_ * t, cy + dy_ * t
+    a = math.atan2(dy_, dx_)
+    pts = [(px + math.cos(a) * 16, py + math.sin(a) * 16),
+           (px + math.cos(a + 2.5) * 13, py + math.sin(a + 2.5) * 13),
+           (px + math.cos(a - 2.5) * 13, py + math.sin(a - 2.5) * 13)]
+    DRAW.polygon(ecran, couleur, pts)
+    DRAW.polygon(ecran, BLANC_NEON, pts, 2)
+
+
+def _dessiner_pouvoirs_monde(ox, oy, t_ms):
+    """Effets dessinés dans le monde (sous les particules)."""
+    if not POUV.get("cfg"):
+        return
+    jx, jy = int(joueur_x + ox), int(joueur_y + oy)
+    if POUV["t_phase"] > 0:
+        dessiner_halo(jx, jy, 70, COUL_ACTION["fantome"], 0.7)
+        DRAW.circle(ecran, COUL_ACTION["fantome"], (jx, jy), 34 + int(3 * math.sin(t_ms / 90.0)), 2)
+    if POUV["t_sprint"] > 0:
+        dessiner_halo(jx, jy, 64, COUL_ACTION["sprint"], 0.5)
+    if _cfg().get("antenne"):
+        rr = 250 + int(10 * math.sin(t_ms / 300.0))
+        DRAW.circle(ecran, (30, 110, 140), (jx, jy), rr, 1)
+    if POUV["t_radar"] > 0:
+        pulse = 4 * math.sin(t_ms / 110.0)
+        for ex in liste_ennemis:
+            DRAW.circle(ecran, COUL_ACTION["radar"], (int(ex[0] + ox), int(ex[1] + oy)), int(34 + pulse), 2)
+        if boss_actif and not boss_vaincu:
+            DRAW.circle(ecran, COUL_ACTION["radar"], (int(boss_x + ox), int(boss_y + oy)), int(RAYON_CORPS_BOSS + 14 + pulse), 3)
+    for o in POUV["objets"]:
+        sx, sy = int(o["x"] + ox), int(o["y"] + oy)
+        if o["t"] == "gren":
+            prog = 1.0 - o["n"] / float(o["n0"])
+            haut = math.sin(math.pi * prog) * 46
+            DRAW.circle(ecran, (20, 20, 28), (sx, sy + 4), 8)
+            DRAW.circle(ecran, (90, 110, 60), (sx, int(sy - haut)), 9)
+            DRAW.circle(ecran, (200, 220, 140), (sx - 2, int(sy - haut - 2)), 3)
+        else:
+            dessiner_halo(sx, sy, 40, ORANGE_MEC, 0.9)
+            DRAW.line(ecran, ORANGE_MEC, (int(sx - o["vx"] * 2.4), int(sy - o["vy"] * 2.4)), (sx, sy), 7)
+            DRAW.circle(ecran, BLANC_NEON, (sx, sy), 6)
+    for e in POUV["explos"][:]:
+        e["n"] -= 1
+        if e["n"] <= 0:
+            POUV["explos"].remove(e)
+            continue
+        prog = 1.0 - e["n"] / float(e["n0"])
+        r = int(e["r"] * (0.25 + 0.75 * prog))
+        ex_, ey_ = int(e["x"] + ox), int(e["y"] + oy)
+        dessiner_halo(ex_, ey_, int(e["r"] * (1.1 - 0.4 * prog)), e["c"], 0.9 * (1.0 - prog))
+        DRAW.circle(ecran, e["c"], (ex_, ey_), r, max(2, int(7 * (1.0 - prog))))
+    if POUV.get("ally"):
+        ax, ay = int(POUV["ally"][0] + ox), int(POUV["ally"][1] + oy)
+        dessiner_halo(ax, ay, 26, CYAN_NEON, 0.6)
+        for dx_, dy_ in ((-9, -9), (9, -9), (-9, 9), (9, 9)):
+            DRAW.circle(ecran, (150, 200, 230), (ax + dx_, ay + dy_), 5)
+        DRAW.circle(ecran, (30, 40, 58), (ax, ay), 7)
+        DRAW.circle(ecran, CYAN_NEON, (ax + 2, ay), 3)
+
+
+def _dessiner_pouvoirs_hud(ox, oy, t_ms):
+    """Boutons, alertes et indications à l'écran."""
+    global _voile_ralenti
+    if not POUV.get("cfg"):
+        return
+    if POUV["t_ralenti"] > 0:
+        if _voile_ralenti is None:
+            _voile_ralenti = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
+            _voile_ralenti.fill((60, 120, 220, 34))
+        ecran.blit(_voile_ralenti, (0, 0))
+    # flèches vers les drones hors de l'écran (radar : tous ; écran holographique : ceux qui approchent)
+    if POUV["t_radar"] > 0 or _cfg().get("holo"):
+        for ex in liste_ennemis:
+            sx, sy = ex[0] + ox, ex[1] + oy
+            hors = sx < 24 or sx > LARGEUR - 24 or sy < 24 or sy > HAUTEUR - 24
+            if hors and (POUV["t_radar"] > 0 or math.hypot(ex[0] - joueur_x, ex[1] - joueur_y) < 1100):
+                _fleche_bord(sx, sy, ROUGE_ALERTE)
+        if POUV["t_radar"] > 0 and boss_actif and not boss_vaincu:
+            sx, sy = boss_x + ox, boss_y + oy
+            if sx < 24 or sx > LARGEUR - 24 or sy < 24 or sy > HAUTEUR - 24:
+                _fleche_bord(sx, sy, VIOLET_CYBER)
+    # boutons
+    for a, bx, by, R in _boutons_pouvoirs():
+        col = COUL_ACTION[a]
+        if a in ("grenades", "roquettes"):
+            n = POUV["gren"] if a == "grenades" else POUV["roq"]
+            pret, actif, bas = n > 0, False, "x%d" % n
+        else:
+            cle = {"fantome": "t_phase", "sprint": "t_sprint", "radar": "t_radar", "ralenti": "t_ralenti"}[a]
+            actif = POUV[cle] > 0
+            pret = (a not in POUV["utilise"])
+            bas = ("%ds" % (POUV[cle] // 60 + 1)) if actif else ("PRÊT" if pret else "UTILISÉ")
+        c_ring = col if (pret or actif) else (90, 90, 100)
+        dessiner_halo(bx, by, int(R * 1.5), c_ring, 0.55 if actif else (0.35 if pret else 0.1))
+        DRAW.circle(ecran, (8, 10, 24), (bx, by), R)
+        if actif:
+            DRAW.circle(ecran, eclaircir(col, 0.1), (bx, by), R - 5)
+        DRAW.circle(ecran, c_ring, (bx, by), R, 4)
+        t1 = rendu_texte(police_petite, LIB_ACTION[a], True, NOIR_ESPACE if actif else c_ring)
+        t2 = rendu_texte(police_petite, bas, True, NOIR_ESPACE if actif else BLANC_NEON)
+        ecran.blit(t1, (bx - t1.get_width() // 2, by - t1.get_height() - 1))
+        ecran.blit(t2, (bx - t2.get_width() // 2, by + 2))
+    # indications des protections et talents
+    lignes = []
+    if POUV["boss_boucliers"] > 0:
+        lignes.append(("BOUCLIER BOSS x%d" % POUV["boss_boucliers"], (120, 220, 255)))
+    if POUV["survie"] > 0:
+        lignes.append(("PEAU D'ACIER x%d" % POUV["survie"], (255, 120, 140)))
+    if POUV["contre_mur"]:
+        lignes.append(("COLLÉ AU MUR  +20 %", (120, 255, 170)))
+    if POUV["t_phase"] <= 0 and POUV.get("coince", 0) > 0:
+        lignes.append(("SORS DU MUR !", ROUGE_ALERTE))
+    for i, (txt, c) in enumerate(lignes):
+        ecran.blit(rendu_texte(police_petite, txt, True, c), (40, 92 + i * 24))
+
+# ===== POUVOIRS FIN
 
 
 GRILLES_EDITEUR = (0, 32, 64, 96)      # 0 = pas de grille
@@ -4032,6 +4499,8 @@ async def main():
                 clic_x, clic_y = pos_ev(event)
                 if etat_actuel == ETAT_JEU and rect_bouton_pause.collidepoint(clic_x, clic_y) and not partie_gagnee and not partie_perdue:
                     basculer_pause()
+                elif etat_actuel == ETAT_JEU and not en_pause and not partie_gagnee and not partie_perdue and _toucher_pouvoir(clic_x, clic_y):
+                    pass
                 elif etat_actuel == ETAT_JEU and not en_pause and rect_tir_tactile.collidepoint(clic_x, clic_y):
                     tirer_balle = True
                     tir_maintenu = True
@@ -4055,6 +4524,8 @@ async def main():
                 if etat_actuel == ETAT_JEU and not partie_gagnee and not partie_perdue:
                     if rect_bouton_pause.collidepoint(clic_x, clic_y):
                         basculer_pause()
+                    elif not en_pause and _toucher_pouvoir(clic_x, clic_y):
+                        pass
                     elif not en_pause and rect_tir_tactile.collidepoint(clic_x, clic_y):
                         tirer_balle = True
                         tir_maintenu = True
@@ -4275,6 +4746,7 @@ async def main():
                 if _pas > 0 and (partie_perdue or partie_gagnee):
                     break
                 temps_restant_frames -= 1
+                _maj_pouvoirs()
                 if ETAT_JOUEUR["invuln"] > 0:
                     ETAT_JOUEUR["invuln"] -= 1
                 if temps_restant_frames <= 0:
@@ -4308,7 +4780,7 @@ async def main():
                     vx, vy = manette_x - JOY_CENTRE_X, manette_y - JOY_CENTRE_Y
                     dist = math.hypot(vx, vy)
                     if dist > CTRL["dz"]:
-                        dx, dy = (vx / dist) * joueur_vitesse, (vy / dist) * joueur_vitesse
+                        dx, dy = (vx / dist) * joueur_vitesse * _facteur_vitesse(), (vy / dist) * joueur_vitesse * _facteur_vitesse()
                         angle_visée_x, angle_visée_y = vx / dist, vy / dist
 
                         if MODE_GRAPHIQUE == "REALISTE":
@@ -4327,7 +4799,7 @@ async def main():
                 if tir_maintenu:
                     if minuteur_cadence_tir <= 0:
                         tirer_balle = True
-                        minuteur_cadence_tir = STATS["cadence"]
+                        minuteur_cadence_tir = _cadence()
                     else:
                         minuteur_cadence_tir -= 1
 
@@ -4346,9 +4818,9 @@ async def main():
                     if cible:
                         bx, by = cible[0] - joueur_x, cible[1] - joueur_y
                         db = math.hypot(bx, by)
-                        balles.append([joueur_x, joueur_y, (bx / db) * 13, (by / db) * 13, STATS["perfo"]])
+                        balles.append([joueur_x, joueur_y, (bx / db) * 13, (by / db) * 13, _perfo()])
                     else:
-                        balles.append([joueur_x, joueur_y, angle_visée_x * 13, angle_visée_y * 13, STATS["perfo"]])
+                        balles.append([joueur_x, joueur_y, angle_visée_x * 13, angle_visée_y * 13, _perfo()])
 
                 # CORRECTION DE LA FUITE DE MÉMOIRE DES BALLES
                 for b in balles[:]:
@@ -4364,8 +4836,9 @@ async def main():
 
                 for ex in liste_ennemis[:]:
                     ang = math.atan2(joueur_y - ex[1], joueur_x - ex[0]) + random.uniform(-0.08, 0.08)
-                    ex[0] += math.cos(ang) * ex[2]
-                    ex[1] += math.sin(ang) * ex[2]
+                    _fe = _facteur_ennemi(ex[0], ex[1])
+                    ex[0] += math.cos(ang) * ex[2] * _fe
+                    ex[1] += math.sin(ang) * ex[2] * _fe
                     if QUALITE["niveau"] >= 1 and len(liste_ennemis) <= 8 and random.random() < 0.3:
                         creer_propulsion(ex[0], ex[1], math.cos(ang) * ex[2], math.sin(ang) * ex[2], ROUGE_ALERTE)
                     for b in balles[:]:
@@ -4389,7 +4862,7 @@ async def main():
 
                 if boss_actif and not boss_vaincu and not partie_perdue and not partie_gagnee:
                     angle_boss = math.atan2(joueur_y - boss_y, joueur_x - boss_x) + random.uniform(-0.05, 0.05)
-                    vitesse_deplacement_boss = 1.6
+                    vitesse_deplacement_boss = 1.6 * _facteur_ennemi(boss_x, boss_y)
                     boss_x += math.cos(angle_boss) * vitesse_deplacement_boss
                     boss_y += math.sin(angle_boss) * vitesse_deplacement_boss
 
@@ -4405,7 +4878,7 @@ async def main():
                                 if SON_ACTIF:
                                     son_victoire.play()
 
-                    minuteur_tir_boss -= 1
+                    minuteur_tir_boss -= 0.5 if POUV.get("t_ralenti", 0) > 0 else 1
                     if minuteur_tir_boss <= 0 and not boss_vaincu:
                         dir_x, dir_y = joueur_x - boss_x, joueur_y - boss_y
                         dist_dir = math.hypot(dir_x, dir_y)
@@ -4420,8 +4893,8 @@ async def main():
                             boss_y += (boss_y - joueur_y) / d_rep * 170
 
                 for boule in boules_feu[:]:
-                    boule[0] += boule[2]
-                    boule[1] += boule[3]
+                    boule[0] += boule[2] * _facteur_boule()
+                    boule[1] += boule[3] * _facteur_boule()
                     cfx, cfy = int(boule[0] // TAILLE_CASE), int(boule[1] // TAILLE_CASE)
                     if not (0 <= cfx < len(CARTE[0]) and 0 <= cfy < len(CARTE)):
                         boules_feu.remove(boule)
@@ -4430,6 +4903,8 @@ async def main():
                         boules_feu.remove(boule)
                         continue
                     if not partie_perdue and math.hypot(joueur_x - boule[0], joueur_y - boule[1]) < (TAILLE_PERSO / 2 + 14):
+                        if _esquive_boule(boule):
+                            continue                          # Faufilé : la boule de feu rate le joueur
                         subir_degats("BRÛLÉ PAR LE BOSS")
                         boules_feu.remove(boule)
 
@@ -4437,7 +4912,7 @@ async def main():
                 if 0 <= cx < len(CARTE[0]) and 0 <= cy < len(CARTE):
                     core_accessible = (not boss_actif) or boss_vaincu
                     if CARTE[cy][cx] == 2 and not hack_reussi and core_accessible:
-                        jauge_hack = min(jauge_hack + 0.7 * STATS["hack"], 100.0)
+                        jauge_hack = min(jauge_hack + 0.7 * _hack(), 100.0)
                         if jauge_hack >= 100.0:
                             hack_reussi = True
                     elif not hack_reussi:
@@ -4872,6 +5347,8 @@ async def main():
                 DRAW.circle(ecran, BLANC_NEON, (bx_e, by_e), 4)
                 dessiner_halo(bx_e, by_e, 24, LASER["main"], 0.95, 0)
 
+            _dessiner_pouvoirs_monde(ox, oy, t_ms)
+
             for potion in liste_potions:
                 px_ecran, py_ecran = int(potion[0] + ox), int(potion[1] + oy)
                 pulsation = 3 * math.sin(pygame.time.get_ticks() / 150)
@@ -4934,7 +5411,10 @@ async def main():
                 jx_e, jy_e = int(joueur_x + ox), int(joueur_y + oy) + int(3 * math.sin(t_ms / 230.0))
                 if ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0:          # clignote après un coup encaissé
                     if MODE_GRAPHIQUE == "REALISTE":
+                        if POUV.get("t_phase", 0) > 0:
+                            img_joueur_actuel.set_alpha(120)                  # phase : le joueur devient transparent
                         ecran.blit(img_joueur_actuel, (jx_e - img_joueur_actuel.get_width() // 2, jy_e - img_joueur_actuel.get_height() // 2))
+                        img_joueur_actuel.set_alpha(255)
                     else:
                         DRAW.rect(ecran, VERT_FLUO, (jx_e - TAILLE_PERSO // 2, jy_e - TAILLE_PERSO // 2, TAILLE_PERSO, TAILLE_PERSO))
                 if ETAT_JOUEUR["bouclier"] > 0:
@@ -5022,6 +5502,7 @@ async def main():
                 ecran.blit(txt_vie_boss, (LARGEUR // 2 - txt_vie_boss.get_width() // 2, 144))
 
             dessiner_commandes(manette_x, manette_y, tir_maintenu)
+            _dessiner_pouvoirs_hud(ox, oy, t_ms)
 
             if partie_gagnee:
                 dessiner_ecran_victoire()
