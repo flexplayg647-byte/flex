@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "Flex Cyberpunk",
+  "short_name": "Flex Cyberpunk",
+  "description": "Jeu d'action cyberpunk : pirate les noyaux, affronte les boss, collectionne les personnages.",
+  "lang": "fr",
+  "start_url": "./?source=app",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "categories": ["games"],
+  "icons": [
+    { "src": "pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
