@@ -28,7 +28,7 @@ jobs:
         run: |
           cp admin.html game/build/web/admin.html
           cp skins_sheet.png game/build/web/skins_sheet.png
-          cp manifest.webmanifest sw.js pwa-icon-192.png pwa-icon-512.png game/build/web/
+          cp manifest.webmanifest sw.js install.js pwa-icon-192.png pwa-icon-512.png game/build/web/
           python pwa_inject.py game/build/web
       - uses: actions/upload-pages-artifact@v3
         with:
