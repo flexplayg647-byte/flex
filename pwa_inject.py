@@ -16,6 +16,11 @@ TETE = """
 <link rel="icon" type="image/png" sizes="192x192" href="pwa-icon-192.png">
 <link rel="apple-touch-icon" href="pwa-icon-192.png">
 <meta name="mobile-web-app-capable" content="yes">
+<script>
+/* garde la proposition d'installation de Chrome pour le bouton "Telecharger le jeu" */
+window.__flexInstallEvt = null;
+window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); window.__flexInstallEvt = e; });
+</script>
 """
 PIED = """
 <script>
@@ -25,6 +30,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
+<script src="install.js"></script>
 """
 
 if 'rel="manifest"' not in html:
@@ -32,6 +38,11 @@ if 'rel="manifest"' not in html:
         html = re.sub(r"</head>", TETE + "</head>", html, count=1, flags=re.I)
     else:
         html = TETE + html
+if "__flexInstallEvt" not in html and 'rel="manifest"' in html:
+    # page déjà modifiée par une ancienne version du script : on ajoute seulement ce qui manque
+    html = re.sub(r"</head>", TETE.split('<meta name="mobile-web-app-capable" content="yes">')[1] + "</head>", html, count=1, flags=re.I)
+if 'src="install.js"' not in html and "serviceWorker.register" in html:
+    html = re.sub(r"</body>", '<script src="install.js"></script>\n</body>', html, count=1, flags=re.I)
 if "serviceWorker.register" not in html:
     if re.search(r"</body>", html, re.I):
         html = re.sub(r"</body>", PIED + "</body>", html, count=1, flags=re.I)

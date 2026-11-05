@@ -489,6 +489,44 @@ def _appliquer_skin():
         print("Skin indisponible :", e)
 
 
+_inst_visible = False
+_inst_tick = 0
+
+
+def _install_visible():
+    """Vrai tant que le jeu n'est pas installé (vérifié 1 fois par seconde)."""
+    global _inst_visible, _inst_tick
+    if not IS_WEB:
+        return False
+    _inst_tick += 1
+    if _inst_tick % 60 == 1:
+        try:
+            _inst_visible = bool(_pfs.window.flexInstall.peut)
+        except Exception:
+            _inst_visible = False
+    return _inst_visible
+
+
+def _ouvrir_install():
+    """Bouton INSTALLER : ouvre la fenêtre d'installation ou l'animation guide."""
+    if not IS_WEB:
+        return
+    try:
+        _pfs.window.flexInstall.ouvrir()
+    except Exception:
+        pass
+
+
+def _install_rappel_victoire():
+    """Petit rappel d'installation après une première victoire (une seule fois)."""
+    if not IS_WEB:
+        return
+    try:
+        _pfs.window.flexInstall.victoire()
+    except Exception:
+        pass
+
+
 def _ouvrir_skins():
     """Ouvre l'écran des personnages (page web par-dessus le jeu)."""
     if not IS_WEB:
@@ -2606,6 +2644,7 @@ rect_icone_infos = pygame.Rect(40, 30, 70, 70)
 rect_icone_params = pygame.Rect(130, 30, 70, 70)
 rect_icone_classement = pygame.Rect(220, 30, 70, 70)
 rect_icone_skins = pygame.Rect(310, 30, 70, 70)
+rect_icone_install = pygame.Rect(400, 30, 70, 70)
 rect_recharger_photo = pygame.Rect(LARGEUR // 2 - 140, 280, 280, 45)
 rect_champ_pseudo = pygame.Rect(LARGEUR // 2 - 220, 350, 440, 60)
 rect_fleche_gauche = pygame.Rect(LARGEUR // 2 - 220, 450, 60, 60)
@@ -4159,6 +4198,8 @@ def demarrer_ecran_fin(victoire):
     FIN["record"] = False
     _stat("level_win" if victoire else "level_lose", niveau_actuel)
     if victoire:
+        _install_rappel_victoire()
+    if victoire:
         ratio = max(0, temps_restant_frames) / float(MISSION["duree"])
         etoiles = 3 if ratio >= 0.45 else (2 if ratio >= 0.20 else 1)
         cle = str(niveau_actuel)
@@ -4692,6 +4733,8 @@ async def main():
                 _ouvrir_classement()
             elif IS_WEB and rect_icone_skins.collidepoint(clic_x, clic_y):
                 _ouvrir_skins()
+            elif IS_WEB and _inst_visible and rect_icone_install.collidepoint(clic_x, clic_y):
+                _ouvrir_install()
             elif rect_icone_params.collidepoint(clic_x, clic_y):
                 lancer_transition(("params", ETAT_MENU))
         elif etat_actuel == ETAT_NIVEAUX and clic_detecte:
@@ -5026,6 +5069,17 @@ async def main():
                 DRAW.ellipse(ecran, CYAN_NEON, (cx_s - 16, cy_s + 3, 32, 22))
                 t_sk = rendu_texte(police_petite, "SKINS", True, CYAN_NEON)
                 ecran.blit(t_sk, (cx_s - t_sk.get_width() // 2, rect_icone_skins.bottom + 6))
+                if _install_visible():
+                    cx_i, cy_i = rect_icone_install.center
+                    VERT_INSTALL = (120, 255, 170)
+                    dessiner_halo(cx_i, cy_i, 60, VERT_INSTALL, 0.5, 2)
+                    DRAW.circle(ecran, GRIS_HACKER, (cx_i, cy_i), 35)
+                    DRAW.circle(ecran, VERT_INSTALL, (cx_i, cy_i), 35, 3)
+                    DRAW.rect(ecran, VERT_INSTALL, (cx_i - 5, cy_i - 18, 10, 18))
+                    DRAW.polygon(ecran, VERT_INSTALL, [(cx_i - 14, cy_i), (cx_i + 14, cy_i), (cx_i, cy_i + 14)])
+                    DRAW.rect(ecran, VERT_INSTALL, (cx_i - 17, cy_i + 19, 34, 5))
+                    t_in = rendu_texte(police_petite, "INSTALLER", True, VERT_INSTALL)
+                    ecran.blit(t_in, (cx_i - t_in.get_width() // 2, rect_icone_install.bottom + 6))
 
         elif etat_actuel == ETAT_NIVEAUX:
             dessiner_fond_menu()
