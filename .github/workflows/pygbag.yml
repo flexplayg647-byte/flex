@@ -19,14 +19,17 @@ jobs:
         run: |
           mkdir game
           cp main.py game/
-          cp *.png *.wav *.ogg game/
+          cp $(ls *.png | grep -v '^pwa-') game/
+          cp *.wav *.ogg game/
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pip install pygbag
       - run: python -m pygbag --build game
-      - name: Ajouter la page admin
+      - name: Ajouter la page admin et la fiche d'application
         run: |
           cp admin.html game/build/web/admin.html
           cp skins_sheet.png game/build/web/skins_sheet.png
+          cp manifest.webmanifest sw.js pwa-icon-192.png pwa-icon-512.png game/build/web/
+          python pwa_inject.py game/build/web
       - uses: actions/upload-pages-artifact@v3
         with:
           path: game/build/web
