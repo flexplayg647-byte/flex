@@ -188,9 +188,24 @@ var CSS="*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}"+
 ".nm{flex:1;min-width:0;font-weight:800;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
 ".sc{text-align:right;font-size:12px;color:#8a94c8;line-height:1.3}.sc b{color:#00ff80;font-size:15px}"+
 ".mo{font-size:13px;color:#00ebff;margin:6px 0 2px;font-weight:700;text-align:center}";
-function fermer(){var f=document.getElementById("flexui");if(f&&f.parentNode){f.parentNode.removeChild(f);}}
+function fermer(){var f=document.getElementById("flexui");if(f&&f.parentNode){f.parentNode.removeChild(f);}window.flexModal=false;}
+function sortirPleinEcran(cb){
+  try{
+    if(document.fullscreenElement&&document.exitFullscreen){
+      var r=document.exitFullscreen();
+      if(r&&r.then){r.then(function(){setTimeout(cb,250);}).catch(function(){setTimeout(cb,250);});return;}
+    }
+  }catch(e){}
+  setTimeout(cb,50);
+}
+function pseudoAlea(){
+  var a=["Neo","Cyber","Ghost","Nova","Volt","Zero","Apex","Rogue","Pixel","Storm","Blaze","Hex","Echo","Viper","Onyx","Flux"];
+  var b=["Wolf","Fox","Hawk","Rider","Blade","Spark","Byte","Drone","Raven","Titan","Ninja","Pilot"];
+  return a[Math.floor(Math.random()*a.length)]+b[Math.floor(Math.random()*b.length)]+(10+Math.floor(Math.random()*90));
+}
 function ouvrir(cb){
   fermer();
+  window.flexModal=true;
   var f=document.createElement("iframe");
   f.id="flexui";
   f.style.cssText="position:fixed;left:0;top:0;width:100%;height:100%;border:0;z-index:2147483647;background:transparent";
@@ -212,12 +227,14 @@ A.savePseudo=function(p,cb){
 function dlgPseudo(u){
   ouvrir(function(d){
     var photo=u.photoURL?"<img class='av' referrerpolicy='no-referrer' src='"+esc(u.photoURL)+"'>":"";
-    d.getElementById("box").innerHTML="<div class='pn'><div class='t'>FLEX CYBERPUNK</div><div class='s'>IDENTIT&Eacute; DU JOUEUR</div>"+photo+
+    d.getElementById("box").className="kbd";
+    d.getElementById("box").innerHTML="<div class='pn kbp'><div class='t'>FLEX CYBERPUNK</div><div class='s'>IDENTIT&Eacute; DU JOUEUR</div>"+photo+
       "<div class='h'>Choisis ton pseudo pour le classement.<br>Il sera visible par tous les joueurs.</div>"+
-      "<input id='p' maxlength='16' autocomplete='off' autocapitalize='off' spellcheck='false' placeholder='TON PSEUDO'>"+
+      "<input id='p' maxlength='16' autocomplete='off' autocapitalize='off' autocorrect='off' spellcheck='false' enterkeyhint='done' inputmode='text' placeholder='TON PSEUDO'>"+
       "<div class='r'>3 &agrave; 16 caract&egrave;res : lettres, chiffres, espace, _ ou -</div><div class='e' id='e'></div>"+
-      "<div class='b'><button id='ok' class='bp'>VALIDER</button><button id='no' class='bs'>PLUS TARD</button></div></div>";
+      "<div class='b'><button id='ok' class='bp'>VALIDER</button><button id='al' class='bs'>&#127922; AL&Eacute;ATOIRE</button><button id='no' class='bs'>PLUS TARD</button></div></div>";
     var inp=d.getElementById("p"),e=d.getElementById("e"),ok=d.getElementById("ok");
+    d.getElementById("al").onclick=function(){inp.value=pseudoAlea();e.className="e";e.innerHTML="";};
     ok.onclick=function(){
       e.className="e";e.innerHTML="Enregistrement...";ok.disabled=true;
       A.savePseudo(inp.value,function(r){
@@ -227,7 +244,7 @@ function dlgPseudo(u){
     };
     inp.onkeydown=function(ev){if(ev.key==="Enter"){ok.onclick();}};
     d.getElementById("no").onclick=fermer;
-    setTimeout(function(){try{inp.focus();}catch(x){}},300);
+    sortirPleinEcran(function(){try{inp.focus();}catch(x){}});
   });
 }
 function plur(n,s){return n+" "+s+(n>1?"s":"");}
@@ -298,7 +315,8 @@ var ICO={bouclier:"&#128737;",survie:"&#10084;",fantome:"&#128123;",sprint:"&#98
 var LBL={p:"SUPER POUVOIR",t:"TALENT NATUREL",e:"&Eacute;QUIPEMENT ACTIF"};
 var LCOL={p:"#ffd646",t:"#78ffaa",e:"#ff8c3c"};
 var MSG2={auth:"Tu n'es plus connect&eacute;. Reconnecte-toi avec Google.",format:"Cl&eacute; invalide : v&eacute;rifie les caract&egrave;res.",cle_inconnue:"Cl&eacute; introuvable. V&eacute;rifie qu'elle est copi&eacute;e en entier.",cle_deja_utilisee:"Cette cl&eacute; a d&eacute;j&agrave; servi.",deja_possede:"Tu poss&egrave;des d&eacute;j&agrave; ce personnage.",revoquee:"Cette cl&eacute; n'est plus valide.",expiree:"Cette cl&eacute; n'est plus valide.",mauvais_produit:"Cette cl&eacute; ne correspond pas &agrave; ce produit.",trop_d_essais:"Trop d'essais. R&eacute;essaie dans une heure.",skin:"Personnage inconnu.",serveur:"Service indisponible. R&eacute;essaie dans un instant.",reseau:"Pas de connexion. R&eacute;essaie dans un instant.",activation_refusee:"Activation refus&eacute;e. Contacte le support.",chariow:"Service indisponible. R&eacute;essaie dans un instant."};
-CSS+="#box{width:100%;height:100%;display:flex;align-items:center;justify-content:center}"+
+CSS+="@media (max-height:440px){#box.kbd{align-items:flex-start}.pn.kbp{margin-top:6px;padding:10px 14px}.pn.kbp .av,.pn.kbp .s,.pn.kbp .h,.pn.kbp .r{display:none}.pn.kbp .t{font-size:20px}.pn.kbp input{padding:9px 10px;font-size:18px}.pn.kbp .e{min-height:16px;margin:4px 0 0}.pn.kbp button{padding:10px 6px;font-size:14px}.pn.kbp .b{margin-top:6px}}"+
+"#box{width:100%;height:100%;display:flex;align-items:center;justify-content:center}"+
 ".pn.wide{width:min(96%,920px)}"+
 ".hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:10px}"+
 ".hd .t{font-size:clamp(18px,4.5vw,26px)}"+
@@ -397,9 +415,11 @@ function dlgDetail(i){
   });
 }
 function panneauCle(d,i,s){
-  d.getElementById("dr").innerHTML="<div class='h'>Colle la cl&eacute; re&ccedil;ue par e-mail apr&egrave;s ton achat. Elle d&eacute;bloquera : <b>"+esc(s.n)+"</b>.</div><input id='kc' class='kb' maxlength='64' autocomplete='off' autocapitalize='characters' spellcheck='false' placeholder='XXXX-XXXX-XXXX-XXXX'><div class='r'>Une cl&eacute; = un personnage, une seule utilisation.</div>";
+  d.getElementById("dr").innerHTML="<div class='h'>Colle la cl&eacute; re&ccedil;ue par e-mail apr&egrave;s ton achat. Elle d&eacute;bloquera : <b>"+esc(s.n)+"</b>.</div><input id='kc' class='kb' maxlength='64' autocomplete='off' autocapitalize='characters' autocorrect='off' spellcheck='false' enterkeyhint='done' placeholder='XXXX-XXXX-XXXX-XXXX'><div class='r'>Une cl&eacute; = un personnage, une seule utilisation.</div>";
+  d.getElementById("box").className="kbd";
+  var pn=d.querySelector(".pn");if(pn){pn.className="pn col wide kbp";}
   var b=d.querySelector(".b");
-  b.innerHTML="<button id='bk2' class='bs'>ANNULER</button><button id='vl' class='bp'>VALIDER</button>";
+  b.innerHTML="<button id='bk2' class='bs'>ANNULER</button><button id='cl' class='bs'>COLLER</button><button id='vl' class='bp'>VALIDER</button>";
   var e=d.getElementById("e"),vl=d.getElementById("vl"),inp=d.getElementById("kc");
   d.getElementById("bk2").onclick=function(){dlgDetail(i);};
   vl.onclick=function(){
@@ -419,7 +439,12 @@ function panneauCle(d,i,s){
     });
   };
   inp.onkeydown=function(ev){if(ev.key==="Enter"){vl.onclick();}};
-  setTimeout(function(){try{inp.focus();}catch(x){}},300);
+  d.getElementById("cl").onclick=function(){
+    try{
+      d.defaultView.navigator.clipboard.readText().then(function(t){inp.value=String(t||"").trim().slice(0,64);}).catch(function(){e.className="e";e.innerHTML="Colle la cl&eacute; avec un appui long dans le champ.";});
+    }catch(x){e.className="e";e.innerHTML="Colle la cl&eacute; avec un appui long dans le champ.";}
+  };
+  sortirPleinEcran(function(){try{inp.focus();}catch(x){}});
 }
 A.showSkins=function(){
   dlgSkins();
@@ -1097,12 +1122,18 @@ if IS_WEB:
             pass
         _FLIP_REEL()
 
+    def _modal_web():
+        try:
+            return bool(getattr(_pf.window, "flexModal", False))
+        except Exception:
+            return False
+
     def _event_get_web(*a, **k):
         evs = _EVENT_REEL(*a, **k)
         f = _FX
         for e in evs:
             try:
-                if e.type in (pygame.FINGERDOWN, pygame.MOUSEBUTTONDOWN) and not _CLOUD.get("gate") and not _pf.window.document.fullscreenElement:
+                if e.type in (pygame.FINGERDOWN, pygame.MOUSEBUTTONDOWN) and not _CLOUD.get("gate") and not _modal_web() and not _pf.window.document.fullscreenElement:
                     _pf.window.document.documentElement.requestFullscreen()      # cache la barre de Chrome
                     try:
                         _pf.window.screen.orientation.lock("landscape")
