@@ -198,6 +198,15 @@ function sortirPleinEcran(cb){
   }catch(e){}
   setTimeout(cb,50);
 }
+var TACT=(("ontouchstart" in window)||(navigator.maxTouchPoints>0));
+function saisir(inp,question,cb){
+  sortirPleinEcran(function(){
+    var v=null;
+    try{v=window.prompt(question,inp.value||"");}catch(e){}
+    if(v!==null&&v!==undefined){inp.value=String(v).trim();}
+    if(cb){cb();}
+  });
+}
 function pseudoAlea(){
   var a=["Neo","Cyber","Ghost","Nova","Volt","Zero","Apex","Rogue","Pixel","Storm","Blaze","Hex","Echo","Viper","Onyx","Flux"];
   var b=["Wolf","Fox","Hawk","Rider","Blade","Spark","Byte","Drone","Raven","Titan","Ninja","Pilot"];
@@ -230,7 +239,7 @@ function dlgPseudo(u){
     d.getElementById("box").className="kbd";
     d.getElementById("box").innerHTML="<div class='pn kbp'><div class='t'>FLEX CYBERPUNK</div><div class='s'>IDENTIT&Eacute; DU JOUEUR</div>"+photo+
       "<div class='h'>Choisis ton pseudo pour le classement.<br>Il sera visible par tous les joueurs.</div>"+
-      "<input id='p' maxlength='16' autocomplete='off' autocapitalize='off' autocorrect='off' spellcheck='false' enterkeyhint='done' inputmode='text' placeholder='TON PSEUDO'>"+
+      "<input id='p' maxlength='16' autocomplete='off' autocapitalize='off' autocorrect='off' spellcheck='false' enterkeyhint='done' inputmode='text' placeholder='"+(TACT?"TOUCHE ICI POUR &Eacute;CRIRE":"TON PSEUDO")+"'"+(TACT?" readonly":"")+">"+
       "<div class='r'>3 &agrave; 16 caract&egrave;res : lettres, chiffres, espace, _ ou -</div><div class='e' id='e'></div>"+
       "<div class='b'><button id='ok' class='bp'>VALIDER</button><button id='al' class='bs'>&#127922; AL&Eacute;ATOIRE</button><button id='no' class='bs'>PLUS TARD</button></div></div>";
     var inp=d.getElementById("p"),e=d.getElementById("e"),ok=d.getElementById("ok");
@@ -244,7 +253,11 @@ function dlgPseudo(u){
     };
     inp.onkeydown=function(ev){if(ev.key==="Enter"){ok.onclick();}};
     d.getElementById("no").onclick=fermer;
-    sortirPleinEcran(function(){try{inp.focus();}catch(x){}});
+    if(TACT){
+      inp.onclick=function(){saisir(inp,"Choisis ton pseudo (3 \u00e0 16 caract\u00e8res : lettres, chiffres, espace, _ ou -) :");};
+    }else{
+      sortirPleinEcran(function(){try{inp.focus();}catch(x){}});
+    }
   });
 }
 function plur(n,s){return n+" "+s+(n>1?"s":"");}
@@ -415,7 +428,7 @@ function dlgDetail(i){
   });
 }
 function panneauCle(d,i,s){
-  d.getElementById("dr").innerHTML="<div class='h'>Colle la cl&eacute; re&ccedil;ue par e-mail apr&egrave;s ton achat. Elle d&eacute;bloquera : <b>"+esc(s.n)+"</b>.</div><input id='kc' class='kb' maxlength='64' autocomplete='off' autocapitalize='characters' autocorrect='off' spellcheck='false' enterkeyhint='done' placeholder='XXXX-XXXX-XXXX-XXXX'><div class='r'>Une cl&eacute; = un personnage, une seule utilisation.</div>";
+  d.getElementById("dr").innerHTML="<div class='h'>Colle la cl&eacute; re&ccedil;ue par e-mail apr&egrave;s ton achat. Elle d&eacute;bloquera : <b>"+esc(s.n)+"</b>.</div><input id='kc' class='kb' maxlength='64' autocomplete='off' autocapitalize='characters' autocorrect='off' spellcheck='false' enterkeyhint='done' placeholder='"+(TACT?"TOUCHE ICI POUR COLLER":"XXXX-XXXX-XXXX-XXXX")+"'"+(TACT?" readonly":"")+"><div class='r'>Une cl&eacute; = un personnage, une seule utilisation.</div>";
   d.getElementById("box").className="kbd";
   var pn=d.querySelector(".pn");if(pn){pn.className="pn col wide kbp";}
   var b=d.querySelector(".b");
@@ -444,7 +457,11 @@ function panneauCle(d,i,s){
       d.defaultView.navigator.clipboard.readText().then(function(t){inp.value=String(t||"").trim().slice(0,64);}).catch(function(){e.className="e";e.innerHTML="Colle la cl&eacute; avec un appui long dans le champ.";});
     }catch(x){e.className="e";e.innerHTML="Colle la cl&eacute; avec un appui long dans le champ.";}
   };
-  sortirPleinEcran(function(){try{inp.focus();}catch(x){}});
+  if(TACT){
+    inp.onclick=function(){saisir(inp,"Colle ou \u00e9cris ta cl\u00e9 de licence :");};
+  }else{
+    sortirPleinEcran(function(){try{inp.focus();}catch(x){}});
+  }
 }
 A.showSkins=function(){
   dlgSkins();
