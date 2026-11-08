@@ -3250,7 +3250,8 @@ RARETES_INFO = {"C": ("COMMUN", (170, 180, 200)), "R": ("RARE", (60, 150, 255)),
 SKINS_ANIMES = ("arcenciel", "flex_pulse")      # couleurs qui changent en continu
 ARTICLES_NIVEAUX = {a["cle"]: a for a in BOUTIQUE_ARTICLES if "cle" in a}
 
-DEFIS_VIDE = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0}
+DEFIS_VIDE = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
+              "diff": 3, "precedents": []}
 BOUTIQUE = {"pieces": 0, "niveaux": {}, "skins": ["cyan"], "skin_actif": "cyan", "faits": [], "etoiles": {},
             "defis": dict(DEFIS_VIDE)}
 STATS = {"bouclier": 0, "cadence": 8, "degats": 1.0, "perfo": 0, "hack": 1.0, "potion": 0, "chrono": 0}
@@ -3506,7 +3507,19 @@ DEFIS_MODELES = {
     "rapides":    (2, 4, 1, 35, 0),
     "haut_niveau": (5, 15, 1, 4, 60),
     "serie":      (2, 4, 1, 45, 0),
+    "total_etoiles": (6, 15, 1, 8, 0),
+    "piece_unique": (40, 100, 10, 0.8, 20),
+    "drones_mission": (15, 40, 5, 3, 0),
 }
+DEFIS_UNIQUES = ("haut_niveau", "piece_unique", "drones_mission")      # défis à réussir en une seule mission (objectif = 1)
+DEFIS_MAX = {"missions": 15, "drones": 300, "boss": 5, "pieces": 700, "rapides": 8, "serie": 6,
+             "total_etoiles": 30, "haut_niveau": 999, "piece_unique": 160, "drones_mission": 90}
+DEFIS_DIFF_MAX = 10          # difficulté de 1 à 10 ; elle monte quand le joueur réussit tout, baisse quand il réussit peu
+
+
+def bonus_defis(d):
+    """Le bonus de semaine complète grandit avec la difficulté."""
+    return max(150, DEFIS_BONUS + 25 * (d["diff"] - 3))
 DEF = {"scroll": 0.0, "drag": False, "id": None, "y": 0.0, "x0": 0.0, "y0": 0.0, "moved": False, "zones": []}
 
 
@@ -3526,12 +3539,19 @@ def texte_defi(defi):
         return f"Remporte une mission de niveau {n} ou plus"
     if k == "serie":
         return f"Enchaîne {n} victoires d'affilée"
+    if k == "total_etoiles":
+        return f"Gagne {n} étoiles au total"
+    if k == "piece_unique":
+        return f"Gagne {n} pièces en une seule mission"
+    if k == "drones_mission":
+        return f"Détruis {n} drones en une seule mission"
     return "Défi"
 
 
 def _defis_depuis_sauvegarde(dd):
     """Relit les défis d'une sauvegarde en vérifiant chaque valeur."""
-    d = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0}
+    d = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
+         "diff": 3, "precedents": []}
     if not isinstance(dd, dict):
         return d
     try:
@@ -3546,8 +3566,11 @@ def _defis_depuis_sauvegarde(dd):
         d["bonus"] = bool(dd.get("bonus", False))
         d["completes"] = max(0, int(dd.get("completes", 0)))
         d["serie"] = max(0, int(dd.get("serie", 0)))
+        d["diff"] = max(1, min(DEFIS_DIFF_MAX, int(dd.get("diff", 3))))
+        d["precedents"] = [k for k in dd.get("precedents", []) if k in DEFIS_MODELES]
     except Exception:
-        return {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0}
+        return {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
+                "diff": 3, "precedents": []}
     return d
 
 
@@ -3561,21 +3584,33 @@ def fin_semaine_s(semaine):
     return ((semaine + 1) * 7 - 3) * 86400
 
 
-def generer_defis(semaine):
-    """Tire au sort les défis de la semaine (même tirage pour tout le monde), adaptés à l'avancée du joueur."""
+def generer_defis(semaine, diff=3, precedents=()):
+    """Tire au sort les défis de la semaine. La difficulté (1 à 10) règle les cibles et les récompenses ;
+    les types de la semaine précédente ne reviennent pas tout de suite, pour éviter la répétition."""
     rng = random.Random(semaine * 7919 + 13)
     avance = int(globals().get("niveau_max_atteint", 0))
+    facteur = 0.75 + 0.15 * (diff - 1)
     types = list(DEFIS_MODELES.keys())
     if avance < 4:                       # pas encore de boss atteignable : pas de défi boss
         types.remove("boss")
+    nouveaux = [k for k in types if k not in precedents]
+    if len(nouveaux) >= DEFIS_NB:
+        types = nouveaux
     rng.shuffle(types)
     liste = []
     for k in types[:DEFIS_NB]:
         lo, hi, pas, par_unite, fixe = DEFIS_MODELES[k]
         n = rng.randrange(lo, hi + 1, pas)
         if k == "haut_niveau":
-            n = max(2, min(n, avance + 1))
-        liste.append({"id": k, "type": k, "cible": n, "recomp": int(fixe + n * par_unite)})
+            n = max(2, min(n + (diff - 3), avance + 1))
+        else:
+            n = max(1, min(DEFIS_MAX[k], int(round(n * facteur / pas)) * pas))
+            if k == "drones_mission":            # jamais plus de drones que les missions déjà débloquées n'en contiennent
+                n = min(n, max(5, int(min(70, 3 + 2 * avance) * 0.8) // 5 * 5))
+            elif k == "piece_unique":            # jamais plus que ce qu'une mission peut rapporter à ce stade
+                n = min(n, 40 if avance < 4 else (100 if avance < 9 else 160))
+        recomp = max(10, int((fixe + n * par_unite) * (1 + 0.04 * (diff - 3))))
+        liste.append({"id": k, "type": k, "cible": n, "recomp": recomp})
     return liste
 
 
@@ -3584,7 +3619,14 @@ def defis_verifier():
     d = BOUTIQUE["defis"]
     sem = max(semaine_courante(), d["semaine"])        # une horloge remise en arrière ne redonne jamais d'anciens défis
     if sem > d["semaine"] or not d["liste"]:
-        d.update(semaine=sem, liste=generer_defis(sem), progres={}, valides=[], bonus=False, serie=0)
+        if d["liste"]:
+            faits, total = len(d["valides"]), len(d["liste"])
+            if faits >= total:
+                d["diff"] = min(DEFIS_DIFF_MAX, d["diff"] + 1)        # tout réussi : la semaine suivante est plus dure
+            elif faits <= 1:
+                d["diff"] = max(1, d["diff"] - 1)                     # presque rien de réussi : un peu plus facile
+            d["precedents"] = [x["type"] for x in d["liste"]]
+        d.update(semaine=sem, liste=generer_defis(sem, d["diff"], d["precedents"]), progres={}, valides=[], bonus=False, serie=0)
         sauvegarder_boutique()
     return d
 
@@ -3596,8 +3638,9 @@ def _valider_defi(d, defi):
     if len(d["valides"]) >= len(d["liste"]) and not d["bonus"]:
         d["bonus"] = True
         d["completes"] += 1
-        BOUTIQUE["pieces"] += DEFIS_BONUS
-        MISSION["defis_ok"].append(("BONUS SEMAINE COMPLÈTE", DEFIS_BONUS))
+        b = bonus_defis(d)
+        BOUTIQUE["pieces"] += b
+        MISSION["defis_ok"].append(("BONUS SEMAINE COMPLÈTE", b))
         if d["completes"] >= DEFIS_SEMAINES_CHAMPION and "champion" not in BOUTIQUE["skins"]:
             BOUTIQUE["skins"].append("champion")
             MISSION["defis_ok"].append(("SKIN CHAMPION FLEX DÉBLOQUÉ", 0))
@@ -3626,8 +3669,14 @@ def defis_evenement(victoire, r):
             p += 1
         elif k == "serie":
             p = max(p, d["serie"])
-        d["progres"][defi["id"]] = min(p, defi["cible"] if k != "haut_niveau" else 1)
-        objectif = defi["cible"] if k != "haut_niveau" else 1
+        elif k == "total_etoiles" and victoire:
+            p += int(FIN.get("etoiles", 0))
+        elif k == "piece_unique" and victoire and r["total"] >= defi["cible"]:
+            p += 1
+        elif k == "drones_mission" and victoire and MISSION["drones"] >= defi["cible"]:
+            p += 1
+        objectif = 1 if k in DEFIS_UNIQUES else defi["cible"]
+        d["progres"][defi["id"]] = min(p, objectif)
         if d["progres"][defi["id"]] >= objectif:
             _valider_defi(d, defi)
 
@@ -3668,7 +3717,8 @@ def dessiner_defis():
     # temps restant avant le renouvellement
     restant = max(0, int(fin_semaine_s(d["semaine"]) - heure_serveur_s()))
     j, h, m = restant // 86400, (restant % 86400) // 3600, (restant % 3600) // 60
-    txt = f"Nouveaux défis dans {j} j {h} h" if j > 0 else f"Nouveaux défis dans {h} h {m} min"
+    reste_txt = f"{j} j {h} h" if j > 0 else f"{h} h {m} min"
+    txt = f"Difficulté {d['diff']}/{DEFIS_DIFF_MAX}   ·   Nouveaux défis dans {reste_txt}"
     t_temps = rendu_texte(police_petite, txt, True, JAUNE_CYBER)
     ecran.blit(t_temps, (LARGEUR // 2 - t_temps.get_width() // 2, int(y + 10)))
     y += 52
@@ -3700,13 +3750,13 @@ def dessiner_defis():
     for defi in d["liste"]:
         fait = defi["id"] in d["valides"]
         r = carte(y, VERT_FLUO if fait else eclaircir(BLEU_CYBER, 0.35))
-        objectif = 1 if defi["type"] == "haut_niveau" else defi["cible"]
+        objectif = 1 if defi["type"] in DEFIS_UNIQUES else defi["cible"]
         ligne(r, texte_defi(defi), d["progres"].get(defi["id"], 0), objectif, defi["recomp"], fait, "FAIT")
         y += pas
 
     # bonus de la semaine
     r = carte(y, VERT_FLUO if d["bonus"] else JAUNE_CYBER)
-    ligne(r, f"BONUS : termine les {nb} défis", len(d["valides"]), nb, DEFIS_BONUS, d["bonus"], "FAIT")
+    ligne(r, f"BONUS : termine les {nb} défis", len(d["valides"]), nb, bonus_defis(d), d["bonus"], "FAIT")
     y += pas
 
     # skin exclusif
