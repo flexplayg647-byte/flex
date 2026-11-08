@@ -3177,12 +3177,37 @@ BOUTIQUE_ARTICLES = [
 ]
 # Skins : identifiant, nom, prix, couleur du laser, couleur de sa traînée
 SKINS_LASER = [
+    # --- COMMUNS
     ("cyan", "Cyan néon", 0, (0, 235, 255), (0, 80, 150)),
     ("rose", "Rose synthwave", 150, (255, 70, 200), (140, 20, 100)),
     ("acide", "Vert acide", 150, (170, 255, 0), (70, 120, 0)),
+    ("rouge", "Rouge alerte", 200, (255, 60, 60), (130, 10, 20)),
+    ("blanc", "Blanc glacé", 200, (235, 245, 255), (90, 120, 160)),
+    # --- RARES
     ("or", "Or électrique", 350, (255, 205, 50), (140, 90, 0)),
     ("violet", "Violet plasma", 350, (175, 95, 255), (80, 30, 150)),
+    ("magenta", "Magenta pulsar", 500, (255, 0, 160), (110, 0, 90)),
+    ("azur", "Bleu électrique", 500, (60, 140, 255), (10, 50, 150)),
+    ("lave", "Lave en fusion", 700, (255, 120, 20), (150, 30, 0)),
+    ("emeraude", "Émeraude toxique", 700, (40, 255, 150), (0, 100, 60)),
+    # --- ÉPIQUES
+    ("aurore", "Aurore boréale", 1800, (120, 255, 220), (130, 60, 200)),
+    ("venin", "Venin radioactif", 2200, (200, 255, 40), (40, 110, 20)),
+    ("rubis", "Rubis sang", 2500, (255, 30, 90), (100, 0, 40)),
+    ("glace", "Cristal polaire", 3000, (190, 240, 255), (60, 150, 230)),
+    # --- LÉGENDAIRES (les deux derniers sont animés)
+    ("soleil_noir", "Soleil noir", 5000, (255, 255, 255), (70, 0, 140)),
+    ("arcenciel", "Arc-en-ciel", 6500, (255, 0, 0), (120, 0, 0)),
+    ("flex_pulse", "Flex Pulse", 8500, (0, 235, 255), (255, 0, 180)),
 ]
+# Rareté de chaque skin : C = commun, R = rare, E = épique, L = légendaire
+RARETE_SKIN = {"cyan": "C", "rose": "C", "acide": "C", "rouge": "C", "blanc": "C",
+               "or": "R", "violet": "R", "magenta": "R", "azur": "R", "lave": "R", "emeraude": "R",
+               "aurore": "E", "venin": "E", "rubis": "E", "glace": "E",
+               "soleil_noir": "L", "arcenciel": "L", "flex_pulse": "L"}
+RARETES_INFO = {"C": ("COMMUN", (170, 180, 200)), "R": ("RARE", (60, 150, 255)),
+                "E": ("ÉPIQUE", (190, 100, 255)), "L": ("LÉGENDAIRE", (255, 200, 50))}
+SKINS_ANIMES = ("arcenciel", "flex_pulse")      # couleurs qui changent en continu
 ARTICLES_NIVEAUX = {a["cle"]: a for a in BOUTIQUE_ARTICLES if "cle" in a}
 
 BOUTIQUE = {"pieces": 0, "niveaux": {}, "skins": ["cyan"], "skin_actif": "cyan", "faits": [], "etoiles": {}}
@@ -3241,10 +3266,32 @@ def recalculer_stats():
     STATS["chrono"] = (0, 300, 600, 900)[n.get("chrono", 0)]
 
 
+def couleurs_skin(sid):
+    """Couleurs (laser, traînée) d'un skin ; les skins animés changent avec le temps."""
+    t = pygame.time.get_ticks() / 1000.0
+    if sid == "arcenciel":
+        p = (int(127 + 128 * math.sin(t * 2.2)), int(127 + 128 * math.sin(t * 2.2 + 2.094)), int(127 + 128 * math.sin(t * 2.2 + 4.188)))
+        return p, (p[0] * 45 // 100, p[1] * 45 // 100, p[2] * 45 // 100)
+    if sid == "flex_pulse":
+        k = (math.sin(t * 3.0) + 1.0) / 2.0
+        a, b = (0, 235, 255), (255, 0, 180)
+        p = tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+        q = tuple(int(b[i] + (a[i] - b[i]) * k) for i in range(3))
+        return p, tuple(c * 55 // 100 for c in q)
+    for ident, _nom, _prix, principal, traine in SKINS_LASER:
+        if ident == sid:
+            return principal, traine
+    return SKINS_LASER[0][3], SKINS_LASER[0][4]
+
+
 def appliquer_skin():
-    for sid, _nom, _prix, principal, traine in SKINS_LASER:
-        if sid == BOUTIQUE["skin_actif"]:
-            LASER["main"], LASER["trail"] = principal, traine
+    LASER["main"], LASER["trail"] = couleurs_skin(BOUTIQUE["skin_actif"])
+
+
+def animer_skin():
+    """À appeler à chaque image : fait vivre les skins animés (arc-en-ciel, pulse)."""
+    if BOUTIQUE["skin_actif"] in SKINS_ANIMES:
+        LASER["main"], LASER["trail"] = couleurs_skin(BOUTIQUE["skin_actif"])
 
 
 def niveau_article(cle):
@@ -3289,17 +3336,17 @@ def calculer_recompense(victoire):
     drones = MISSION["drones"]
     mult_or = 1.0 + _cfg().get("or", 0) / 100.0                   # pouvoir « chasseur d'or »
     if not victoire:
-        return {"total": int(drones * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
+        return {"total": int((drones // 3) * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
     n = niveau_actuel
-    base = 30 + 8 * n
-    temps = max(0, temps_restant_frames) // 60 // 2
-    bonus_drones = drones * 2
-    boss = (100 + 20 * ((n + 1) // 5)) if niveau_data["est_boss"] else 0
+    base = 10 + 2 * n
+    temps = max(0, temps_restant_frames) // 60 // 6
+    bonus_drones = drones // 2
+    boss = (60 + 10 * ((n + 1) // 5)) if niveau_data["est_boss"] else 0
     total = base + temps + bonus_drones + boss
     reduite = n in BOUTIQUE["faits"]
     if reduite:
-        total //= 2
-    total = int(total * mult_or)
+        total //= 4                                  # niveau déjà réussi : gains divisés par 4
+    total = max(1, int(total * mult_or))
     return {"total": total, "base": base, "temps": temps, "drones": bonus_drones, "boss": boss, "reduite": reduite}
 
 
@@ -3516,7 +3563,12 @@ def dessiner_boutique():
     for sid, nom, prix, principal, traine in SKINS_LASER:
         if y_zone - h_carte < y < HAUTEUR:
             r = carte(y)
-            ecran.blit(rendu_texte(police_aide, nom, True, BLANC_NEON), (r.x + 90, r.y + 12))
+            principal, traine = couleurs_skin(sid)
+            lib_rar, col_rar = RARETES_INFO[RARETE_SKIN.get(sid, "C")]
+            DRAW.rect(ecran, col_rar, r, 2, border_radius=12)
+            t_nom = rendu_texte(police_aide, nom, True, BLANC_NEON)
+            ecran.blit(t_nom, (r.x + 90, r.y + 12))
+            ecran.blit(rendu_texte(police_petite, lib_rar, True, col_rar), (r.x + 90 + t_nom.get_width() + 12, r.y + 18))
             DRAW.line(ecran, traine, (r.x + 24, r.centery + 10), (r.x + 64, r.centery - 10), 9)
             DRAW.line(ecran, principal, (r.x + 30, r.centery + 7), (r.x + 64, r.centery - 10), 5)
             DRAW.circle(ecran, BLANC_NEON, (r.x + 64, r.centery - 10), 4)
@@ -4346,7 +4398,7 @@ def dessiner_ecran_victoire():
         t2 = rendu_texte(police_petite, "   ·   ".join(morceaux), True, (170, 180, 210))
         ecran.blit(t2, (cx - t2.get_width() // 2, y_haut + 242))
         if r["reduite"]:
-            t3 = rendu_texte(police_petite, "Mission déjà réussie : gains réduits de moitié", True, JAUNE_CYBER)
+            t3 = rendu_texte(police_petite, "Mission déjà réussie : gains réduits des trois quarts", True, JAUNE_CYBER)
             ecran.blit(t3, (cx - t3.get_width() // 2, y_haut + 266))
     if t >= DELAI_BOUTONS_FIN:
         bouton_neon(rect_bouton_rejouer, BLEU_CYBER, "REJOUE", police_bouton)
@@ -5442,6 +5494,7 @@ async def main():
             for lx, ly, lr, lc, lint in lueurs:
                 dessiner_halo(lx, ly, lr if QUALITE["niveau"] >= 2 else int(lr * 0.7), lc, lint)
 
+            animer_skin()
             for b in balles:
                 bx_e, by_e = int(b[0] + ox), int(b[1] + oy)
                 DRAW.line(ecran, LASER["trail"], (int(bx_e - b[2] * 3.2), int(by_e - b[3] * 3.2)), (bx_e, by_e), 9)
