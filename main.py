@@ -104,7 +104,7 @@ function init(){
     A.auth=firebase.auth();
     A.db=firebase.firestore();
     A.auth.onAuthStateChanged(function(u){
-      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);}}catch(e){}try{A.profile(u);}catch(e){}try{A.loadSkins();}catch(e){}}else{A.uid="";A.name="";A.pseudo="";A.skins=[];A.skinActif="";}
+      if(u){A.uid=u.uid;A.name=u.displayName||u.email||"Joueur";try{if(!sessionStorage.getItem("flex_login")){sessionStorage.setItem("flex_login","1");A.log("login",0);try{A.db.collection("profils").doc(u.uid).set({email:String(u.email||"").slice(0,120),nom:String(u.displayName||"").slice(0,80),last:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(){});}catch(x){}}}catch(e){}try{A.profile(u);}catch(e){}try{A.loadSkins();}catch(e){}}else{A.uid="";A.name="";A.pseudo="";A.skins=[];A.skinActif="";}
       A.ready=true;
     });
     setTimeout(function(){A.ready=true;},6000);
