@@ -56,7 +56,11 @@ summary{cursor:pointer;font-weight:700;color:var(--cyan);font-size:14px}
 .pjl:last-child{border-bottom:0}
 .pjl .sm,.ev .sm{word-break:break-all}
 .tag{display:inline-block;padding:1px 7px;border-radius:7px;font-size:11px;font-weight:700;background:var(--bad);color:#05070f;margin-left:6px}
-.ev b{color:var(--tx)}
+.act{color:var(--tx);font-weight:700;font-size:14px}
+details.dl summary{font-weight:400;color:var(--tx);line-height:1.5}
+details.dl summary .pj{font-size:14px}
+details.dl .det{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
+details.dl .det div{font-size:12px;color:var(--mut);padding:2px 0}
 </style>
 </head>
 <body>
@@ -292,6 +296,26 @@ function rendreJoueurs(){
   $("joueurs").innerHTML=l.length?l.slice(0,100).map(function(o){
     return '<div class="pjl">'+blocJoueur(o.uid)+'<br><span class="sm">Dernière activité : '+fmtH(o.last)+' · Mission max gagnée : '+(o.maxWin>=0?(o.maxWin+1):"aucune")+' · Parties : '+o.s+' ('+o.w+' V / '+o.l+' D) · Connexions : '+o.logins+'</span></div>';
   }).join("")+(l.length>100?'<div class="sm" style="margin-top:6px">… et '+(l.length-100)+' autres (utilise la recherche)</div>':""):'<div class="ev">Aucun joueur connecté sur cette période.</div>';
+  rendreActivite();
+}
+
+var ACT=[], ANON=0;
+function rendreActivite(){
+  var q=($("q").value||"").toLowerCase().trim();
+  var l=ACT.filter(function(g){
+    if(!q){return true;}
+    var j=infoJ(g.uid);
+    return (j.pseudo+" "+j.email+" "+j.nom).toLowerCase().indexOf(q)>=0;
+  });
+  var verbes={level_start:"a lancé",level_win:"a gagné",level_lose:"a perdu"};
+  function texteAct(e){return e.type==="login"?"s'est connecté":((verbes[e.type]||e.type)+" la Mission "+(e.lvl+1));}
+  $("recent").innerHTML=(l.length?l.slice(0,25).map(function(g){
+    var d=g.jour, e0=g.acts[0];
+    var resume="24 h : "+d.conn+" connexion"+(d.conn>1?"s":"")+" · "+d.lances+" mission"+(d.lances>1?"s":"")+" lancée"+(d.lances>1?"s":"")+" · "+d.gagnes+" gagnée"+(d.gagnes>1?"s":"")+" · "+d.perdus+" perdue"+(d.perdus>1?"s":"");
+    var det=g.acts.map(function(e){return "<div>"+fmtH(e.t.getTime())+" — "+esc(texteAct(e))+"</div>";}).join("");
+    return '<details class="dl"><summary>'+blocJoueur(g.uid)+'<br><span class="act">'+esc(texteAct(e0))+'</span> <span class="sm">· '+fmtH(e0.t.getTime())+'</span><br><span class="sm">'+esc(resume)+'</span></summary><div class="det">'+det+'</div></details>';
+  }).join("")+(l.length>25?'<div class="sm" style="margin-top:6px">… et '+(l.length-25)+' autres joueurs (utilise la recherche)</div>':""):'<div class="ev">Aucun joueur connecté sur cette période.</div>')
+  +'<div class="ev">'+ANON+' visite(s) sans compte Google sur 30 jours. Touche un joueur pour voir ses 10 dernières actions.</div>';
 }
 
 function charger(){
@@ -372,14 +396,23 @@ function afficher(ev, tronque){
     return '<details><summary>Mission '+(k+1)+' · '+ks.length+' joueur'+(ks.length>1?"s":"")+' · '+(tx===null?"-":tx+" %")+' de réussite'+(bl?' · '+bl+' bloqué'+(bl>1?"s":""):"")+'</summary>'+lignes+'</details>';
   }).join(""):'<div class="ev">Pas encore de données.</div>';
 
-  // ---- dernière activité : qui a fait quoi
-  var verbes={login:"s'est connecté",level_start:"a lancé",level_win:"a gagné",level_lose:"a perdu"};
-  var avecCompte=ev.filter(function(e){return e.uid&&e.type!=="visit";});
-  var sansCompte=ev.filter(function(e){return !e.uid&&e.type==="visit";}).length;
-  $("recent").innerHTML=avecCompte.slice(0,40).map(function(e){
-    var act=(e.type==="login")?verbes.login:((verbes[e.type]||e.type)+" la Mission "+(e.lvl+1));
-    return '<div class="ev"><span class="sm">'+fmtH(e.t.getTime())+'</span><br>'+blocJoueur(e.uid)+' — <b>'+esc(act)+'</b></div>';
-  }).join("")+'<div class="ev">'+sansCompte+' visite(s) sans compte Google sur 30 jours.</div>';
+  // ---- dernière activité : une ligne par joueur (le plus récent d'abord), détail à l'ouverture
+  var gr={}, ordre=[];
+  ev.forEach(function(e){
+    if(!e.uid||e.type==="visit"){return;}
+    var g=gr[e.uid];
+    if(!g){g=gr[e.uid]={uid:e.uid,acts:[],jour:{conn:0,lances:0,gagnes:0,perdus:0}};ordre.push(e.uid);}
+    if(g.acts.length<10){g.acts.push(e);}
+    if(now-e.t.getTime()<=D){
+      if(e.type==="login"){g.jour.conn++;}
+      else if(e.type==="level_start"){g.jour.lances++;}
+      else if(e.type==="level_win"){g.jour.gagnes++;}
+      else if(e.type==="level_lose"){g.jour.perdus++;}
+    }
+  });
+  ACT=ordre.map(function(u){return gr[u];});
+  ANON=ev.filter(function(e){return !e.uid&&e.type==="visit";}).length;
+  rendreActivite();
 
   $("maj").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR")+(tronque?" - attention : données tronquées (5 000 événements)":"");
 }
