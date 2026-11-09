@@ -11,6 +11,8 @@
   var MOBILE = ANDROID || IOS;
   var ICON = "pwa-icon-192.png";
   try { ICON = new URL("pwa-icon-192.png", location.href).href; } catch (e) {}
+  var PRIV = "confidentialite.html";
+  try { PRIV = new URL("confidentialite.html", location.href).href; } catch (e) {}
 
   function installe() {
     try {
@@ -89,7 +91,8 @@
         "<ul><li>&#9989; Une <b>ic&ocirc;ne sur ton t&eacute;l&eacute;phone</b> : plus besoin de retaper le lien</li>" +
         "<li>&#9989; <b>Plein &eacute;cran en paysage</b>, sans barre d'adresse</li>" +
         "<li>&#9989; Ta progression, tes skins et ton classement sont sauvegard&eacute;s avec ton compte Google</li></ul>" +
-        "<button id='dl' class='bp big'>&#11015; T&Eacute;L&Eacute;CHARGER LE JEU</button><br><a id='nv' class='lk'>Jouer dans le navigateur</a></div>";
+        "<button id='dl' class='bp big'>&#11015; T&Eacute;L&Eacute;CHARGER LE JEU</button><br><a id='nv' class='lk'>Jouer dans le navigateur</a>" +
+        "<div style='margin-top:8px;font-size:11px;color:#8fa0d8'><a href='" + PRIV + "' target='_blank' style='color:#8fa0d8'>Confidentialit&eacute; et conditions</a></div></div>";
       d.getElementById("dl").onclick = lancer;
       d.getElementById("nv").onclick = fermer;
     });

@@ -199,6 +199,8 @@ function sortirPleinEcran(cb){
   setTimeout(cb,50);
 }
 var TACT=(("ontouchstart" in window)||(navigator.maxTouchPoints>0));
+var PRIVURL="confidentialite.html";
+try{PRIVURL=new URL("confidentialite.html",location.href).href;}catch(e){}
 function saisir(inp,question,cb){
   sortirPleinEcran(function(){
     var v=null;
@@ -241,7 +243,8 @@ function dlgPseudo(u){
       "<div class='h'>Choisis ton pseudo pour le classement.<br>Il sera visible par tous les joueurs.</div>"+
       "<input id='p' maxlength='16' autocomplete='off' autocapitalize='off' autocorrect='off' spellcheck='false' enterkeyhint='done' inputmode='text' placeholder='"+(TACT?"TOUCHE ICI POUR &Eacute;CRIRE":"TON PSEUDO")+"'"+(TACT?" readonly":"")+">"+
       "<div class='r'>3 &agrave; 16 caract&egrave;res : lettres, chiffres, espace, _ ou -</div><div class='e' id='e'></div>"+
-      "<div class='b'><button id='ok' class='bp'>VALIDER</button><button id='al' class='bs'>&#127922; AL&Eacute;ATOIRE</button><button id='no' class='bs'>PLUS TARD</button></div></div>";
+      "<div class='b'><button id='ok' class='bp'>VALIDER</button><button id='al' class='bs'>&#127922; AL&Eacute;ATOIRE</button><button id='no' class='bs'>PLUS TARD</button></div>"+
+      "<div class='pv'>En continuant, tu acceptes la <a href='"+PRIVURL+"' target='_blank'>confidentialit&eacute; et les conditions</a>.</div></div>";
     var inp=d.getElementById("p"),e=d.getElementById("e"),ok=d.getElementById("ok");
     d.getElementById("al").onclick=function(){inp.value=pseudoAlea();e.className="e";e.innerHTML="";};
     ok.onclick=function(){
@@ -328,7 +331,8 @@ var ICO={bouclier:"&#128737;",survie:"&#10084;",fantome:"&#128123;",sprint:"&#98
 var LBL={p:"SUPER POUVOIR",t:"TALENT NATUREL",e:"&Eacute;QUIPEMENT ACTIF"};
 var LCOL={p:"#ffd646",t:"#78ffaa",e:"#ff8c3c"};
 var MSG2={auth:"Tu n'es plus connect&eacute;. Reconnecte-toi avec Google.",format:"Cl&eacute; invalide : v&eacute;rifie les caract&egrave;res.",cle_inconnue:"Cl&eacute; introuvable. V&eacute;rifie qu'elle est copi&eacute;e en entier.",cle_deja_utilisee:"Cette cl&eacute; a d&eacute;j&agrave; servi.",deja_possede:"Tu poss&egrave;des d&eacute;j&agrave; ce personnage.",revoquee:"Cette cl&eacute; n'est plus valide.",expiree:"Cette cl&eacute; n'est plus valide.",mauvais_produit:"Cette cl&eacute; ne correspond pas &agrave; ce produit.",trop_d_essais:"Trop d'essais. R&eacute;essaie dans une heure.",skin:"Personnage inconnu.",serveur:"Service indisponible. R&eacute;essaie dans un instant.",reseau:"Pas de connexion. R&eacute;essaie dans un instant.",activation_refusee:"Activation refus&eacute;e. Contacte le support.",chariow:"Service indisponible. R&eacute;essaie dans un instant."};
-CSS+="@media (max-height:440px){#box.kbd{align-items:flex-start}.pn.kbp{margin-top:6px;padding:10px 14px}.pn.kbp .av,.pn.kbp .s,.pn.kbp .h,.pn.kbp .r{display:none}.pn.kbp .t{font-size:20px}.pn.kbp input{padding:9px 10px;font-size:18px}.pn.kbp .e{min-height:16px;margin:4px 0 0}.pn.kbp button{padding:10px 6px;font-size:14px}.pn.kbp .b{margin-top:6px}}"+
+CSS+=".pv{font-size:11px;color:#8fa0d8;margin-top:6px}.pv a{color:#00ebff}"+
+"@media (max-height:440px){#box.kbd{align-items:flex-start}.pn.kbp{margin-top:6px;padding:10px 14px}.pn.kbp .av,.pn.kbp .s,.pn.kbp .h,.pn.kbp .r{display:none}.pn.kbp .t{font-size:20px}.pn.kbp input{padding:9px 10px;font-size:18px}.pn.kbp .e{min-height:16px;margin:4px 0 0}.pn.kbp button{padding:10px 6px;font-size:14px}.pn.kbp .b{margin-top:6px}}"+
 "#box{width:100%;height:100%;display:flex;align-items:center;justify-content:center}"+
 ".pn.wide{width:min(96%,920px)}"+
 ".hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:10px}"+
@@ -486,42 +490,7 @@ load(0);
 """
 
 
-_JS_HEURE = r"""
-(function(){
-if(window.flexHeure){return;}
-var H=window.flexHeure={ok:false,off:0};
-try{
-  fetch(location.href.split("#")[0],{method:"HEAD",cache:"no-store"}).then(function(r){
-    var d=r.headers.get("Date");
-    if(d){var t=Date.parse(d);if(!isNaN(t)){H.off=t-Date.now();H.ok=true;}}
-  }).catch(function(){});
-}catch(e){}
-})();
-"""
-_HEURE = {"off": 0.0, "maj": -100.0}
-
-
-def heure_serveur_s():
-    """Heure UTC en secondes. Sur le web, corrigée avec l'heure du serveur (le joueur ne peut pas la tricher en changeant l'heure du téléphone)."""
-    now = _time.time()
-    if IS_WEB:
-        if now - _HEURE["maj"] > 5.0:
-            _HEURE["maj"] = now
-            try:
-                h = _pfs.window.flexHeure
-                if bool(h.ok):
-                    _HEURE["off"] = float(h.off) / 1000.0
-            except Exception:
-                pass
-        return now + _HEURE["off"]
-    return now
-
-
 def _injecter_firebase():
-    try:
-        _pfs.window.eval(_JS_HEURE)
-    except Exception:
-        pass
     try:
         _pfs.window.eval(_JS_FIREBASE)
     except Exception:
@@ -2341,7 +2310,6 @@ ETAT_MENU, ETAT_JEU, ETAT_AIDE, ETAT_PROFIL, ETAT_INFOS, ETAT_NIVEAUX = 0, 1, 2,
 ETAT_PARAMS = 6
 ETAT_BOUTIQUE = 7
 ETAT_EDITEUR = 8
-ETAT_DEFIS = 9
 etat_actuel = ETAT_MENU
 en_pause = False
 
@@ -2437,7 +2405,7 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     ondes_fx.clear()
     ETAT_FX["secousse"] = 0.0
     ETAT_JOUEUR["bouclier"], ETAT_JOUEUR["invuln"] = STATS["bouclier"], 0
-    MISSION.update(drones=0, recompense=None, versee=False, duree=max(1, temps_restant_frames), defis_ok=[])
+    MISSION.update(drones=0, recompense=None, versee=False, duree=max(1, temps_restant_frames))
     if MODE_GRAPHIQUE == "REALISTE":
         img_joueur_actuel = img_joueur_droite
     _appliquer_skin()
@@ -2728,8 +2696,7 @@ rect_icone_infos = pygame.Rect(40, 30, 70, 70)
 rect_icone_params = pygame.Rect(130, 30, 70, 70)
 rect_icone_classement = pygame.Rect(220, 30, 70, 70)
 rect_icone_skins = pygame.Rect(310, 30, 70, 70)
-rect_icone_defis = pygame.Rect(400, 30, 70, 70)
-rect_icone_install = pygame.Rect(490, 30, 70, 70)
+rect_icone_install = pygame.Rect(400, 30, 70, 70)
 rect_recharger_photo = pygame.Rect(LARGEUR // 2 - 140, 280, 280, 45)
 rect_champ_pseudo = pygame.Rect(LARGEUR // 2 - 220, 350, 440, 60)
 rect_fleche_gauche = pygame.Rect(LARGEUR // 2 - 220, 450, 60, 60)
@@ -3214,49 +3181,18 @@ BOUTIQUE_ARTICLES = [
 ]
 # Skins : identifiant, nom, prix, couleur du laser, couleur de sa traînée
 SKINS_LASER = [
-    # --- COMMUNS
     ("cyan", "Cyan néon", 0, (0, 235, 255), (0, 80, 150)),
     ("rose", "Rose synthwave", 150, (255, 70, 200), (140, 20, 100)),
     ("acide", "Vert acide", 150, (170, 255, 0), (70, 120, 0)),
-    ("rouge", "Rouge alerte", 200, (255, 60, 60), (130, 10, 20)),
-    ("blanc", "Blanc glacé", 200, (235, 245, 255), (90, 120, 160)),
-    # --- RARES
     ("or", "Or électrique", 350, (255, 205, 50), (140, 90, 0)),
     ("violet", "Violet plasma", 350, (175, 95, 255), (80, 30, 150)),
-    ("magenta", "Magenta pulsar", 500, (255, 0, 160), (110, 0, 90)),
-    ("azur", "Bleu électrique", 500, (60, 140, 255), (10, 50, 150)),
-    ("lave", "Lave en fusion", 700, (255, 120, 20), (150, 30, 0)),
-    ("emeraude", "Émeraude toxique", 700, (40, 255, 150), (0, 100, 60)),
-    # --- ÉPIQUES
-    ("aurore", "Aurore boréale", 1800, (120, 255, 220), (130, 60, 200)),
-    ("venin", "Venin radioactif", 2200, (200, 255, 40), (40, 110, 20)),
-    ("rubis", "Rubis sang", 2500, (255, 30, 90), (100, 0, 40)),
-    ("glace", "Cristal polaire", 3000, (190, 240, 255), (60, 150, 230)),
-    # --- LÉGENDAIRES (les deux derniers sont animés)
-    ("soleil_noir", "Soleil noir", 5000, (255, 255, 255), (70, 0, 140)),
-    ("arcenciel", "Arc-en-ciel", 6500, (255, 0, 0), (120, 0, 0)),
-    ("flex_pulse", "Flex Pulse", 8500, (0, 235, 255), (255, 0, 180)),
-    # --- EXCLUSIF : jamais en vente, débloqué en terminant tous les défis de 3 semaines
-    ("champion", "Champion Flex", 0, (255, 215, 0), (255, 80, 0)),
 ]
-# Rareté de chaque skin : C = commun, R = rare, E = épique, L = légendaire
-RARETE_SKIN = {"cyan": "C", "rose": "C", "acide": "C", "rouge": "C", "blanc": "C",
-               "or": "R", "violet": "R", "magenta": "R", "azur": "R", "lave": "R", "emeraude": "R",
-               "aurore": "E", "venin": "E", "rubis": "E", "glace": "E",
-               "soleil_noir": "L", "arcenciel": "L", "flex_pulse": "L", "champion": "L"}
-EXCLUSIFS = ("champion",)                      # skins qu'on ne peut pas acheter
-RARETES_INFO = {"C": ("COMMUN", (170, 180, 200)), "R": ("RARE", (60, 150, 255)),
-                "E": ("ÉPIQUE", (190, 100, 255)), "L": ("LÉGENDAIRE", (255, 200, 50))}
-SKINS_ANIMES = ("arcenciel", "flex_pulse")      # couleurs qui changent en continu
 ARTICLES_NIVEAUX = {a["cle"]: a for a in BOUTIQUE_ARTICLES if "cle" in a}
 
-DEFIS_VIDE = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
-              "diff": 3, "precedents": []}
-BOUTIQUE = {"pieces": 0, "niveaux": {}, "skins": ["cyan"], "skin_actif": "cyan", "faits": [], "etoiles": {},
-            "defis": dict(DEFIS_VIDE)}
+BOUTIQUE = {"pieces": 0, "niveaux": {}, "skins": ["cyan"], "skin_actif": "cyan", "faits": [], "etoiles": {}}
 STATS = {"bouclier": 0, "cadence": 8, "degats": 1.0, "perfo": 0, "hack": 1.0, "potion": 0, "chrono": 0}
 LASER = {"main": SKINS_LASER[0][3], "trail": SKINS_LASER[0][4]}
-MISSION = {"drones": 0, "recompense": None, "versee": False, "duree": 1, "defis_ok": []}      # suivi de la mission en cours
+MISSION = {"drones": 0, "recompense": None, "versee": False, "duree": 1}      # suivi de la mission en cours
 ETAT_JOUEUR = {"bouclier": 0, "invuln": 0}                         # bouclier restant et invulnérabilité (en pas de logique)
 BQ = {"scroll": 0.0, "drag": False, "id": None, "y": 0.0, "x0": 0.0, "y0": 0.0, "moved": False,
       "zones": [], "msg": "", "msg_couleur": VERT_FLUO, "msg_t": -10000}
@@ -3284,7 +3220,6 @@ def charger_boutique():
         BOUTIQUE["skin_actif"] = actif if actif in BOUTIQUE["skins"] else "cyan"
         BOUTIQUE["faits"] = [n for n in d.get("faits", []) if isinstance(n, int)]
         BOUTIQUE["etoiles"] = {k: v for k, v in d.get("etoiles", {}).items() if isinstance(v, int) and 1 <= v <= 3}
-        BOUTIQUE["defis"] = _defis_depuis_sauvegarde(d.get("defis"))
     except Exception as e:
         print(f"⚠️ Boutique illisible : {e}")
     if statut == "ancien":
@@ -3310,32 +3245,10 @@ def recalculer_stats():
     STATS["chrono"] = (0, 300, 600, 900)[n.get("chrono", 0)]
 
 
-def couleurs_skin(sid):
-    """Couleurs (laser, traînée) d'un skin ; les skins animés changent avec le temps."""
-    t = pygame.time.get_ticks() / 1000.0
-    if sid == "arcenciel":
-        p = (int(127 + 128 * math.sin(t * 2.2)), int(127 + 128 * math.sin(t * 2.2 + 2.094)), int(127 + 128 * math.sin(t * 2.2 + 4.188)))
-        return p, (p[0] * 45 // 100, p[1] * 45 // 100, p[2] * 45 // 100)
-    if sid == "flex_pulse":
-        k = (math.sin(t * 3.0) + 1.0) / 2.0
-        a, b = (0, 235, 255), (255, 0, 180)
-        p = tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
-        q = tuple(int(b[i] + (a[i] - b[i]) * k) for i in range(3))
-        return p, tuple(c * 55 // 100 for c in q)
-    for ident, _nom, _prix, principal, traine in SKINS_LASER:
-        if ident == sid:
-            return principal, traine
-    return SKINS_LASER[0][3], SKINS_LASER[0][4]
-
-
 def appliquer_skin():
-    LASER["main"], LASER["trail"] = couleurs_skin(BOUTIQUE["skin_actif"])
-
-
-def animer_skin():
-    """À appeler à chaque image : fait vivre les skins animés (arc-en-ciel, pulse)."""
-    if BOUTIQUE["skin_actif"] in SKINS_ANIMES:
-        LASER["main"], LASER["trail"] = couleurs_skin(BOUTIQUE["skin_actif"])
+    for sid, _nom, _prix, principal, traine in SKINS_LASER:
+        if sid == BOUTIQUE["skin_actif"]:
+            LASER["main"], LASER["trail"] = principal, traine
 
 
 def niveau_article(cle):
@@ -3380,17 +3293,17 @@ def calculer_recompense(victoire):
     drones = MISSION["drones"]
     mult_or = 1.0 + _cfg().get("or", 0) / 100.0                   # pouvoir « chasseur d'or »
     if not victoire:
-        return {"total": int((drones // 3) * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
+        return {"total": int(drones * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
     n = niveau_actuel
-    base = 10 + 2 * n
-    temps = max(0, temps_restant_frames) // 60 // 6
-    bonus_drones = drones // 2
-    boss = (60 + 10 * ((n + 1) // 5)) if niveau_data["est_boss"] else 0
+    base = 30 + 8 * n
+    temps = max(0, temps_restant_frames) // 60 // 2
+    bonus_drones = drones * 2
+    boss = (100 + 20 * ((n + 1) // 5)) if niveau_data["est_boss"] else 0
     total = base + temps + bonus_drones + boss
     reduite = n in BOUTIQUE["faits"]
     if reduite:
-        total //= 4                                  # niveau déjà réussi : gains divisés par 4
-    total = max(1, int(total * mult_or))
+        total //= 2
+    total = int(total * mult_or)
     return {"total": total, "base": base, "temps": temps, "drones": bonus_drones, "boss": boss, "reduite": reduite}
 
 
@@ -3404,10 +3317,6 @@ def accorder_recompense(victoire):
     BOUTIQUE["pieces"] += r["total"]
     if victoire and niveau_actuel not in BOUTIQUE["faits"]:
         BOUTIQUE["faits"].append(niveau_actuel)
-    try:
-        defis_evenement(victoire, r)
-    except Exception as e:
-        print(f"⚠️ Défis : {e}")
     sauvegarder_boutique()
 
 
@@ -3491,300 +3400,6 @@ def gerer_liste_tactile(liste, event, etat_cible, action_tap):
             action_tap(liste["x0"], liste["y0"])
 
 
-
-# ==================== DÉFIS HEBDOMADAIRES ====================
-# Chaque semaine (du lundi 00:00 UTC au dimanche soir), 4 défis tirés au sort (les mêmes pour tous les joueurs).
-# Récompense en pièces à chaque défi réussi + bonus si les 4 sont terminés ; 3 semaines parfaites = skin « Champion Flex ».
-DEFIS_NB = 4
-DEFIS_BONUS = 250
-DEFIS_SEMAINES_CHAMPION = 3
-# type : (cible min, cible max, pas, récompense par unité, récompense fixe)
-DEFIS_MODELES = {
-    "missions":   (4, 8, 1, 15, 0),
-    "drones":     (50, 120, 10, 1, 0),
-    "boss":       (1, 3, 1, 70, 0),
-    "pieces":     (150, 300, 50, 0.5, 0),
-    "rapides":    (2, 4, 1, 35, 0),
-    "haut_niveau": (5, 15, 1, 4, 60),
-    "serie":      (2, 4, 1, 45, 0),
-    "total_etoiles": (6, 15, 1, 8, 0),
-    "piece_unique": (40, 100, 10, 0.8, 20),
-    "drones_mission": (15, 40, 5, 3, 0),
-}
-DEFIS_UNIQUES = ("haut_niveau", "piece_unique", "drones_mission")      # défis à réussir en une seule mission (objectif = 1)
-DEFIS_MAX = {"missions": 15, "drones": 300, "boss": 5, "pieces": 700, "rapides": 8, "serie": 6,
-             "total_etoiles": 30, "haut_niveau": 999, "piece_unique": 160, "drones_mission": 90}
-DEFIS_DIFF_MAX = 10          # difficulté de 1 à 10 ; elle monte quand le joueur réussit tout, baisse quand il réussit peu
-
-
-def bonus_defis(d):
-    """Le bonus de semaine complète grandit avec la difficulté."""
-    return max(150, DEFIS_BONUS + 25 * (d["diff"] - 3))
-DEF = {"scroll": 0.0, "drag": False, "id": None, "y": 0.0, "x0": 0.0, "y0": 0.0, "moved": False, "zones": []}
-
-
-def texte_defi(defi):
-    n, k = defi["cible"], defi["type"]
-    if k == "missions":
-        return f"Remporte {n} missions"
-    if k == "drones":
-        return f"Détruis {n} drones"
-    if k == "boss":
-        return "Bats 1 boss" if n == 1 else f"Bats {n} boss"
-    if k == "pieces":
-        return f"Gagne {n} pièces en missions"
-    if k == "rapides":
-        return f"Réussis {n} missions avec 40 % du temps restant"
-    if k == "haut_niveau":
-        return f"Remporte une mission de niveau {n} ou plus"
-    if k == "serie":
-        return f"Enchaîne {n} victoires d'affilée"
-    if k == "total_etoiles":
-        return f"Gagne {n} étoiles au total"
-    if k == "piece_unique":
-        return f"Gagne {n} pièces en une seule mission"
-    if k == "drones_mission":
-        return f"Détruis {n} drones en une seule mission"
-    return "Défi"
-
-
-def _defis_depuis_sauvegarde(dd):
-    """Relit les défis d'une sauvegarde en vérifiant chaque valeur."""
-    d = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
-         "diff": 3, "precedents": []}
-    if not isinstance(dd, dict):
-        return d
-    try:
-        d["semaine"] = max(0, int(dd.get("semaine", 0)))
-        for x in dd.get("liste", []):
-            if isinstance(x, dict) and x.get("type") in DEFIS_MODELES:
-                d["liste"].append({"id": x["type"], "type": x["type"], "cible": max(1, int(x.get("cible", 1))),
-                                   "recomp": max(0, int(x.get("recomp", 0)))})
-        ids = [x["id"] for x in d["liste"]]
-        d["progres"] = {k: max(0, int(v)) for k, v in dict(dd.get("progres", {})).items() if k in ids}
-        d["valides"] = [k for k in dd.get("valides", []) if k in ids]
-        d["bonus"] = bool(dd.get("bonus", False))
-        d["completes"] = max(0, int(dd.get("completes", 0)))
-        d["serie"] = max(0, int(dd.get("serie", 0)))
-        d["diff"] = max(1, min(DEFIS_DIFF_MAX, int(dd.get("diff", 3))))
-        d["precedents"] = [k for k in dd.get("precedents", []) if k in DEFIS_MODELES]
-    except Exception:
-        return {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
-                "diff": 3, "precedents": []}
-    return d
-
-
-def semaine_courante():
-    """Numéro de la semaine (elle commence le lundi à 00:00 UTC)."""
-    jours = int(heure_serveur_s() // 86400)
-    return (jours + 3) // 7
-
-
-def fin_semaine_s(semaine):
-    return ((semaine + 1) * 7 - 3) * 86400
-
-
-def generer_defis(semaine, diff=3, precedents=()):
-    """Tire au sort les défis de la semaine. La difficulté (1 à 10) règle les cibles et les récompenses ;
-    les types de la semaine précédente ne reviennent pas tout de suite, pour éviter la répétition."""
-    rng = random.Random(semaine * 7919 + 13)
-    avance = int(globals().get("niveau_max_atteint", 0))
-    facteur = 0.75 + 0.15 * (diff - 1)
-    types = list(DEFIS_MODELES.keys())
-    if avance < 4:                       # pas encore de boss atteignable : pas de défi boss
-        types.remove("boss")
-    nouveaux = [k for k in types if k not in precedents]
-    if len(nouveaux) >= DEFIS_NB:
-        types = nouveaux
-    rng.shuffle(types)
-    liste = []
-    for k in types[:DEFIS_NB]:
-        lo, hi, pas, par_unite, fixe = DEFIS_MODELES[k]
-        n = rng.randrange(lo, hi + 1, pas)
-        if k == "haut_niveau":
-            n = max(2, min(n + (diff - 3), avance + 1))
-        else:
-            n = max(1, min(DEFIS_MAX[k], int(round(n * facteur / pas)) * pas))
-            if k == "drones_mission":            # jamais plus de drones que les missions déjà débloquées n'en contiennent
-                n = min(n, max(5, int(min(70, 3 + 2 * avance) * 0.8) // 5 * 5))
-            elif k == "piece_unique":            # jamais plus que ce qu'une mission peut rapporter à ce stade
-                n = min(n, 40 if avance < 4 else (100 if avance < 9 else 160))
-        recomp = max(10, int((fixe + n * par_unite) * (1 + 0.04 * (diff - 3))))
-        liste.append({"id": k, "type": k, "cible": n, "recomp": recomp})
-    return liste
-
-
-def defis_verifier():
-    """Retourne les défis de la semaine en cours (en les renouvelant quand une nouvelle semaine commence)."""
-    d = BOUTIQUE["defis"]
-    sem = max(semaine_courante(), d["semaine"])        # une horloge remise en arrière ne redonne jamais d'anciens défis
-    if sem > d["semaine"] or not d["liste"]:
-        if d["liste"]:
-            faits, total = len(d["valides"]), len(d["liste"])
-            if faits >= total:
-                d["diff"] = min(DEFIS_DIFF_MAX, d["diff"] + 1)        # tout réussi : la semaine suivante est plus dure
-            elif faits <= 1:
-                d["diff"] = max(1, d["diff"] - 1)                     # presque rien de réussi : un peu plus facile
-            d["precedents"] = [x["type"] for x in d["liste"]]
-        d.update(semaine=sem, liste=generer_defis(sem, d["diff"], d["precedents"]), progres={}, valides=[], bonus=False, serie=0)
-        sauvegarder_boutique()
-    return d
-
-
-def _valider_defi(d, defi):
-    d["valides"].append(defi["id"])
-    BOUTIQUE["pieces"] += defi["recomp"]
-    MISSION["defis_ok"].append((texte_defi(defi), defi["recomp"]))
-    if len(d["valides"]) >= len(d["liste"]) and not d["bonus"]:
-        d["bonus"] = True
-        d["completes"] += 1
-        b = bonus_defis(d)
-        BOUTIQUE["pieces"] += b
-        MISSION["defis_ok"].append(("BONUS SEMAINE COMPLÈTE", b))
-        if d["completes"] >= DEFIS_SEMAINES_CHAMPION and "champion" not in BOUTIQUE["skins"]:
-            BOUTIQUE["skins"].append("champion")
-            MISSION["defis_ok"].append(("SKIN CHAMPION FLEX DÉBLOQUÉ", 0))
-
-
-def defis_evenement(victoire, r):
-    """Met à jour les défis à la fin d'une mission (r = récompense de la mission)."""
-    d = defis_verifier()
-    d["serie"] = d["serie"] + 1 if victoire else 0
-    for defi in d["liste"]:
-        if defi["id"] in d["valides"]:
-            continue
-        k = defi["type"]
-        p = d["progres"].get(defi["id"], 0)
-        if k == "missions" and victoire:
-            p += 1
-        elif k == "drones":
-            p += MISSION["drones"]
-        elif k == "boss" and victoire and niveau_data["est_boss"]:
-            p += 1
-        elif k == "pieces":
-            p += r["total"]
-        elif k == "rapides" and victoire and temps_restant_frames >= 0.4 * MISSION["duree"]:
-            p += 1
-        elif k == "haut_niveau" and victoire and niveau_actuel + 1 >= defi["cible"]:
-            p += 1
-        elif k == "serie":
-            p = max(p, d["serie"])
-        elif k == "total_etoiles" and victoire:
-            p += int(FIN.get("etoiles", 0))
-        elif k == "piece_unique" and victoire and r["total"] >= defi["cible"]:
-            p += 1
-        elif k == "drones_mission" and victoire and MISSION["drones"] >= defi["cible"]:
-            p += 1
-        objectif = 1 if k in DEFIS_UNIQUES else defi["cible"]
-        d["progres"][defi["id"]] = min(p, objectif)
-        if d["progres"][defi["id"]] >= objectif:
-            _valider_defi(d, defi)
-
-
-def traiter_tap_defis(x, y):
-    for rect, genre, _cle in DEF["zones"]:
-        if rect.collidepoint(x, y) and genre == "retour":
-            lancer_transition(("etat", ETAT_MENU))
-            return
-
-
-def _texte_ajuste(texte, couleur, largeur_max):
-    t = rendu_texte(police_aide, texte, True, couleur)
-    if t.get_width() > largeur_max:
-        t = rendu_texte(police_petite, texte, True, couleur)
-    return t
-
-
-def dessiner_defis():
-    d = defis_verifier()
-    dessiner_fond_menu()
-    pw = min(780, LARGEUR - 40)
-    px0 = LARGEUR // 2 - pw // 2
-    dessiner_panneau_neon(px0, pw, VERT_FLUO, False, 215)
-    dessiner_titre_glitch("DÉFIS", police_titre, LARGEUR // 2, 50)
-    dessiner_pieces(LARGEUR - 170, 52)
-
-    y_zone, h_carte, pas = 130, 96, 108
-    nb = len(d["liste"])
-    hauteur_contenu = 52 + (nb + 2) * pas + 20
-    hauteur_visible = HAUTEUR - y_zone - 8
-    defil_max = max(0, hauteur_contenu - hauteur_visible)
-    DEF["scroll"] = max(-defil_max, min(0, DEF["scroll"]))
-
-    y = y_zone + 6 + DEF["scroll"]
-    ecran.set_clip(pygame.Rect(px0 - 14, y_zone, pw + 28, HAUTEUR - y_zone))
-
-    # temps restant avant le renouvellement
-    restant = max(0, int(fin_semaine_s(d["semaine"]) - heure_serveur_s()))
-    j, h, m = restant // 86400, (restant % 86400) // 3600, (restant % 3600) // 60
-    reste_txt = f"{j} j {h} h" if j > 0 else f"{h} h {m} min"
-    txt = f"Difficulté {d['diff']}/{DEFIS_DIFF_MAX}   ·   Nouveaux défis dans {reste_txt}"
-    t_temps = rendu_texte(police_petite, txt, True, JAUNE_CYBER)
-    ecran.blit(t_temps, (LARGEUR // 2 - t_temps.get_width() // 2, int(y + 10)))
-    y += 52
-
-    def carte(y_, couleur_bord):
-        r = pygame.Rect(px0 + 24, int(y_), pw - 48, h_carte)
-        DRAW.rect(ecran, (10, 13, 28), r, border_radius=12)
-        DRAW.rect(ecran, couleur_bord, r, 2, border_radius=12)
-        return r
-
-    def ligne(r, titre, p, cible, recomp, fait, etiquette_fin):
-        col = VERT_FLUO if fait else CYAN_NEON
-        largeur_titre = r.w - 36 - 120
-        ecran.blit(_texte_ajuste(titre, BLANC_NEON, largeur_titre), (r.x + 18, r.y + 12))
-        # récompense à droite
-        if recomp:
-            t_r = rendu_texte(police_jeu, f"+{recomp}", True, JAUNE_CYBER)
-            dessiner_piece(r.right - 24 - t_r.get_width() - 18, r.y + 26, 11)
-            ecran.blit(t_r, (r.right - 18 - t_r.get_width(), r.y + 26 - t_r.get_height() // 2))
-        # barre de progression
-        barre = pygame.Rect(r.x + 18, r.y + 58, r.w - 36 - 110, 16)
-        DRAW.rect(ecran, (28, 34, 60), barre, border_radius=8)
-        if cible > 0 and p > 0:
-            DRAW.rect(ecran, col, (barre.x, barre.y, max(8, int(barre.w * min(1.0, p / float(cible)))), barre.h), border_radius=8)
-        DRAW.rect(ecran, eclaircir(col, 0.5), barre, 2, border_radius=8)
-        t_p = rendu_texte(police_petite, etiquette_fin if fait else f"{min(p, cible)} / {cible}", True, col)
-        ecran.blit(t_p, (r.right - 18 - t_p.get_width(), barre.centery - t_p.get_height() // 2))
-
-    for defi in d["liste"]:
-        fait = defi["id"] in d["valides"]
-        r = carte(y, VERT_FLUO if fait else eclaircir(BLEU_CYBER, 0.35))
-        objectif = 1 if defi["type"] in DEFIS_UNIQUES else defi["cible"]
-        ligne(r, texte_defi(defi), d["progres"].get(defi["id"], 0), objectif, defi["recomp"], fait, "FAIT")
-        y += pas
-
-    # bonus de la semaine
-    r = carte(y, VERT_FLUO if d["bonus"] else JAUNE_CYBER)
-    ligne(r, f"BONUS : termine les {nb} défis", len(d["valides"]), nb, bonus_defis(d), d["bonus"], "FAIT")
-    y += pas
-
-    # skin exclusif
-    possede = "champion" in BOUTIQUE["skins"]
-    r = carte(y, VERT_FLUO if possede else (255, 215, 0))
-    ligne(r, "Skin exclusif « Champion Flex » : termine tous les défis 3 semaines",
-          min(d["completes"], DEFIS_SEMAINES_CHAMPION), DEFIS_SEMAINES_CHAMPION, 0, possede, "DÉBLOQUÉ")
-    ecran.set_clip(None)
-    DEF["zones"] = [(rect_retour_infos, "retour", None)]
-    bouton_neon(rect_retour_infos, ROUGE_ALERTE, "RETOUR", police_bouton)
-
-    if defil_max > 0:
-        x_barre, haut_piste = px0 + pw - 9, y_zone + 6
-        long_piste = HAUTEUR - y_zone - 22
-        long_pouce = max(30, int(long_piste * hauteur_visible / float(hauteur_contenu)))
-        y_pouce = haut_piste + int((long_piste - long_pouce) * (-DEF["scroll"]) / float(defil_max))
-        DRAW.rect(ecran, (16, 20, 40), (x_barre, haut_piste, 4, long_piste), border_radius=2)
-        DRAW.rect(ecran, VERT_FLUO, (x_barre, y_pouce, 4, long_pouce), border_radius=2)
-
-
-def dessiner_defis_fin(y):
-    """Sur l'écran de fin de mission : liste des défis accomplis pendant cette partie."""
-    for i, (texte, gain) in enumerate(MISSION["defis_ok"][:4]):
-        ligne_txt = f"DÉFI : {texte}" + (f"   +{gain}" if gain else "")
-        t = rendu_texte(police_petite, ligne_txt, True, VERT_FLUO)
-        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y + i * 24))
-
-
 # ---------------------------------------------------------------- dessin
 def dessiner_piece(cx, cy, r):
     DRAW.circle(ecran, (255, 200, 40), (cx, cy), r)
@@ -3841,8 +3456,7 @@ def dessiner_boutique():
     y_zone, h_carte, pas = 130, 92, 104
     nb_sections = sum(1 for a in BOUTIQUE_ARTICLES if "section" in a)
     nb_articles = len(BOUTIQUE_ARTICLES) - nb_sections
-    skins_visibles = [sk for sk in SKINS_LASER if sk[0] not in EXCLUSIFS or sk[0] in BOUTIQUE["skins"]]
-    hauteur_contenu = nb_sections * 50 + (nb_articles + len(skins_visibles)) * pas + 60
+    hauteur_contenu = nb_sections * 50 + (nb_articles + len(SKINS_LASER)) * pas + 60
     hauteur_visible = HAUTEUR - y_zone - 8
     defil_max = max(0, hauteur_contenu - hauteur_visible)
     BQ["scroll"] = max(-defil_max, min(0, BQ["scroll"]))
@@ -3903,15 +3517,10 @@ def dessiner_boutique():
                 zones.append((rb, "niveau", cle))
         y += pas
 
-    for sid, nom, prix, principal, traine in skins_visibles:
+    for sid, nom, prix, principal, traine in SKINS_LASER:
         if y_zone - h_carte < y < HAUTEUR:
             r = carte(y)
-            principal, traine = couleurs_skin(sid)
-            lib_rar, col_rar = RARETES_INFO[RARETE_SKIN.get(sid, "C")]
-            DRAW.rect(ecran, col_rar, r, 2, border_radius=12)
-            t_nom = rendu_texte(police_aide, nom, True, BLANC_NEON)
-            ecran.blit(t_nom, (r.x + 90, r.y + 12))
-            ecran.blit(rendu_texte(police_petite, lib_rar, True, col_rar), (r.x + 90 + t_nom.get_width() + 12, r.y + 18))
+            ecran.blit(rendu_texte(police_aide, nom, True, BLANC_NEON), (r.x + 90, r.y + 12))
             DRAW.line(ecran, traine, (r.x + 24, r.centery + 10), (r.x + 64, r.centery - 10), 9)
             DRAW.line(ecran, principal, (r.x + 30, r.centery + 7), (r.x + 64, r.centery - 10), 5)
             DRAW.circle(ecran, BLANC_NEON, (r.x + 64, r.centery - 10), 4)
@@ -4437,6 +4046,303 @@ def _dessiner_pouvoirs_hud(ox, oy, t_ms):
 # ===== POUVOIRS FIN
 
 
+# ===== ENTREES DEBUT
+# ================================================================ CLAVIER, SOURIS ET MANETTE
+# La page web (controls.js) lit le clavier et les manettes et publie leur état ; le jeu le lit ici une fois par image.
+# Dans les menus : un curseur (stick gauche = libre, croix directionnelle / flèches = saute de bouton en bouton),
+# Croix (A) / Entrée = choisir, Rond (B) / Échap = retour. En partie : déplacement, visée, tir et pouvoirs.
+import json as _json_in
+
+IN = {"d": None, "n0": None, "a0": None, "src": "", "edges": [0] * 9, "post": [], "up": None,
+      "souris_x": 0.0, "souris_y": 0.0, "souris_ok": False, "souris_tir": False, "cle": None}
+CUR = {"x": 0.0, "y": 0.0, "vis": False}
+_IN_ZERO = (0, 0)
+
+
+def _modal_actif():
+    """Vrai quand une fenêtre web (SKINS, classement...) est ouverte par-dessus le jeu."""
+    if not IS_WEB:
+        return False
+    try:
+        return bool(getattr(_pfs.window, "flexModal", False))
+    except Exception:
+        return False
+
+
+def _in_lire():
+    if not IS_WEB:
+        return None
+    try:
+        txt = str(_pfs.window.flexInJ)
+        if not txt or txt[0] != "{":
+            return None
+        return _json_in.loads(txt)
+    except Exception:
+        return None
+
+
+def _in_contexte():
+    """'jeu' en partie, 'ui' sur un écran de menu / pause / fin de partie, '' sinon."""
+    if IN["d"] is None or _modal_actif() or TRANS["actif"] or saisie_pseudo_active:
+        return ""
+    if etat_actuel == ETAT_JEU:
+        return "ui" if (en_pause or partie_gagnee or partie_perdue) else "jeu"
+    return "ui"
+
+
+def _in_rects(*noms):
+    sortie = []
+    for n in noms:
+        r = globals().get(n)
+        if r is not None:
+            sortie.append((r.centerx, r.centery))
+    return sortie
+
+
+def _in_cibles():
+    """Boutons que la croix directionnelle peut atteindre sur l'écran actuel (centre de chaque bouton)."""
+    e = etat_actuel
+    if e == ETAT_JEU:
+        if partie_perdue:
+            return _in_rects("rect_bouton_rejouer_defaite", "rect_bouton_quitter_defaite")
+        if partie_gagnee:
+            return _in_rects("rect_bouton_rejouer", "rect_bouton_suivant")
+        if en_pause:
+            return _in_rects("rect_pause_continuer", "rect_pause_rejouer", "rect_pause_params", "rect_pause_quitter")
+        return []
+    if e == ETAT_MENU:
+        noms = ["rect_bouton_jouer", "rect_bouton_aide", "rect_bouton_boutique", "rect_icone_profil", "rect_icone_infos", "rect_icone_params"]
+        if IS_WEB:
+            noms += ["rect_icone_classement", "rect_icone_skins"]
+            if _inst_visible:
+                noms.append("rect_icone_install")
+        return _in_rects(*noms)
+    if e == ETAT_NIVEAUX:
+        pts = _in_rects("rect_retour_niveaux")
+        for idx in range(0, niveau_max_atteint + 1):
+            x = NIVEAU_MARGE_GAUCHE + idx * NIVEAU_NODE_ESPACEMENT + defilement_niveaux
+            if -NIVEAU_NODE_RAYON <= x <= LARGEUR + NIVEAU_NODE_RAYON:
+                pts.append((x, HAUTEUR // 2 + int(60 * math.sin(idx * 0.9))))
+        return pts
+    if e == ETAT_AIDE:
+        return _in_rects("rect_bouton_retour")
+    if e == ETAT_INFOS:
+        return _in_rects("rect_retour_infos")
+    if e == ETAT_PROFIL:
+        return _in_rects("rect_champ_pseudo", "rect_fleche_gauche", "rect_fleche_droite", "rect_recharger_photo", "rect_sauvegarder_profil", "rect_retour_profil")
+    if e == ETAT_PARAMS:
+        return [(z[0].centerx, z[0].centery) for z in PAR["zones"] if 0 <= z[0].centery <= HAUTEUR]
+    if e == ETAT_BOUTIQUE:
+        return [(z[0].centerx, z[0].centery) for z in BQ["zones"] if 0 <= z[0].centery <= HAUTEUR]
+    return []
+
+
+def _in_vers(cibles, x, y, dx, dy):
+    """Bouton le plus proche dans la direction demandée (même principe que dans les fenêtres web)."""
+    meilleur, score = None, 1e12
+    for cx, cy in cibles:
+        ddx, ddy = cx - x, cy - y
+        if abs(ddx) < 3 and abs(ddy) < 3:
+            continue
+        prim = ddx * dx + ddy * dy
+        if prim < 4:
+            continue
+        perp = abs(ddx * dy - ddy * dx)
+        s = prim + 2.2 * perp
+        if s < score:
+            meilleur, score = (cx, cy), s
+    return meilleur
+
+
+def _in_retour_pos():
+    """Position du bouton « retour » de l'écran actuel (None s'il n'y en a pas)."""
+    e = etat_actuel
+    if e == ETAT_JEU:
+        if partie_perdue or partie_gagnee:
+            return None
+        return (rect_pause_continuer.centerx, rect_pause_continuer.centery) if en_pause else None
+    if e == ETAT_NIVEAUX:
+        return rect_retour_niveaux.center
+    if e == ETAT_AIDE:
+        return rect_bouton_retour.center
+    if e == ETAT_INFOS:
+        return rect_retour_infos.center
+    if e == ETAT_PROFIL:
+        return rect_retour_profil.center
+    if e == ETAT_BOUTIQUE:
+        for z in BQ["zones"]:
+            if len(z) > 1 and z[1] == "retour":
+                return z[0].center
+        return rect_bouton_retour.center
+    if e == ETAT_PARAMS:
+        for z in PAR["zones"]:
+            if "retour" in [str(v) for v in z[1:3]]:
+                return z[0].center
+        return rect_bouton_retour.center
+    if e == ETAT_EDITEUR:
+        return rect_bouton_retour.center
+    return None
+
+
+def _in_pos_brute(x, y):
+    """Position à donner à un clic simulé pour que le jeu la lise comme (x, y)."""
+    sonde = pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": (100.0, 100.0), "button": 1})
+    k = pos_ev(sonde)[0] / 100.0 or 1.0
+    return (x / k, y / k)
+
+
+def _in_clic(x, y):
+    """Simule un clic (appui maintenant, relâchement à l'image suivante)."""
+    p = _in_pos_brute(x, y)
+    IN["post"].append(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": p, "button": 1, "synth": True}))
+    IN["up"] = p
+
+
+def _in_cle_contexte():
+    return (etat_actuel, bool(en_pause), bool(partie_gagnee), bool(partie_perdue), TRANS["actif"] and 1 or 0)
+
+
+def _in_frame():
+    """À appeler une fois par image, avant la lecture des événements."""
+    global defilement_niveaux
+    d = _in_lire()
+    IN["d"] = d
+    IN["post"] = []
+    if IN["up"] is not None:                                   # relâchement du clic simulé de l'image précédente
+        IN["post"].append(pygame.event.Event(pygame.MOUSEBUTTONUP, {"pos": IN["up"], "button": 1, "synth": True}))
+        IN["up"] = None
+    ed = [0] * 9
+    if d:
+        n = d.get("n") or [0] * 9
+        if IN["n0"] is None:
+            IN["n0"] = list(n)
+            IN["a0"] = d.get("a", 0)
+        for i in range(9):
+            ed[i] = max(0, n[i] - IN["n0"][i])
+        IN["n0"] = list(n)
+        if d.get("a", 0) != IN["a0"]:                          # une touche ou la manette vient de servir
+            IN["a0"] = d.get("a", 0)
+            if d.get("s"):
+                IN["src"] = d["s"]
+    IN["edges"] = ed
+    ctx = _in_contexte()
+    CUR["vis"] = ctx == "ui" and IN["src"] in ("pad", "key")
+    if not d or ctx == "":
+        return
+    ok, bk, ps, p1, p2, hu, hd, hl, hr = ed
+    if ctx == "jeu":
+        if ps or bk:
+            basculer_pause()
+        slots = POUV.get("slots") or []
+        if p1 and len(slots) >= 1:
+            _activer_pouvoir(slots[0])
+        if p2 and len(slots) >= 2:
+            _activer_pouvoir(slots[1])
+        return
+    # ----- écrans de menu, pause, fin de partie : curseur -----
+    cles = _in_cle_contexte()
+    cibles = _in_cibles()
+    if IN["src"] not in ("pad", "key"):
+        return
+    if IN["cle"] != cles:                                      # nouvel écran (ou premier appui) : le curseur se pose sur un bouton
+        IN["cle"] = cles
+        if cibles:
+            pt = cibles[-1] if (etat_actuel == ETAT_JEU and partie_gagnee) else cibles[0]
+            CUR["x"], CUR["y"] = float(pt[0]), float(pt[1])
+        elif CUR["x"] == 0.0 and CUR["y"] == 0.0:
+            CUR["x"], CUR["y"] = LARGEUR / 2.0, HAUTEUR / 2.0
+    sx, sy = d.get("sx", 0) or 0, d.get("sy", 0) or 0
+    if sx or sy:                                               # stick gauche : curseur libre
+        CUR["x"] = min(max(CUR["x"] + sx * 17.0, 0.0), float(LARGEUR))
+        CUR["y"] = min(max(CUR["y"] + sy * 17.0, 0.0), float(HAUTEUR))
+    for nb, (ddx, ddy) in ((hu, (0, -1)), (hd, (0, 1)), (hl, (-1, 0)), (hr, (1, 0))):
+        for _ in range(min(nb, 3)):                            # croix directionnelle / flèches : bouton suivant
+            cible = _in_vers(cibles, CUR["x"], CUR["y"], ddx, ddy) if cibles else None
+            if cible is None and etat_actuel == ETAT_NIVEAUX and ddx != 0:
+                defilement_niveaux = min(0, defilement_niveaux - ddx * NIVEAU_NODE_ESPACEMENT)   # niveaux : fait défiler la carte
+                cibles = _in_cibles()
+                continue
+            if cible is None:
+                cible = (min(max(CUR["x"] + ddx * 90.0, 0.0), float(LARGEUR)), min(max(CUR["y"] + ddy * 90.0, 0.0), float(HAUTEUR)))
+            CUR["x"], CUR["y"] = float(cible[0]), float(cible[1])
+            if etat_actuel == ETAT_NIVEAUX and (CUR["x"] > LARGEUR - 140 or CUR["x"] < 140) and ddx != 0:
+                decal = LARGEUR / 2.0 - CUR["x"]
+                defilement_niveaux = min(0, defilement_niveaux + decal)
+                CUR["x"] = LARGEUR / 2.0
+    if etat_actuel == ETAT_AIDE and sy:                       # écran d'aide : le stick fait défiler le texte
+        AIDE["scroll"] -= sy * 14
+    if ok:
+        _in_clic(CUR["x"], CUR["y"])
+    if bk or ps:
+        pos = _in_retour_pos()
+        if pos is not None:
+            _in_clic(pos[0], pos[1])
+
+
+def _in_evenements():
+    """Clics simulés à ajouter aux événements de cette image."""
+    sortie = IN["post"]
+    IN["post"] = []
+    return sortie
+
+
+def _in_deplacement():
+    """Direction demandée au clavier / à la manette en partie : (x, y) entre -1 et 1, ou None."""
+    d = IN["d"]
+    if not d or _in_contexte() != "jeu":
+        return None
+    mx, my = d.get("mx", 0) or 0, d.get("my", 0) or 0
+    n = math.hypot(mx, my)
+    if n < 0.05:
+        return None
+    if n > 1.0:
+        mx, my = mx / n, my / n
+    return (mx, my)
+
+
+def _in_visee():
+    """Direction de visée choisie par le joueur (stick droit ou souris), ou None pour la visée automatique."""
+    d = IN["d"]
+    if not d or _in_contexte() != "jeu":
+        return None
+    ax, ay = d.get("ax", 0) or 0, d.get("ay", 0) or 0
+    n = math.hypot(ax, ay)
+    if n > 0.05:
+        return (ax / n, ay / n)
+    if IN["src"] == "mouse" and IN["souris_ok"]:
+        px = joueur_x - CAM["x"] + LARGEUR // 2
+        py = joueur_y - CAM["y"] + HAUTEUR // 2
+        vx, vy = IN["souris_x"] - px, IN["souris_y"] - py
+        n = math.hypot(vx, vy)
+        if n > 14:
+            return (vx / n, vy / n)
+    return None
+
+
+def _in_tir():
+    """Vrai tant que le joueur tire (R2, Espace ou clic de souris)."""
+    d = IN["d"]
+    if _in_contexte() != "jeu":
+        return False
+    return bool((d and d.get("f")) or IN["souris_tir"])
+
+
+def _in_masquer_tactile():
+    """Cache les boutons tactiles quand on joue au clavier, à la souris ou à la manette."""
+    return IN["src"] in ("pad", "key", "mouse") and IN["d"] is not None
+
+
+def _dessiner_curseur():
+    """Curseur de menu pour le clavier et la manette."""
+    if not CUR["vis"]:
+        return
+    x, y = int(CUR["x"]), int(CUR["y"])
+    dessiner_halo(x, y, 46, (255, 214, 70), 0.55)
+    DRAW.circle(ecran, (255, 214, 70), (x, y), 24, 4)
+    DRAW.circle(ecran, (255, 255, 255), (x, y), 5)
+# ===== ENTREES FIN
+
+
 GRILLES_EDITEUR = (0, 32, 64, 96)      # 0 = pas de grille
 ED = {"mode": "deplacer", "grille": 0, "drag": False, "id": None, "cible": None, "bouton": None, "bouge": False,
       "x0": 0.0, "y0": 0.0, "x": 0.0, "y": 0.0, "orig": None, "selection": None, "zones": []}
@@ -4741,12 +4647,11 @@ def dessiner_ecran_victoire():
         t2 = rendu_texte(police_petite, "   ·   ".join(morceaux), True, (170, 180, 210))
         ecran.blit(t2, (cx - t2.get_width() // 2, y_haut + 242))
         if r["reduite"]:
-            t3 = rendu_texte(police_petite, "Mission déjà réussie : gains réduits des trois quarts", True, JAUNE_CYBER)
+            t3 = rendu_texte(police_petite, "Mission déjà réussie : gains réduits de moitié", True, JAUNE_CYBER)
             ecran.blit(t3, (cx - t3.get_width() // 2, y_haut + 266))
     if t >= DELAI_BOUTONS_FIN:
         bouton_neon(rect_bouton_rejouer, BLEU_CYBER, "REJOUE", police_bouton)
         bouton_neon(rect_bouton_suivant, VERT_FLUO, "SUIVANT", police_bouton, plein=True, pulse=True)
-        dessiner_defis_fin(rect_bouton_suivant.bottom + 16)
 
 
 def dessiner_ecran_defaite():
@@ -4777,7 +4682,6 @@ def dessiner_ecran_defaite():
     if t >= DELAI_BOUTONS_FIN:
         bouton_neon(rect_bouton_rejouer_defaite, BLEU_CYBER, "REJOUER", police_bouton)
         bouton_neon(rect_bouton_quitter_defaite, ROUGE_ALERTE, "QUITTER", police_bouton)
-        dessiner_defis_fin(rect_bouton_quitter_defaite.bottom + 16)
 
 
 # ==================== ÉCRAN DE DÉMARRAGE ====================
@@ -4969,11 +4873,21 @@ async def main():
         dx, dy = 0, 0
         clic_detecte, tirer_balle = False, False
         clic_x, clic_y = 0, 0
+        _in_frame()
 
-        for event in pygame.event.get():
+        for event in list(pygame.event.get()) + _in_evenements():
             if TRANS["actif"] and event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN, pygame.MOUSEMOTION,
                                                   pygame.FINGERMOTION, pygame.TEXTINPUT, pygame.KEYDOWN):
                 continue
+            if event.type == pygame.FINGERDOWN:
+                IN["src"] = "touch"
+                IN["t_doigt"] = pygame.time.get_ticks()
+            elif event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN) and not getattr(event, "synth", False):
+                # une vraie souris (les touchers génèrent aussi des événements de souris : on les ignore)
+                if not getattr(event, "touch", False) and pygame.time.get_ticks() - IN.get("t_doigt", -9999) > 1500:
+                    IN["src"] = "mouse"
+                    IN["souris_ok"] = True
+                    IN["souris_x"], IN["souris_y"] = pos_ev(event)
             _calibrer_souris(event)
             if event.type == pygame.QUIT:
                 EXTRA["_essai"] = 0
@@ -4991,12 +4905,18 @@ async def main():
                     tirer_balle = True
                     tir_maintenu = True
                     minuteur_cadence_tir = 0
+                elif etat_actuel == ETAT_JEU and not en_pause and not partie_gagnee and not partie_perdue and IN["src"] == "mouse" and not getattr(event, "synth", False):
+                    tirer_balle = True                       # PC : le clic gauche tire (la visée suit la souris)
+                    tir_maintenu = True
+                    IN["souris_tir"] = True
+                    minuteur_cadence_tir = 0
                 elif etat_actuel == ETAT_NIVEAUX:
                     glissement_niveaux_actif = True
                     type_glissement_niveaux = "souris"
                     dernier_x_glissement_niveaux = clic_x
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 tir_maintenu = False
+                IN["souris_tir"] = False
                 if type_glissement_niveaux == "souris":
                     glissement_niveaux_actif = False
                     type_glissement_niveaux = None
@@ -5098,7 +5018,6 @@ async def main():
             # Écrans à liste (Paramètres, Boutique) : glisser = défiler, toucher = agir
             gerer_liste_tactile(PAR, event, ETAT_PARAMS, traiter_tap_parametres)
             gerer_liste_tactile(BQ, event, ETAT_BOUTIQUE, traiter_tap_boutique)
-            gerer_liste_tactile(DEF, event, ETAT_DEFIS, traiter_tap_defis)
             gerer_editeur(event)
 
         # --- Nombre de pas de logique à effectuer ce tour (temps réel)
@@ -5130,8 +5049,6 @@ async def main():
                             AIDE["scroll"], AIDE["drag"], AIDE["id"] = 0.0, False, None
                         elif etat_actuel == ETAT_BOUTIQUE:
                             BQ.update(scroll=0.0, drag=False, id=None, msg="")
-                        elif etat_actuel == ETAT_DEFIS:
-                            DEF.update(scroll=0.0, drag=False, id=None)
                         elif etat_actuel == ETAT_EDITEUR:
                             ED.update(drag=False, id=None, cible=None, bouton=None, selection=None, mode="deplacer")
                     elif _cible[0] == "params":
@@ -5177,8 +5094,6 @@ async def main():
                 lancer_transition(("etat", ETAT_PROFIL))
             elif rect_icone_infos.collidepoint(clic_x, clic_y):
                 lancer_transition(("etat", ETAT_INFOS))
-            elif rect_icone_defis.collidepoint(clic_x, clic_y):
-                lancer_transition(("etat", ETAT_DEFIS))
             elif IS_WEB and rect_icone_classement.collidepoint(clic_x, clic_y):
                 _ouvrir_classement()
             elif IS_WEB and rect_icone_skins.collidepoint(clic_x, clic_y):
@@ -5282,6 +5197,16 @@ async def main():
                             elif vx > 15:
                                 img_joueur_actuel = img_joueur_droite
 
+                _im = _in_deplacement()
+                if _im is not None:                          # clavier (ZQSD / WASD / flèches) ou stick gauche
+                    dx, dy = _im[0] * joueur_vitesse * _facteur_vitesse(), _im[1] * joueur_vitesse * _facteur_vitesse()
+                    angle_visée_x, angle_visée_y = _im[0], _im[1]
+                    if MODE_GRAPHIQUE == "REALISTE":
+                        if _im[0] < -0.2:
+                            img_joueur_actuel = img_joueur_gauche
+                        elif _im[0] > 0.2:
+                            img_joueur_actuel = img_joueur_droite
+
                 if dx != 0 and not check_collision_murs(joueur_x + dx, joueur_y):
                     joueur_x += dx
                 if dy != 0 and not check_collision_murs(joueur_x, joueur_y + dy):
@@ -5289,7 +5214,7 @@ async def main():
                 if (dx != 0 or dy != 0) and QUALITE["niveau"] >= 1:
                     creer_propulsion(joueur_x, joueur_y, dx, dy, BLEU_CYBER)
 
-                if tir_maintenu:
+                if tir_maintenu or _in_tir():
                     if minuteur_cadence_tir <= 0:
                         tirer_balle = True
                         minuteur_cadence_tir = _cadence()
@@ -5308,7 +5233,10 @@ async def main():
                         d_boss = math.hypot(boss_x - joueur_x, boss_y - joueur_y)
                         if d_boss < dist_min:
                             dist_min, cible = d_boss, [boss_x, boss_y]
-                    if cible:
+                    _vm = _in_visee()
+                    if _vm is not None:
+                        balles.append([joueur_x, joueur_y, _vm[0] * 13, _vm[1] * 13, _perfo()])
+                    elif cible:
                         bx, by = cible[0] - joueur_x, cible[1] - joueur_y
                         db = math.hypot(bx, by)
                         balles.append([joueur_x, joueur_y, (bx / db) * 13, (by / db) * 13, _perfo()])
@@ -5498,21 +5426,6 @@ async def main():
             DRAW.circle(ecran, GRIS_HACKER, rect_icone_params.center, 35)
             DRAW.circle(ecran, VIOLET_CYBER, rect_icone_params.center, 35, 3)
             dessiner_icone_engrenage(rect_icone_params.centerx, rect_icone_params.centery, 27, VIOLET_CYBER)
-
-            cx_d, cy_d = rect_icone_defis.center
-            dessiner_halo(cx_d, cy_d, 60, VERT_FLUO, 0.45, 2)
-            DRAW.circle(ecran, GRIS_HACKER, (cx_d, cy_d), 35)
-            DRAW.circle(ecran, VERT_FLUO, (cx_d, cy_d), 35, 3)
-            DRAW.circle(ecran, VERT_FLUO, (cx_d, cy_d), 21, 3)
-            DRAW.circle(ecran, VERT_FLUO, (cx_d, cy_d), 7)
-            _dd = defis_verifier()
-            _reste = len(_dd["liste"]) - len(_dd["valides"])
-            if _reste > 0:                                                       # pastille : défis restants
-                DRAW.circle(ecran, ROSE_SYNTH, (cx_d + 27, cy_d - 27), 12)
-                _tp = rendu_texte(police_petite, str(_reste), True, BLANC_NEON)
-                ecran.blit(_tp, (cx_d + 27 - _tp.get_width() // 2, cy_d - 27 - _tp.get_height() // 2))
-            t_de = rendu_texte(police_petite, "DÉFIS", True, VERT_FLUO)
-            ecran.blit(t_de, (cx_d - t_de.get_width() // 2, rect_icone_defis.bottom + 6))
 
             if IS_WEB:
                 cx_t, cy_t = rect_icone_classement.center
@@ -5766,9 +5679,6 @@ async def main():
         elif etat_actuel == ETAT_BOUTIQUE:
             dessiner_boutique()
 
-        elif etat_actuel == ETAT_DEFIS:
-            dessiner_defis()
-
         elif etat_actuel == ETAT_PARAMS:
             dessiner_parametres()
 
@@ -5862,7 +5772,6 @@ async def main():
             for lx, ly, lr, lc, lint in lueurs:
                 dessiner_halo(lx, ly, lr if QUALITE["niveau"] >= 2 else int(lr * 0.7), lc, lint)
 
-            animer_skin()
             for b in balles:
                 bx_e, by_e = int(b[0] + ox), int(b[1] + oy)
                 DRAW.line(ecran, LASER["trail"], (int(bx_e - b[2] * 3.2), int(by_e - b[3] * 3.2)), (bx_e, by_e), 9)
@@ -6024,7 +5933,8 @@ async def main():
                 txt_vie_boss = rendu_texte(police_petite, f"BOSS {boss_vie}/{boss_vie_max}", True, BLANC_NEON)
                 ecran.blit(txt_vie_boss, (LARGEUR // 2 - txt_vie_boss.get_width() // 2, 144))
 
-            dessiner_commandes(manette_x, manette_y, tir_maintenu)
+            if not _in_masquer_tactile():
+                dessiner_commandes(manette_x, manette_y, tir_maintenu)
             _dessiner_pouvoirs_hud(ox, oy, t_ms)
 
             if partie_gagnee:
@@ -6051,6 +5961,7 @@ async def main():
         if PARAMS["fps"]:
             dessiner_fps()
 
+        _dessiner_curseur()
         pygame.display.flip()
         _tm3 = _time.perf_counter()
         TMR["l"] += ((_tm1 - _tm0) * 1000.0 - TMR["l"]) * 0.1

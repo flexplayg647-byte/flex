@@ -31,6 +31,7 @@ if ("serviceWorker" in navigator) {
 }
 </script>
 <script src="install.js"></script>
+<script src="controls.js"></script>
 """
 
 if 'rel="manifest"' not in html:
@@ -41,6 +42,8 @@ if 'rel="manifest"' not in html:
 if "__flexInstallEvt" not in html and 'rel="manifest"' in html:
     # page déjà modifiée par une ancienne version du script : on ajoute seulement ce qui manque
     html = re.sub(r"</head>", TETE.split('<meta name="mobile-web-app-capable" content="yes">')[1] + "</head>", html, count=1, flags=re.I)
+if 'src="controls.js"' not in html and 'src="install.js"' in html:
+    html = html.replace('<script src="install.js"></script>', '<script src="install.js"></script>\n<script src="controls.js"></script>', 1)
 if 'src="install.js"' not in html and "serviceWorker.register" in html:
     html = re.sub(r"</body>", '<script src="install.js"></script>\n</body>', html, count=1, flags=re.I)
 if "serviceWorker.register" not in html:
