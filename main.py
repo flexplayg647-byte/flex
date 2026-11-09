@@ -490,7 +490,42 @@ load(0);
 """
 
 
+_JS_HEURE = r"""
+(function(){
+if(window.flexHeure){return;}
+var H=window.flexHeure={ok:false,off:0};
+try{
+  fetch(location.href.split("#")[0],{method:"HEAD",cache:"no-store"}).then(function(r){
+    var d=r.headers.get("Date");
+    if(d){var t=Date.parse(d);if(!isNaN(t)){H.off=t-Date.now();H.ok=true;}}
+  }).catch(function(){});
+}catch(e){}
+})();
+"""
+_HEURE = {"off": 0.0, "maj": -100.0}
+
+
+def heure_serveur_s():
+    """Heure UTC en secondes. Sur le web, corrigée avec l'heure du serveur (le joueur ne peut pas la tricher en changeant l'heure du téléphone)."""
+    now = _time.time()
+    if IS_WEB:
+        if now - _HEURE["maj"] > 5.0:
+            _HEURE["maj"] = now
+            try:
+                h = _pfs.window.flexHeure
+                if bool(h.ok):
+                    _HEURE["off"] = float(h.off) / 1000.0
+            except Exception:
+                pass
+        return now + _HEURE["off"]
+    return now
+
+
 def _injecter_firebase():
+    try:
+        _pfs.window.eval(_JS_HEURE)
+    except Exception:
+        pass
     try:
         _pfs.window.eval(_JS_FIREBASE)
     except Exception:
@@ -2310,6 +2345,7 @@ ETAT_MENU, ETAT_JEU, ETAT_AIDE, ETAT_PROFIL, ETAT_INFOS, ETAT_NIVEAUX = 0, 1, 2,
 ETAT_PARAMS = 6
 ETAT_BOUTIQUE = 7
 ETAT_EDITEUR = 8
+ETAT_DEFIS = 9
 etat_actuel = ETAT_MENU
 en_pause = False
 
@@ -2405,7 +2441,7 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     ondes_fx.clear()
     ETAT_FX["secousse"] = 0.0
     ETAT_JOUEUR["bouclier"], ETAT_JOUEUR["invuln"] = STATS["bouclier"], 0
-    MISSION.update(drones=0, recompense=None, versee=False, duree=max(1, temps_restant_frames))
+    MISSION.update(drones=0, recompense=None, versee=False, duree=max(1, temps_restant_frames), defis_ok=[])
     if MODE_GRAPHIQUE == "REALISTE":
         img_joueur_actuel = img_joueur_droite
     _appliquer_skin()
@@ -2696,7 +2732,8 @@ rect_icone_infos = pygame.Rect(40, 30, 70, 70)
 rect_icone_params = pygame.Rect(130, 30, 70, 70)
 rect_icone_classement = pygame.Rect(220, 30, 70, 70)
 rect_icone_skins = pygame.Rect(310, 30, 70, 70)
-rect_icone_install = pygame.Rect(400, 30, 70, 70)
+rect_icone_defis = pygame.Rect(400, 30, 70, 70)
+rect_icone_install = pygame.Rect(490, 30, 70, 70)
 rect_recharger_photo = pygame.Rect(LARGEUR // 2 - 140, 280, 280, 45)
 rect_champ_pseudo = pygame.Rect(LARGEUR // 2 - 220, 350, 440, 60)
 rect_fleche_gauche = pygame.Rect(LARGEUR // 2 - 220, 450, 60, 60)
@@ -3181,18 +3218,49 @@ BOUTIQUE_ARTICLES = [
 ]
 # Skins : identifiant, nom, prix, couleur du laser, couleur de sa traînée
 SKINS_LASER = [
+    # --- COMMUNS
     ("cyan", "Cyan néon", 0, (0, 235, 255), (0, 80, 150)),
     ("rose", "Rose synthwave", 150, (255, 70, 200), (140, 20, 100)),
     ("acide", "Vert acide", 150, (170, 255, 0), (70, 120, 0)),
+    ("rouge", "Rouge alerte", 200, (255, 60, 60), (130, 10, 20)),
+    ("blanc", "Blanc glacé", 200, (235, 245, 255), (90, 120, 160)),
+    # --- RARES
     ("or", "Or électrique", 350, (255, 205, 50), (140, 90, 0)),
     ("violet", "Violet plasma", 350, (175, 95, 255), (80, 30, 150)),
+    ("magenta", "Magenta pulsar", 500, (255, 0, 160), (110, 0, 90)),
+    ("azur", "Bleu électrique", 500, (60, 140, 255), (10, 50, 150)),
+    ("lave", "Lave en fusion", 700, (255, 120, 20), (150, 30, 0)),
+    ("emeraude", "Émeraude toxique", 700, (40, 255, 150), (0, 100, 60)),
+    # --- ÉPIQUES
+    ("aurore", "Aurore boréale", 1800, (120, 255, 220), (130, 60, 200)),
+    ("venin", "Venin radioactif", 2200, (200, 255, 40), (40, 110, 20)),
+    ("rubis", "Rubis sang", 2500, (255, 30, 90), (100, 0, 40)),
+    ("glace", "Cristal polaire", 3000, (190, 240, 255), (60, 150, 230)),
+    # --- LÉGENDAIRES (les deux derniers sont animés)
+    ("soleil_noir", "Soleil noir", 5000, (255, 255, 255), (70, 0, 140)),
+    ("arcenciel", "Arc-en-ciel", 6500, (255, 0, 0), (120, 0, 0)),
+    ("flex_pulse", "Flex Pulse", 8500, (0, 235, 255), (255, 0, 180)),
+    # --- EXCLUSIF : jamais en vente, débloqué en terminant tous les défis de 3 semaines
+    ("champion", "Champion Flex", 0, (255, 215, 0), (255, 80, 0)),
 ]
+# Rareté de chaque skin : C = commun, R = rare, E = épique, L = légendaire
+RARETE_SKIN = {"cyan": "C", "rose": "C", "acide": "C", "rouge": "C", "blanc": "C",
+               "or": "R", "violet": "R", "magenta": "R", "azur": "R", "lave": "R", "emeraude": "R",
+               "aurore": "E", "venin": "E", "rubis": "E", "glace": "E",
+               "soleil_noir": "L", "arcenciel": "L", "flex_pulse": "L", "champion": "L"}
+EXCLUSIFS = ("champion",)                      # skins qu'on ne peut pas acheter
+RARETES_INFO = {"C": ("COMMUN", (170, 180, 200)), "R": ("RARE", (60, 150, 255)),
+                "E": ("ÉPIQUE", (190, 100, 255)), "L": ("LÉGENDAIRE", (255, 200, 50))}
+SKINS_ANIMES = ("arcenciel", "flex_pulse")      # couleurs qui changent en continu
 ARTICLES_NIVEAUX = {a["cle"]: a for a in BOUTIQUE_ARTICLES if "cle" in a}
 
-BOUTIQUE = {"pieces": 0, "niveaux": {}, "skins": ["cyan"], "skin_actif": "cyan", "faits": [], "etoiles": {}}
+DEFIS_VIDE = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
+              "diff": 3, "precedents": []}
+BOUTIQUE = {"pieces": 0, "niveaux": {}, "skins": ["cyan"], "skin_actif": "cyan", "faits": [], "etoiles": {},
+            "defis": dict(DEFIS_VIDE)}
 STATS = {"bouclier": 0, "cadence": 8, "degats": 1.0, "perfo": 0, "hack": 1.0, "potion": 0, "chrono": 0}
 LASER = {"main": SKINS_LASER[0][3], "trail": SKINS_LASER[0][4]}
-MISSION = {"drones": 0, "recompense": None, "versee": False, "duree": 1}      # suivi de la mission en cours
+MISSION = {"drones": 0, "recompense": None, "versee": False, "duree": 1, "defis_ok": []}      # suivi de la mission en cours
 ETAT_JOUEUR = {"bouclier": 0, "invuln": 0}                         # bouclier restant et invulnérabilité (en pas de logique)
 BQ = {"scroll": 0.0, "drag": False, "id": None, "y": 0.0, "x0": 0.0, "y0": 0.0, "moved": False,
       "zones": [], "msg": "", "msg_couleur": VERT_FLUO, "msg_t": -10000}
@@ -3220,6 +3288,7 @@ def charger_boutique():
         BOUTIQUE["skin_actif"] = actif if actif in BOUTIQUE["skins"] else "cyan"
         BOUTIQUE["faits"] = [n for n in d.get("faits", []) if isinstance(n, int)]
         BOUTIQUE["etoiles"] = {k: v for k, v in d.get("etoiles", {}).items() if isinstance(v, int) and 1 <= v <= 3}
+        BOUTIQUE["defis"] = _defis_depuis_sauvegarde(d.get("defis"))
     except Exception as e:
         print(f"⚠️ Boutique illisible : {e}")
     if statut == "ancien":
@@ -3245,10 +3314,32 @@ def recalculer_stats():
     STATS["chrono"] = (0, 300, 600, 900)[n.get("chrono", 0)]
 
 
+def couleurs_skin(sid):
+    """Couleurs (laser, traînée) d'un skin ; les skins animés changent avec le temps."""
+    t = pygame.time.get_ticks() / 1000.0
+    if sid == "arcenciel":
+        p = (int(127 + 128 * math.sin(t * 2.2)), int(127 + 128 * math.sin(t * 2.2 + 2.094)), int(127 + 128 * math.sin(t * 2.2 + 4.188)))
+        return p, (p[0] * 45 // 100, p[1] * 45 // 100, p[2] * 45 // 100)
+    if sid == "flex_pulse":
+        k = (math.sin(t * 3.0) + 1.0) / 2.0
+        a, b = (0, 235, 255), (255, 0, 180)
+        p = tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+        q = tuple(int(b[i] + (a[i] - b[i]) * k) for i in range(3))
+        return p, tuple(c * 55 // 100 for c in q)
+    for ident, _nom, _prix, principal, traine in SKINS_LASER:
+        if ident == sid:
+            return principal, traine
+    return SKINS_LASER[0][3], SKINS_LASER[0][4]
+
+
 def appliquer_skin():
-    for sid, _nom, _prix, principal, traine in SKINS_LASER:
-        if sid == BOUTIQUE["skin_actif"]:
-            LASER["main"], LASER["trail"] = principal, traine
+    LASER["main"], LASER["trail"] = couleurs_skin(BOUTIQUE["skin_actif"])
+
+
+def animer_skin():
+    """À appeler à chaque image : fait vivre les skins animés (arc-en-ciel, pulse)."""
+    if BOUTIQUE["skin_actif"] in SKINS_ANIMES:
+        LASER["main"], LASER["trail"] = couleurs_skin(BOUTIQUE["skin_actif"])
 
 
 def niveau_article(cle):
@@ -3293,17 +3384,17 @@ def calculer_recompense(victoire):
     drones = MISSION["drones"]
     mult_or = 1.0 + _cfg().get("or", 0) / 100.0                   # pouvoir « chasseur d'or »
     if not victoire:
-        return {"total": int(drones * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
+        return {"total": int((drones // 3) * mult_or), "base": 0, "temps": 0, "drones": drones, "boss": 0, "reduite": False}
     n = niveau_actuel
-    base = 30 + 8 * n
-    temps = max(0, temps_restant_frames) // 60 // 2
-    bonus_drones = drones * 2
-    boss = (100 + 20 * ((n + 1) // 5)) if niveau_data["est_boss"] else 0
+    base = 10 + 2 * n
+    temps = max(0, temps_restant_frames) // 60 // 6
+    bonus_drones = drones // 2
+    boss = (60 + 10 * ((n + 1) // 5)) if niveau_data["est_boss"] else 0
     total = base + temps + bonus_drones + boss
     reduite = n in BOUTIQUE["faits"]
     if reduite:
-        total //= 2
-    total = int(total * mult_or)
+        total //= 4                                  # niveau déjà réussi : gains divisés par 4
+    total = max(1, int(total * mult_or))
     return {"total": total, "base": base, "temps": temps, "drones": bonus_drones, "boss": boss, "reduite": reduite}
 
 
@@ -3317,6 +3408,10 @@ def accorder_recompense(victoire):
     BOUTIQUE["pieces"] += r["total"]
     if victoire and niveau_actuel not in BOUTIQUE["faits"]:
         BOUTIQUE["faits"].append(niveau_actuel)
+    try:
+        defis_evenement(victoire, r)
+    except Exception as e:
+        print(f"⚠️ Défis : {e}")
     sauvegarder_boutique()
 
 
@@ -3400,6 +3495,300 @@ def gerer_liste_tactile(liste, event, etat_cible, action_tap):
             action_tap(liste["x0"], liste["y0"])
 
 
+
+# ==================== DÉFIS HEBDOMADAIRES ====================
+# Chaque semaine (du lundi 00:00 UTC au dimanche soir), 4 défis tirés au sort (les mêmes pour tous les joueurs).
+# Récompense en pièces à chaque défi réussi + bonus si les 4 sont terminés ; 3 semaines parfaites = skin « Champion Flex ».
+DEFIS_NB = 4
+DEFIS_BONUS = 250
+DEFIS_SEMAINES_CHAMPION = 3
+# type : (cible min, cible max, pas, récompense par unité, récompense fixe)
+DEFIS_MODELES = {
+    "missions":   (4, 8, 1, 15, 0),
+    "drones":     (50, 120, 10, 1, 0),
+    "boss":       (1, 3, 1, 70, 0),
+    "pieces":     (150, 300, 50, 0.5, 0),
+    "rapides":    (2, 4, 1, 35, 0),
+    "haut_niveau": (5, 15, 1, 4, 60),
+    "serie":      (2, 4, 1, 45, 0),
+    "total_etoiles": (6, 15, 1, 8, 0),
+    "piece_unique": (40, 100, 10, 0.8, 20),
+    "drones_mission": (15, 40, 5, 3, 0),
+}
+DEFIS_UNIQUES = ("haut_niveau", "piece_unique", "drones_mission")      # défis à réussir en une seule mission (objectif = 1)
+DEFIS_MAX = {"missions": 15, "drones": 300, "boss": 5, "pieces": 700, "rapides": 8, "serie": 6,
+             "total_etoiles": 30, "haut_niveau": 999, "piece_unique": 160, "drones_mission": 90}
+DEFIS_DIFF_MAX = 10          # difficulté de 1 à 10 ; elle monte quand le joueur réussit tout, baisse quand il réussit peu
+
+
+def bonus_defis(d):
+    """Le bonus de semaine complète grandit avec la difficulté."""
+    return max(150, DEFIS_BONUS + 25 * (d["diff"] - 3))
+DEF = {"scroll": 0.0, "drag": False, "id": None, "y": 0.0, "x0": 0.0, "y0": 0.0, "moved": False, "zones": []}
+
+
+def texte_defi(defi):
+    n, k = defi["cible"], defi["type"]
+    if k == "missions":
+        return f"Remporte {n} missions"
+    if k == "drones":
+        return f"Détruis {n} drones"
+    if k == "boss":
+        return "Bats 1 boss" if n == 1 else f"Bats {n} boss"
+    if k == "pieces":
+        return f"Gagne {n} pièces en missions"
+    if k == "rapides":
+        return f"Réussis {n} missions avec 40 % du temps restant"
+    if k == "haut_niveau":
+        return f"Remporte une mission de niveau {n} ou plus"
+    if k == "serie":
+        return f"Enchaîne {n} victoires d'affilée"
+    if k == "total_etoiles":
+        return f"Gagne {n} étoiles au total"
+    if k == "piece_unique":
+        return f"Gagne {n} pièces en une seule mission"
+    if k == "drones_mission":
+        return f"Détruis {n} drones en une seule mission"
+    return "Défi"
+
+
+def _defis_depuis_sauvegarde(dd):
+    """Relit les défis d'une sauvegarde en vérifiant chaque valeur."""
+    d = {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
+         "diff": 3, "precedents": []}
+    if not isinstance(dd, dict):
+        return d
+    try:
+        d["semaine"] = max(0, int(dd.get("semaine", 0)))
+        for x in dd.get("liste", []):
+            if isinstance(x, dict) and x.get("type") in DEFIS_MODELES:
+                d["liste"].append({"id": x["type"], "type": x["type"], "cible": max(1, int(x.get("cible", 1))),
+                                   "recomp": max(0, int(x.get("recomp", 0)))})
+        ids = [x["id"] for x in d["liste"]]
+        d["progres"] = {k: max(0, int(v)) for k, v in dict(dd.get("progres", {})).items() if k in ids}
+        d["valides"] = [k for k in dd.get("valides", []) if k in ids]
+        d["bonus"] = bool(dd.get("bonus", False))
+        d["completes"] = max(0, int(dd.get("completes", 0)))
+        d["serie"] = max(0, int(dd.get("serie", 0)))
+        d["diff"] = max(1, min(DEFIS_DIFF_MAX, int(dd.get("diff", 3))))
+        d["precedents"] = [k for k in dd.get("precedents", []) if k in DEFIS_MODELES]
+    except Exception:
+        return {"semaine": 0, "liste": [], "progres": {}, "valides": [], "bonus": False, "completes": 0, "serie": 0,
+                "diff": 3, "precedents": []}
+    return d
+
+
+def semaine_courante():
+    """Numéro de la semaine (elle commence le lundi à 00:00 UTC)."""
+    jours = int(heure_serveur_s() // 86400)
+    return (jours + 3) // 7
+
+
+def fin_semaine_s(semaine):
+    return ((semaine + 1) * 7 - 3) * 86400
+
+
+def generer_defis(semaine, diff=3, precedents=()):
+    """Tire au sort les défis de la semaine. La difficulté (1 à 10) règle les cibles et les récompenses ;
+    les types de la semaine précédente ne reviennent pas tout de suite, pour éviter la répétition."""
+    rng = random.Random(semaine * 7919 + 13)
+    avance = int(globals().get("niveau_max_atteint", 0))
+    facteur = 0.75 + 0.15 * (diff - 1)
+    types = list(DEFIS_MODELES.keys())
+    if avance < 4:                       # pas encore de boss atteignable : pas de défi boss
+        types.remove("boss")
+    nouveaux = [k for k in types if k not in precedents]
+    if len(nouveaux) >= DEFIS_NB:
+        types = nouveaux
+    rng.shuffle(types)
+    liste = []
+    for k in types[:DEFIS_NB]:
+        lo, hi, pas, par_unite, fixe = DEFIS_MODELES[k]
+        n = rng.randrange(lo, hi + 1, pas)
+        if k == "haut_niveau":
+            n = max(2, min(n + (diff - 3), avance + 1))
+        else:
+            n = max(1, min(DEFIS_MAX[k], int(round(n * facteur / pas)) * pas))
+            if k == "drones_mission":            # jamais plus de drones que les missions déjà débloquées n'en contiennent
+                n = min(n, max(5, int(min(70, 3 + 2 * avance) * 0.8) // 5 * 5))
+            elif k == "piece_unique":            # jamais plus que ce qu'une mission peut rapporter à ce stade
+                n = min(n, 40 if avance < 4 else (100 if avance < 9 else 160))
+        recomp = max(10, int((fixe + n * par_unite) * (1 + 0.04 * (diff - 3))))
+        liste.append({"id": k, "type": k, "cible": n, "recomp": recomp})
+    return liste
+
+
+def defis_verifier():
+    """Retourne les défis de la semaine en cours (en les renouvelant quand une nouvelle semaine commence)."""
+    d = BOUTIQUE["defis"]
+    sem = max(semaine_courante(), d["semaine"])        # une horloge remise en arrière ne redonne jamais d'anciens défis
+    if sem > d["semaine"] or not d["liste"]:
+        if d["liste"]:
+            faits, total = len(d["valides"]), len(d["liste"])
+            if faits >= total:
+                d["diff"] = min(DEFIS_DIFF_MAX, d["diff"] + 1)        # tout réussi : la semaine suivante est plus dure
+            elif faits <= 1:
+                d["diff"] = max(1, d["diff"] - 1)                     # presque rien de réussi : un peu plus facile
+            d["precedents"] = [x["type"] for x in d["liste"]]
+        d.update(semaine=sem, liste=generer_defis(sem, d["diff"], d["precedents"]), progres={}, valides=[], bonus=False, serie=0)
+        sauvegarder_boutique()
+    return d
+
+
+def _valider_defi(d, defi):
+    d["valides"].append(defi["id"])
+    BOUTIQUE["pieces"] += defi["recomp"]
+    MISSION["defis_ok"].append((texte_defi(defi), defi["recomp"]))
+    if len(d["valides"]) >= len(d["liste"]) and not d["bonus"]:
+        d["bonus"] = True
+        d["completes"] += 1
+        b = bonus_defis(d)
+        BOUTIQUE["pieces"] += b
+        MISSION["defis_ok"].append(("BONUS SEMAINE COMPLÈTE", b))
+        if d["completes"] >= DEFIS_SEMAINES_CHAMPION and "champion" not in BOUTIQUE["skins"]:
+            BOUTIQUE["skins"].append("champion")
+            MISSION["defis_ok"].append(("SKIN CHAMPION FLEX DÉBLOQUÉ", 0))
+
+
+def defis_evenement(victoire, r):
+    """Met à jour les défis à la fin d'une mission (r = récompense de la mission)."""
+    d = defis_verifier()
+    d["serie"] = d["serie"] + 1 if victoire else 0
+    for defi in d["liste"]:
+        if defi["id"] in d["valides"]:
+            continue
+        k = defi["type"]
+        p = d["progres"].get(defi["id"], 0)
+        if k == "missions" and victoire:
+            p += 1
+        elif k == "drones":
+            p += MISSION["drones"]
+        elif k == "boss" and victoire and niveau_data["est_boss"]:
+            p += 1
+        elif k == "pieces":
+            p += r["total"]
+        elif k == "rapides" and victoire and temps_restant_frames >= 0.4 * MISSION["duree"]:
+            p += 1
+        elif k == "haut_niveau" and victoire and niveau_actuel + 1 >= defi["cible"]:
+            p += 1
+        elif k == "serie":
+            p = max(p, d["serie"])
+        elif k == "total_etoiles" and victoire:
+            p += int(FIN.get("etoiles", 0))
+        elif k == "piece_unique" and victoire and r["total"] >= defi["cible"]:
+            p += 1
+        elif k == "drones_mission" and victoire and MISSION["drones"] >= defi["cible"]:
+            p += 1
+        objectif = 1 if k in DEFIS_UNIQUES else defi["cible"]
+        d["progres"][defi["id"]] = min(p, objectif)
+        if d["progres"][defi["id"]] >= objectif:
+            _valider_defi(d, defi)
+
+
+def traiter_tap_defis(x, y):
+    for rect, genre, _cle in DEF["zones"]:
+        if rect.collidepoint(x, y) and genre == "retour":
+            lancer_transition(("etat", ETAT_MENU))
+            return
+
+
+def _texte_ajuste(texte, couleur, largeur_max):
+    t = rendu_texte(police_aide, texte, True, couleur)
+    if t.get_width() > largeur_max:
+        t = rendu_texte(police_petite, texte, True, couleur)
+    return t
+
+
+def dessiner_defis():
+    d = defis_verifier()
+    dessiner_fond_menu()
+    pw = min(780, LARGEUR - 40)
+    px0 = LARGEUR // 2 - pw // 2
+    dessiner_panneau_neon(px0, pw, VERT_FLUO, False, 215)
+    dessiner_titre_glitch("DÉFIS", police_titre, LARGEUR // 2, 50)
+    dessiner_pieces(LARGEUR - 170, 52)
+
+    y_zone, h_carte, pas = 130, 96, 108
+    nb = len(d["liste"])
+    hauteur_contenu = 52 + (nb + 2) * pas + 20
+    hauteur_visible = HAUTEUR - y_zone - 8
+    defil_max = max(0, hauteur_contenu - hauteur_visible)
+    DEF["scroll"] = max(-defil_max, min(0, DEF["scroll"]))
+
+    y = y_zone + 6 + DEF["scroll"]
+    ecran.set_clip(pygame.Rect(px0 - 14, y_zone, pw + 28, HAUTEUR - y_zone))
+
+    # temps restant avant le renouvellement
+    restant = max(0, int(fin_semaine_s(d["semaine"]) - heure_serveur_s()))
+    j, h, m = restant // 86400, (restant % 86400) // 3600, (restant % 3600) // 60
+    reste_txt = f"{j} j {h} h" if j > 0 else f"{h} h {m} min"
+    txt = f"Difficulté {d['diff']}/{DEFIS_DIFF_MAX}   ·   Nouveaux défis dans {reste_txt}"
+    t_temps = rendu_texte(police_petite, txt, True, JAUNE_CYBER)
+    ecran.blit(t_temps, (LARGEUR // 2 - t_temps.get_width() // 2, int(y + 10)))
+    y += 52
+
+    def carte(y_, couleur_bord):
+        r = pygame.Rect(px0 + 24, int(y_), pw - 48, h_carte)
+        DRAW.rect(ecran, (10, 13, 28), r, border_radius=12)
+        DRAW.rect(ecran, couleur_bord, r, 2, border_radius=12)
+        return r
+
+    def ligne(r, titre, p, cible, recomp, fait, etiquette_fin):
+        col = VERT_FLUO if fait else CYAN_NEON
+        largeur_titre = r.w - 36 - 120
+        ecran.blit(_texte_ajuste(titre, BLANC_NEON, largeur_titre), (r.x + 18, r.y + 12))
+        # récompense à droite
+        if recomp:
+            t_r = rendu_texte(police_jeu, f"+{recomp}", True, JAUNE_CYBER)
+            dessiner_piece(r.right - 24 - t_r.get_width() - 18, r.y + 26, 11)
+            ecran.blit(t_r, (r.right - 18 - t_r.get_width(), r.y + 26 - t_r.get_height() // 2))
+        # barre de progression
+        barre = pygame.Rect(r.x + 18, r.y + 58, r.w - 36 - 110, 16)
+        DRAW.rect(ecran, (28, 34, 60), barre, border_radius=8)
+        if cible > 0 and p > 0:
+            DRAW.rect(ecran, col, (barre.x, barre.y, max(8, int(barre.w * min(1.0, p / float(cible)))), barre.h), border_radius=8)
+        DRAW.rect(ecran, eclaircir(col, 0.5), barre, 2, border_radius=8)
+        t_p = rendu_texte(police_petite, etiquette_fin if fait else f"{min(p, cible)} / {cible}", True, col)
+        ecran.blit(t_p, (r.right - 18 - t_p.get_width(), barre.centery - t_p.get_height() // 2))
+
+    for defi in d["liste"]:
+        fait = defi["id"] in d["valides"]
+        r = carte(y, VERT_FLUO if fait else eclaircir(BLEU_CYBER, 0.35))
+        objectif = 1 if defi["type"] in DEFIS_UNIQUES else defi["cible"]
+        ligne(r, texte_defi(defi), d["progres"].get(defi["id"], 0), objectif, defi["recomp"], fait, "FAIT")
+        y += pas
+
+    # bonus de la semaine
+    r = carte(y, VERT_FLUO if d["bonus"] else JAUNE_CYBER)
+    ligne(r, f"BONUS : termine les {nb} défis", len(d["valides"]), nb, bonus_defis(d), d["bonus"], "FAIT")
+    y += pas
+
+    # skin exclusif
+    possede = "champion" in BOUTIQUE["skins"]
+    r = carte(y, VERT_FLUO if possede else (255, 215, 0))
+    ligne(r, "Skin exclusif « Champion Flex » : termine tous les défis 3 semaines",
+          min(d["completes"], DEFIS_SEMAINES_CHAMPION), DEFIS_SEMAINES_CHAMPION, 0, possede, "DÉBLOQUÉ")
+    ecran.set_clip(None)
+    DEF["zones"] = [(rect_retour_infos, "retour", None)]
+    bouton_neon(rect_retour_infos, ROUGE_ALERTE, "RETOUR", police_bouton)
+
+    if defil_max > 0:
+        x_barre, haut_piste = px0 + pw - 9, y_zone + 6
+        long_piste = HAUTEUR - y_zone - 22
+        long_pouce = max(30, int(long_piste * hauteur_visible / float(hauteur_contenu)))
+        y_pouce = haut_piste + int((long_piste - long_pouce) * (-DEF["scroll"]) / float(defil_max))
+        DRAW.rect(ecran, (16, 20, 40), (x_barre, haut_piste, 4, long_piste), border_radius=2)
+        DRAW.rect(ecran, VERT_FLUO, (x_barre, y_pouce, 4, long_pouce), border_radius=2)
+
+
+def dessiner_defis_fin(y):
+    """Sur l'écran de fin de mission : liste des défis accomplis pendant cette partie."""
+    for i, (texte, gain) in enumerate(MISSION["defis_ok"][:4]):
+        ligne_txt = f"DÉFI : {texte}" + (f"   +{gain}" if gain else "")
+        t = rendu_texte(police_petite, ligne_txt, True, VERT_FLUO)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y + i * 24))
+
+
 # ---------------------------------------------------------------- dessin
 def dessiner_piece(cx, cy, r):
     DRAW.circle(ecran, (255, 200, 40), (cx, cy), r)
@@ -3456,7 +3845,8 @@ def dessiner_boutique():
     y_zone, h_carte, pas = 130, 92, 104
     nb_sections = sum(1 for a in BOUTIQUE_ARTICLES if "section" in a)
     nb_articles = len(BOUTIQUE_ARTICLES) - nb_sections
-    hauteur_contenu = nb_sections * 50 + (nb_articles + len(SKINS_LASER)) * pas + 60
+    skins_visibles = [sk for sk in SKINS_LASER if sk[0] not in EXCLUSIFS or sk[0] in BOUTIQUE["skins"]]
+    hauteur_contenu = nb_sections * 50 + (nb_articles + len(skins_visibles)) * pas + 60
     hauteur_visible = HAUTEUR - y_zone - 8
     defil_max = max(0, hauteur_contenu - hauteur_visible)
     BQ["scroll"] = max(-defil_max, min(0, BQ["scroll"]))
@@ -3517,10 +3907,15 @@ def dessiner_boutique():
                 zones.append((rb, "niveau", cle))
         y += pas
 
-    for sid, nom, prix, principal, traine in SKINS_LASER:
+    for sid, nom, prix, principal, traine in skins_visibles:
         if y_zone - h_carte < y < HAUTEUR:
             r = carte(y)
-            ecran.blit(rendu_texte(police_aide, nom, True, BLANC_NEON), (r.x + 90, r.y + 12))
+            principal, traine = couleurs_skin(sid)
+            lib_rar, col_rar = RARETES_INFO[RARETE_SKIN.get(sid, "C")]
+            DRAW.rect(ecran, col_rar, r, 2, border_radius=12)
+            t_nom = rendu_texte(police_aide, nom, True, BLANC_NEON)
+            ecran.blit(t_nom, (r.x + 90, r.y + 12))
+            ecran.blit(rendu_texte(police_petite, lib_rar, True, col_rar), (r.x + 90 + t_nom.get_width() + 12, r.y + 18))
             DRAW.line(ecran, traine, (r.x + 24, r.centery + 10), (r.x + 64, r.centery - 10), 9)
             DRAW.line(ecran, principal, (r.x + 30, r.centery + 7), (r.x + 64, r.centery - 10), 5)
             DRAW.circle(ecran, BLANC_NEON, (r.x + 64, r.centery - 10), 4)
@@ -4111,7 +4506,7 @@ def _in_cibles():
             return _in_rects("rect_pause_continuer", "rect_pause_rejouer", "rect_pause_params", "rect_pause_quitter")
         return []
     if e == ETAT_MENU:
-        noms = ["rect_bouton_jouer", "rect_bouton_aide", "rect_bouton_boutique", "rect_icone_profil", "rect_icone_infos", "rect_icone_params"]
+        noms = ["rect_bouton_jouer", "rect_bouton_aide", "rect_bouton_boutique", "rect_icone_profil", "rect_icone_infos", "rect_icone_params", "rect_icone_defis"]
         if IS_WEB:
             noms += ["rect_icone_classement", "rect_icone_skins"]
             if _inst_visible:
@@ -4134,6 +4529,8 @@ def _in_cibles():
         return [(z[0].centerx, z[0].centery) for z in PAR["zones"] if 0 <= z[0].centery <= HAUTEUR]
     if e == ETAT_BOUTIQUE:
         return [(z[0].centerx, z[0].centery) for z in BQ["zones"] if 0 <= z[0].centery <= HAUTEUR]
+    if e == ETAT_DEFIS:
+        return _in_rects("rect_retour_infos")
     return []
 
 
@@ -4181,6 +4578,8 @@ def _in_retour_pos():
         return rect_bouton_retour.center
     if e == ETAT_EDITEUR:
         return rect_bouton_retour.center
+    if e == ETAT_DEFIS:
+        return rect_retour_infos.center
     return None
 
 
@@ -4271,6 +4670,8 @@ def _in_frame():
                 CUR["x"] = LARGEUR / 2.0
     if etat_actuel == ETAT_AIDE and sy:                       # écran d'aide : le stick fait défiler le texte
         AIDE["scroll"] -= sy * 14
+    if etat_actuel == ETAT_DEFIS and sy:                      # écran des défis : idem
+        DEF["scroll"] -= sy * 14
     if ok:
         _in_clic(CUR["x"], CUR["y"])
     if bk or ps:
@@ -4647,11 +5048,12 @@ def dessiner_ecran_victoire():
         t2 = rendu_texte(police_petite, "   ·   ".join(morceaux), True, (170, 180, 210))
         ecran.blit(t2, (cx - t2.get_width() // 2, y_haut + 242))
         if r["reduite"]:
-            t3 = rendu_texte(police_petite, "Mission déjà réussie : gains réduits de moitié", True, JAUNE_CYBER)
+            t3 = rendu_texte(police_petite, "Mission déjà réussie : gains réduits des trois quarts", True, JAUNE_CYBER)
             ecran.blit(t3, (cx - t3.get_width() // 2, y_haut + 266))
     if t >= DELAI_BOUTONS_FIN:
         bouton_neon(rect_bouton_rejouer, BLEU_CYBER, "REJOUE", police_bouton)
         bouton_neon(rect_bouton_suivant, VERT_FLUO, "SUIVANT", police_bouton, plein=True, pulse=True)
+        dessiner_defis_fin(rect_bouton_suivant.bottom + 16)
 
 
 def dessiner_ecran_defaite():
@@ -4682,6 +5084,7 @@ def dessiner_ecran_defaite():
     if t >= DELAI_BOUTONS_FIN:
         bouton_neon(rect_bouton_rejouer_defaite, BLEU_CYBER, "REJOUER", police_bouton)
         bouton_neon(rect_bouton_quitter_defaite, ROUGE_ALERTE, "QUITTER", police_bouton)
+        dessiner_defis_fin(rect_bouton_quitter_defaite.bottom + 16)
 
 
 # ==================== ÉCRAN DE DÉMARRAGE ====================
@@ -5018,6 +5421,7 @@ async def main():
             # Écrans à liste (Paramètres, Boutique) : glisser = défiler, toucher = agir
             gerer_liste_tactile(PAR, event, ETAT_PARAMS, traiter_tap_parametres)
             gerer_liste_tactile(BQ, event, ETAT_BOUTIQUE, traiter_tap_boutique)
+            gerer_liste_tactile(DEF, event, ETAT_DEFIS, traiter_tap_defis)
             gerer_editeur(event)
 
         # --- Nombre de pas de logique à effectuer ce tour (temps réel)
@@ -5049,6 +5453,8 @@ async def main():
                             AIDE["scroll"], AIDE["drag"], AIDE["id"] = 0.0, False, None
                         elif etat_actuel == ETAT_BOUTIQUE:
                             BQ.update(scroll=0.0, drag=False, id=None, msg="")
+                        elif etat_actuel == ETAT_DEFIS:
+                            DEF.update(scroll=0.0, drag=False, id=None)
                         elif etat_actuel == ETAT_EDITEUR:
                             ED.update(drag=False, id=None, cible=None, bouton=None, selection=None, mode="deplacer")
                     elif _cible[0] == "params":
@@ -5094,6 +5500,8 @@ async def main():
                 lancer_transition(("etat", ETAT_PROFIL))
             elif rect_icone_infos.collidepoint(clic_x, clic_y):
                 lancer_transition(("etat", ETAT_INFOS))
+            elif rect_icone_defis.collidepoint(clic_x, clic_y):
+                lancer_transition(("etat", ETAT_DEFIS))
             elif IS_WEB and rect_icone_classement.collidepoint(clic_x, clic_y):
                 _ouvrir_classement()
             elif IS_WEB and rect_icone_skins.collidepoint(clic_x, clic_y):
@@ -5427,6 +5835,21 @@ async def main():
             DRAW.circle(ecran, VIOLET_CYBER, rect_icone_params.center, 35, 3)
             dessiner_icone_engrenage(rect_icone_params.centerx, rect_icone_params.centery, 27, VIOLET_CYBER)
 
+            cx_d, cy_d = rect_icone_defis.center
+            dessiner_halo(cx_d, cy_d, 60, VERT_FLUO, 0.45, 2)
+            DRAW.circle(ecran, GRIS_HACKER, (cx_d, cy_d), 35)
+            DRAW.circle(ecran, VERT_FLUO, (cx_d, cy_d), 35, 3)
+            DRAW.circle(ecran, VERT_FLUO, (cx_d, cy_d), 21, 3)
+            DRAW.circle(ecran, VERT_FLUO, (cx_d, cy_d), 7)
+            _dd = defis_verifier()
+            _reste = len(_dd["liste"]) - len(_dd["valides"])
+            if _reste > 0:                                                       # pastille : défis restants
+                DRAW.circle(ecran, ROSE_SYNTH, (cx_d + 27, cy_d - 27), 12)
+                _tp = rendu_texte(police_petite, str(_reste), True, BLANC_NEON)
+                ecran.blit(_tp, (cx_d + 27 - _tp.get_width() // 2, cy_d - 27 - _tp.get_height() // 2))
+            t_de = rendu_texte(police_petite, "DÉFIS", True, VERT_FLUO)
+            ecran.blit(t_de, (cx_d - t_de.get_width() // 2, rect_icone_defis.bottom + 6))
+
             if IS_WEB:
                 cx_t, cy_t = rect_icone_classement.center
                 dessiner_halo(cx_t, cy_t, 60, JAUNE_CYBER, 0.45, 2)
@@ -5679,6 +6102,9 @@ async def main():
         elif etat_actuel == ETAT_BOUTIQUE:
             dessiner_boutique()
 
+        elif etat_actuel == ETAT_DEFIS:
+            dessiner_defis()
+
         elif etat_actuel == ETAT_PARAMS:
             dessiner_parametres()
 
@@ -5772,6 +6198,7 @@ async def main():
             for lx, ly, lr, lc, lint in lueurs:
                 dessiner_halo(lx, ly, lr if QUALITE["niveau"] >= 2 else int(lr * 0.7), lc, lint)
 
+            animer_skin()
             for b in balles:
                 bx_e, by_e = int(b[0] + ox), int(b[1] + oy)
                 DRAW.line(ecran, LASER["trail"], (int(bx_e - b[2] * 3.2), int(by_e - b[3] * 3.2)), (bx_e, by_e), 9)
