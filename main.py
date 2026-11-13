@@ -13,6 +13,20 @@ import hmac
 import re
 
 
+def _asset(nom):
+    """Chemin d'un fichier du jeu (image, son) : dossier courant d'abord, sinon le dossier de main.py.
+    Pydroid lance parfois le jeu depuis un autre dossier, et les images ne se chargeaient alors pas."""
+    if os.path.exists(nom):
+        return nom
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), nom)
+        if os.path.exists(p):
+            return p
+    except Exception:
+        pass
+    return nom
+
+
 # Dossier des sauvegardes : sur Android (APK) c'est le stockage privé de l'application (conservé lors des mises à jour) ;
 # sur Pydroid ou PC, rien ne change : les fichiers restent à côté du jeu.
 IS_WEB = sys.platform == "emscripten"
@@ -556,7 +570,7 @@ def _appliquer_skin():
     try:
         if sid in SKIN_IDS:
             if _planche_skins is None:
-                _planche_skins = pygame.image.load("skins_sheet.png").convert_alpha()
+                _planche_skins = pygame.image.load(_asset("skins_sheet.png")).convert_alpha()
             i = SKIN_IDS.index(sid)
             morceau = _planche_skins.subsurface(pygame.Rect((i % 6) * 160, (i // 6) * 160, 160, 160)).copy()
             img = pygame.transform.smoothscale(morceau, (TAILLE_PERSO, TAILLE_PERSO))
@@ -984,7 +998,7 @@ def chemin_donnees(nom):
 # ==================== PROTECTION DU JEU (dissuasion) ====================
 # Empreinte du code officiel : calculée à la livraison. Si main.py est modifié, le jeu affiche « VERSION MODIFIÉE ».
 # (Tu modifies toi-même le code ? Lance le jeu, copie « Empreinte actuelle » affichée dans la console, colle-la ci-dessous.)
-EMPREINTE_OFFICIELLE = "13b857d470e366cb8f20b2174da60f639ed4e9703d474bd2baecab8c86859fc9"
+EMPREINTE_OFFICIELLE = "f7438d1c835b07e41f975ca7a8919e0c383baf36336448344e9c82b3902c47ea"
 
 
 def _empreinte_du_fichier():
@@ -1507,10 +1521,10 @@ _ecran_precoce()
 # 2. CHARGEMENT DES SONS (fichiers déposés dans le dossier du jeu)
 try:
     pygame.mixer.init()
-    son_tir = pygame.mixer.Sound("tir.wav")
-    son_explosion = pygame.mixer.Sound("explosion.ogg" if IS_WEB else "explosion.mp3")
-    son_echec = pygame.mixer.Sound("echec.wav")
-    son_victoire = pygame.mixer.Sound("victoire.wav")
+    son_tir = pygame.mixer.Sound(_asset("tir.wav"))
+    son_explosion = pygame.mixer.Sound(_asset("explosion.ogg" if IS_WEB else "explosion.mp3"))
+    son_echec = pygame.mixer.Sound(_asset("echec.wav"))
+    son_victoire = pygame.mixer.Sound(_asset("victoire.wav"))
     son_tir.set_volume(0.5)
     son_explosion.set_volume(0.6)
     son_echec.set_volume(0.7)
@@ -1521,7 +1535,7 @@ except Exception as e:
     SON_ACTIF = False
 
 try:
-    pygame.mixer.music.load("musique_ambiance.ogg" if IS_WEB else "musique_ambiance.mp3")
+    pygame.mixer.music.load(_asset("musique_ambiance.ogg" if IS_WEB else "musique_ambiance.mp3"))
     pygame.mixer.music.set_volume(0.4)
     MUSIQUE_ACTIVE = True
 except Exception as e:
@@ -1532,16 +1546,16 @@ musique_lancee = False
 
 # 3. CHARGEMENT DES SPRITES AVEC LES NOMS DE FICHIERS REMOVEBG
 try:
-    img_joueur_droite = pygame.image.load("perso-removebg-preview.png").convert_alpha()
+    img_joueur_droite = pygame.image.load(_asset("perso-removebg-preview.png")).convert_alpha()
     img_joueur_droite = pygame.transform.scale(img_joueur_droite, (TAILLE_PERSO, TAILLE_PERSO))
     img_joueur_gauche = pygame.transform.flip(img_joueur_droite, True, False)
     img_joueur_actuel = img_joueur_droite
     _img_joueur_defaut = img_joueur_droite
 
-    img_drone = pygame.image.load("drone__23_-removebg-preview.png").convert_alpha()
+    img_drone = pygame.image.load(_asset("drone__23_-removebg-preview.png")).convert_alpha()
     img_drone = pygame.transform.scale(img_drone, (40, 40))
 
-    img_core = pygame.image.load("core.png").convert_alpha()
+    img_core = pygame.image.load(_asset("core.png")).convert_alpha()
     img_core = pygame.transform.scale(img_core, (TAILLE_CASE, TAILLE_CASE))
 
     MODE_GRAPHIQUE = "REALISTE"
@@ -1553,7 +1567,7 @@ except Exception as e:
 TAILLE_BOSS = 260
 RAYON_CORPS_BOSS = TAILLE_BOSS * 0.30
 try:
-    img_boss = pygame.image.load("boss.png").convert_alpha()
+    img_boss = pygame.image.load(_asset("boss.png")).convert_alpha()
     img_boss = pygame.transform.smoothscale(img_boss, (TAILLE_BOSS, TAILLE_BOSS))
     BOSS_IMAGE_DISPONIBLE = True
 except Exception as e:
@@ -2376,6 +2390,8 @@ RADAR_PORTEE_OBJECTIFS = 3200     # portée virtuelle utilisée pour situer le c
 BTN_PAUSE_X, BTN_PAUSE_Y = LARGEUR - 150, 25
 BTN_PAUSE_RAYON = 30
 rect_bouton_pause = pygame.Rect(BTN_PAUSE_X - BTN_PAUSE_RAYON, BTN_PAUSE_Y - BTN_PAUSE_RAYON, BTN_PAUSE_RAYON * 2, BTN_PAUSE_RAYON * 2)
+BTN_VUE_X, BTN_VUE_Y = BTN_PAUSE_X - 80, BTN_PAUSE_Y          # bouton 2D / 3D (change la vue de jeu)
+rect_bouton_vue = pygame.Rect(BTN_VUE_X - BTN_PAUSE_RAYON, BTN_VUE_Y - BTN_PAUSE_RAYON, BTN_PAUSE_RAYON * 2, BTN_PAUSE_RAYON * 2)
 
 # ÉCRAN DE SÉLECTION DES MISSIONS (chaîne de niveaux)
 NIVEAU_NODE_ESPACEMENT = 160
@@ -2436,6 +2452,7 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     joueur_y = niveau_data["depart"][0] * TAILLE_CASE + TAILLE_CASE / 2
     jauge_hack, hack_reussi, partie_gagnee, partie_perdue = 0.0, False, False, False
     CAM["x"], CAM["y"] = joueur_x, joueur_y
+    VUE["ang"], VUE["cam_d"] = _v3_cap_libre(0.0), 1.2
     balles.clear()
     particules_fx.clear()
     ondes_fx.clear()
@@ -2476,7 +2493,7 @@ def charger_photo_profil():
         if os.path.exists(nom_fichier):
             try:
                 taille = 160
-                img = pygame.image.load(nom_fichier).convert_alpha()
+                img = pygame.image.load(_asset(nom_fichier)).convert_alpha()
                 img = pygame.transform.smoothscale(img, (taille, taille))
                 masque = pygame.Surface((taille, taille), pygame.SRCALPHA)
                 DRAW.circle(masque, (255, 255, 255, 255), (taille // 2, taille // 2), taille // 2)
@@ -2640,6 +2657,9 @@ def point_sur_radar(px, py, portee):
     Si le point est hors de portée, il est ramené (clampé) sur le bord du radar
     pour indiquer uniquement la direction."""
     dx, dy = px - joueur_x, py - joueur_y
+    if _v3_actif():                      # en 3e personne le radar tourne : le haut = devant le joueur
+        _c, _s = math.cos(VUE["ang"] + VUE["cam_off"]), math.sin(VUE["ang"] + VUE["cam_off"])
+        dx, dy = -dx * _s + dy * _c, -(dx * _c + dy * _s)
     echelle = RADAR_RAYON / portee
     rx, ry = dx * echelle, dy * echelle
     dist_radar = math.hypot(rx, ry)
@@ -2771,6 +2791,8 @@ def _liste_pct(debut, fin, pas):
 # ("SECTION", titre)  ou  (clé, libellé, [options], index par défaut)
 PARAM_DEFS = [
     ("SECTION", "GRAPHISMES"),
+    ("vue", "Vue de jeu", ["Du dessus", "3e personne"], 0),
+    ("qualite3d", "Qualité de la 3D", ["Auto", "Léger", "Moyen", "Max"], 0),
     ("qualite", "Qualité graphique", ["Auto", "Léger", "Équilibré", "Complet"], 0),
     ("resolution", "Résolution (au lancement)", ["Auto", "100%", "75%", "50%"], 0),
     ("saut", "Images dessinées", ["Auto", "Toutes", "1 sur 2", "1 sur 3"], 0),
@@ -4703,6 +4725,8 @@ def _in_deplacement():
 
 def _in_visee():
     """Direction de visée choisie par le joueur (stick droit ou souris), ou None pour la visée automatique."""
+    if _v3_actif():
+        return _v3_viser()
     d = IN["d"]
     if not d or _in_contexte() != "jeu":
         return None
@@ -5257,6 +5281,1184 @@ appliquer_parametres()
 charger_boutique()
 recalculer_stats()
 appliquer_skin()
+# ===== VUE 3E PERSONNE DEBUT
+# ================================================================ VUE 3E PERSONNE (pseudo-3D)
+# La logique du jeu reste 100 % 2D (positions en pixels). Seule la caméra change : ici on convertit
+# les positions en « cases » (1 case = TAILLE_CASE pixels) et on dessine le labyrinthe en perspective.
+VUE = {"ang": 0.0, "cam_d": 1.7, "surf": None, "dim": None, "carte": None, "faces": {}, "t_bascule": 0,
+       "qa_i": 0, "ema": 16.0, "cool": 120, "scale_ok": True, "tmp": None,
+       "perso_cle": None, "perso_hd": None, "perso_def": None, "perso_cache": {}, "face": 1, "flux": {}, "flux_cle": None,
+       "lean": 0.0, "img": {}, "marche": 0.0, "coul": {}, "dos": {}, "dos_cache": {}, "mv": 0.0, "vise": 0.0,
+       "look_id": None, "look_x": 0.0, "look_y": 0.0, "pitch": 0.0,
+       "kick": 0.0, "nb": 0, "dust": [], "cos_prev": 1.0, "t_prev": 0,
+       "cam_off": 0.0, "look_n": 0, "atlas": {}, "cadres": {}, "tours": {}}
+V3_STYLES = ((60, 85), (35, 80), (35, 55))     # selon la mission : part de murs « métal néon », puis « briques », le reste « circuits »
+V3_NEAR, V3_CAMZ, V3_MUR_H, V3_PORTEE, V3_CAM_D_MAX = 0.12, 0.85, 1.35, 8.0, 2.0
+V3_JAMBES = (0.60, 0.66, 0.50, 0.76)  # (début des jambes, fin du haut du corps, séparation gauche/droite, genou) en fraction de l'image
+V3_BOTTES = 0.2125                    # écart des bottes par rapport au centre, en fraction de la largeur de l'image
+V3_CANON = (0.181, 0.152, 0.206)      # (fin du canon en x, haut, bas) en fraction de l'image de base : la partie du fusil qui se raccourcit au tir
+V3_ATLAS_N = 5                        # nombre de vues dans soldat_<skin>.png : dos, dos 3/4, 3/4, profil, face (les vues tournées vers la gauche sont des miroirs)
+V3_ATLAS_BOUCHES = ((0.145, 0.198), (0.88, 0.169), (0.979, 0.191), (0.817, 0.185), (0.554, 0.304))     # bout du canon de chaque vue (fraction de la case)
+V3_ATLAS_SEMELLES = 0.9867            # hauteur des semelles dans la case (fraction)
+V3_SENS_REGARD = 0.005                # radians par pixel quand on fait glisser le doigt pour tourner la caméra
+V3_QA = (1.0, 0.85, 0.72, 0.6, 0.5, 0.42, 0.35)      # échelles de résolution de la 3D : la vue baisse toute seule si le téléphone peine
+V3_VIT_TOURNER = 0.05          # radians par pas de logique (1/60 s) quand le joystick est poussé à fond sur le côté
+V3_FOND = (11, 16, 38)
+
+_v3_rng = random.Random(7)
+V3_VILLE = []
+for _k in range(36):
+    _a = _k * (2 * math.pi / 36) + _v3_rng.uniform(-0.05, 0.05)
+    _fen = [(_v3_rng.uniform(0.15, 0.75), _v3_rng.uniform(0.1, 0.85), _v3_rng.randrange(3)) for _ in range(4)]
+    V3_VILLE.append((_a, _v3_rng.uniform(0.07, 0.14), _v3_rng.uniform(0.10, 0.34), _fen))
+
+
+def _v3_actif():
+    return PARAMS.get("vue", 0) == 1
+
+
+def _v3_mix(a, b, k):
+    return (int(a[0] + (b[0] - a[0]) * k), int(a[1] + (b[1] - a[1]) * k), int(a[2] + (b[2] - a[2]) * k))
+
+
+def _v3_mur(i, j):
+    if j < 0 or i < 0 or j >= len(CARTE) or i >= len(CARTE[0]):
+        return True
+    return CARTE[j][i] == 1
+
+
+def _v3_bloque(x, y, r):
+    for j in range(int(math.floor(y - r)), int(math.floor(y + r)) + 1):
+        for i in range(int(math.floor(x - r)), int(math.floor(x + r)) + 1):
+            if _v3_mur(i, j):
+                nx = min(max(x, i), i + 1)
+                ny = min(max(y, j), j + 1)
+                if (x - nx) ** 2 + (y - ny) ** 2 < r * r:
+                    return True
+    return False
+
+
+def _v3_cap_libre(base):
+    """Cap (radians) le plus proche de `base` où il y a de la place devant le joueur (évite de démarrer face à un mur)."""
+    px, py = joueur_x / TAILLE_CASE, joueur_y / TAILLE_CASE
+    for k in (0, 1, -1, 2, -2, 3, -3, 4):
+        a = base + k * math.pi / 4
+        if not _v3_bloque(px + math.cos(a) * 1.2, py + math.sin(a) * 1.2, 0.2):
+            return a
+    return base
+
+
+def _v3_perso_hd():
+    """Image du VRAI personnage (skin équipé) en grande taille, pour la 3D. Mise en cache ; None si indisponible."""
+    cle = _skin_courant or ""
+    if VUE["perso_cle"] == cle:
+        return VUE["perso_hd"]
+    img = None
+    try:
+        if cle in SKIN_IDS:
+            planche = _planche_skins
+            if planche is None:
+                planche = pygame.image.load(_asset("skins_sheet.png")).convert_alpha()
+            i = SKIN_IDS.index(cle)
+            img = planche.subsurface(pygame.Rect((i % 6) * 160, (i // 6) * 160, 160, 160)).copy()
+        else:
+            if VUE["perso_def"] is None:
+                VUE["perso_def"] = pygame.transform.smoothscale(pygame.image.load(_asset("perso-removebg-preview.png")).convert_alpha(), (160, 160))
+            img = VUE["perso_def"]
+    except Exception as e:
+        print("[3D] image du personnage introuvable :", e, "| dossier courant :", os.getcwd())
+        img = None
+    VUE["perso_cle"], VUE["perso_hd"] = cle, img
+    VUE["perso_cache"].clear()
+    return img
+
+
+def _v3_perso_taille(taille, miroir):
+    """Le personnage à la taille voulue (par paliers de 8 px, en cache) : évite de redimensionner l'image à chaque image."""
+    hd = _v3_perso_hd()
+    if hd is None:
+        return None
+    t = min(240, max(16, (taille // 8) * 8))
+    cle = (t, miroir)
+    img = VUE["perso_cache"].get(cle)
+    if img is None:
+        if len(VUE["perso_cache"]) > 14:
+            VUE["perso_cache"].clear()
+        img = pygame.transform.smoothscale(hd, (t, t))
+        if miroir < 0:
+            img = pygame.transform.flip(img, True, False)
+        VUE["perso_cache"][cle] = img
+    return img
+
+
+def _v3_image(nom):
+    """Charge une image du jeu une seule fois (None si introuvable)."""
+    if nom not in VUE["img"]:
+        try:
+            VUE["img"][nom] = pygame.image.load(_asset(nom)).convert_alpha()
+        except Exception as e:
+            print("[3D] image introuvable :", nom, "|", e)
+            VUE["img"][nom] = None
+    return VUE["img"][nom]
+
+
+def _v3_plat(cle, src, largeur, ratio, angle, pas=6):
+    """Image vue du dessus, tournée de `angle` degrés puis écrasée (`ratio`) comme si on la voyait en perspective.
+    Mise en cache par paliers de taille et d'angle : on ne redimensionne pas l'image à chaque image."""
+    if src is None or largeur < 6:
+        return None
+    lb = max(6, (int(largeur) // 6) * 6)
+    ab = int(round(angle / pas)) * pas
+    k = (cle, lb, ab, ratio)
+    img = VUE["perso_cache"].get(k)
+    if img is None:
+        if len(VUE["perso_cache"]) > 90:
+            VUE["perso_cache"].clear()
+        base = src if ab % 360 == 0 else pygame.transform.rotate(src, ab)
+        f = lb / float(src.get_width())
+        img = pygame.transform.smoothscale(base, (max(2, int(base.get_width() * f)), max(2, int(base.get_height() * f * ratio))))
+        VUE["perso_cache"][k] = img
+    return img
+
+
+def _v3_style(grp):
+    """Style d'un pan de mur (0 = métal et néon, 1 = briques néon, 2 = circuits lumineux), identique sur 3 cases de suite."""
+    h = (grp[0] * 73856093 ^ grp[1] * 19349663 ^ grp[2] * 83492791) & 0xFFFF
+    r = h % 100
+    th = V3_STYLES[niveau_actuel % 3]
+    return 0 if r < th[0] else (1 if r < th[1] else 2)
+
+
+def _v3_decor(rs, style, detail, fog, cm, fa, ra, fb, rb, t0, t1, half, hor, focal, seed):
+    """Décor d'un mur, dessiné avec quelques lignes en perspective (très léger, sans textures lourdes)."""
+    if t1 - t0 < 0.03:
+        return
+    H = V3_MUR_H
+
+    def P(u, z):
+        u = t0 if u < t0 else (t1 if u > t1 else u)
+        sc = focal / (fa + (fb - fa) * u)
+        return (int(half + (ra + (rb - ra) * u) * sc), int(hor + (V3_CAMZ - z) * sc))
+
+    def col(c):
+        return _v3_mix(c, V3_FOND, fog)
+
+    def bande(u0, u1, z0, z1, c):
+        pygame.draw.polygon(rs, c, [P(u0, z1), P(u1, z1), P(u1, z0), P(u0, z0)])
+
+    neon = col(_v3_mix(cm, (255, 255, 255), 0.3))
+    rose = col((255, 43, 214))
+    sombre = col((8, 12, 26))
+    if style == 0:                                   # métal et néon
+        bande(0, 1, H - 0.11, H - 0.05, neon)
+        bande(0, 1, 0.05, 0.10, neon)
+        if detail >= 1:
+            sm = col(_v3_mix(V3_FOND, cm, 0.12))
+            pygame.draw.line(rs, sm, P(0.5, 0.10), P(0.5, H - 0.11), 1)
+            pygame.draw.line(rs, sm, P(0, 0.58), P(1, 0.58), 1)
+            if detail >= 2:
+                pygame.draw.line(rs, sm, P(0, 0.30), P(1, 0.30), 1)
+                for (ru, rz) in ((0.06, 0.2), (0.94, 0.2), (0.06, 1.0), (0.94, 1.0)):
+                    pygame.draw.circle(rs, col(_v3_mix(V3_FOND, cm, 0.5)), P(ru, rz), 2)
+            m = seed % 3
+            if m == 0:                               # écran allumé
+                cadre = [P(0.28, 0.95), P(0.72, 0.95), P(0.72, 0.55), P(0.28, 0.55)]
+                pygame.draw.polygon(rs, sombre, cadre)
+                pygame.draw.polygon(rs, rose if seed & 4 else neon, cadre, 1)
+                if detail >= 2:
+                    pygame.draw.line(rs, rose if seed & 4 else neon, P(0.34, 0.82), P(0.66, 0.82), 1)
+                    pygame.draw.line(rs, rose if seed & 4 else neon, P(0.34, 0.70), P(0.56, 0.70), 1)
+            elif m == 1:                             # grille d'aération
+                for k in range(4):
+                    bande(0.2, 0.8, 0.35 + k * 0.1, 0.39 + k * 0.1, sombre)
+            else:                                    # tube néon
+                pygame.draw.line(rs, rose if seed & 8 else neon, P(0.15, 0.72), P(0.85, 0.72), 2)
+    elif style == 1:                                 # briques néon
+        mort = col((34, 12, 36))
+        for r in range(1, 5):
+            pygame.draw.line(rs, mort, P(0, r * 0.27), P(1, r * 0.27), 1)
+        if detail >= 1:
+            for r in range(5):
+                for u in ((0.5,) if r % 2 == 0 else (0.25, 0.75)):
+                    pygame.draw.line(rs, mort, P(u, r * 0.27), P(u, r * 0.27 + 0.27), 1)
+            if seed % 4 == 0:                        # une brique éclairée
+                pygame.draw.polygon(rs, rose, [P(0.5, 0.81), P(1, 0.81), P(1, 0.54), P(0.5, 0.54)], 1)
+            if seed % 5 == 1 and detail >= 2:        # enseigne lumineuse
+                cadre = [P(0.25, 0.9), P(0.75, 0.9), P(0.75, 0.6), P(0.25, 0.6)]
+                pygame.draw.polygon(rs, sombre, cadre)
+                pygame.draw.polygon(rs, neon, cadre, 1)
+                pygame.draw.line(rs, neon, P(0.32, 0.8), P(0.68, 0.8), 2)
+                pygame.draw.line(rs, rose, P(0.32, 0.68), P(0.55, 0.68), 2)
+        bande(0, 1, H - 0.05, H - 0.02, col(_v3_mix(V3_FOND, cm, 0.5)))
+    else:                                            # circuits lumineux
+        mir = seed & 1
+
+        def U(u):
+            return 1.0 - u if mir else u
+        pygame.draw.lines(rs, neon, False, [P(U(u), z) for (u, z) in ((0, 0.30), (0.35, 0.30), (0.5, 0.5), (1, 0.5))], 1)
+        pygame.draw.lines(rs, rose, False, [P(U(u), z) for (u, z) in ((0, 0.92), (0.25, 0.92), (0.4, 0.74), (0.8, 0.74), (0.9, 0.94), (1, 0.94))], 1)
+        if detail >= 1:
+            pygame.draw.lines(rs, neon, False, [P(U(u), z) for (u, z) in ((0.6, 0.05), (0.6, 0.2), (0.82, 0.32))], 1)
+            for (u, z, c) in ((0.35, 0.30, neon), (0.8, 0.74, rose), (0.5, 0.5, neon)):
+                pygame.draw.circle(rs, c, P(U(u), z), 2)
+        if detail >= 2:
+            chip = [P(U(0.1), 0.6), P(U(0.3), 0.6), P(U(0.3), 0.42), P(U(0.1), 0.42)]
+            pygame.draw.polygon(rs, sombre, chip)
+            pygame.draw.polygon(rs, neon, chip, 1)
+        bande(0, 1, H - 0.05, H - 0.02, col(_v3_mix(V3_FOND, cm, 0.5)))
+
+
+def _v3_coul_perso(hd, cle):
+    """Couleurs du personnage (uniforme, sac, casque, arme, halo) mesurées sur son image : chaque skin a donc ses propres couleurs."""
+    c = VUE["coul"].get(cle)
+    if c is None:
+        c = {"uni": (62, 78, 70), "sac": (95, 88, 60), "casque": (40, 42, 46), "arme": (130, 78, 40), "halo": None}
+        try:
+            w, h = hd.get_size()
+
+            def moy(x0, x1, y0, y1):
+                tot, n = [0, 0, 0], 0
+                for iy in range(7):
+                    for ix in range(7):
+                        p = hd.get_at((int(w * (x0 + (x1 - x0) * ix / 6.0)), int(h * (y0 + (y1 - y0) * iy / 6.0))))
+                        if p[3] > 200:
+                            tot[0] += p[0]; tot[1] += p[1]; tot[2] += p[2]; n += 1
+                return (tot[0] // n, tot[1] // n, tot[2] // n) if n else None
+            for (nom, zone) in (("uni", (0.50, 0.76, 0.22, 0.48)), ("sac", (0.05, 0.30, 0.15, 0.45)),
+                                ("casque", (0.38, 0.52, 0.50, 0.70)), ("arme", (0.40, 0.90, 0.70, 0.80))):
+                m = moy(*zone)
+                if m:
+                    c[nom] = m
+            # halo lumineux : pixels semi-transparents (bord des skins brillants)
+            tot, n = [0, 0, 0], 0
+            for iy in range(20):
+                for ix in range(20):
+                    p = hd.get_at((int(w * ix / 20.0), int(h * iy / 20.0)))
+                    if 30 < p[3] < 200 and max(p[0], p[1], p[2]) - min(p[0], p[1], p[2]) > 60:
+                        tot[0] += p[0]; tot[1] += p[1]; tot[2] += p[2]; n += 1
+            if n >= 6:
+                c["halo"] = (tot[0] // n, tot[1] // n, tot[2] // n)
+            for nom, f in (("uni", 1.55), ("sac", 1.45), ("casque", 1.6), ("arme", 1.25)):
+                c[nom] = tuple(min(255, int(v * f) + 14) for v in c[nom])
+        except Exception:
+            pass
+        VUE["coul"][cle] = c
+    return c
+
+
+def _v3_soldat(rs, sx, yb, s, c, phase, accent):
+    """Soldat debout vu de dos, dessiné avec les couleurs du skin (uniforme, sac, casque, arme, halo). Les jambes avancent à tour de rôle."""
+    X = int(sx)
+    noir = _v3_mix((16, 16, 26), c["halo"] or accent, 0.5)           # contour lumineux : le soldat reste lisible sur le sol sombre
+    bottes = (14, 14, 20)
+
+    def R(x0, y0, x1, y1, col, bord=True):
+        if bord:
+            pygame.draw.rect(rs, noir, (int(x0) - 1, int(y0) - 1, int(x1 - x0) + 3, int(y1 - y0) + 3))
+        pygame.draw.rect(rs, col, (int(x0), int(y0), max(1, int(x1 - x0)), max(1, int(y1 - y0))))
+
+    if c["halo"]:
+        pygame.draw.ellipse(rs, _v3_mix(V3_FOND, c["halo"], 0.55), (int(sx - 0.32 * s), int(yb - 0.92 * s), int(0.64 * s), int(0.95 * s)), 2)
+    bob = abs(math.sin(phase)) * 0.015 * s
+    # jambes
+    for (k, sgn) in ((-1, 1), (1, -1)):
+        lev = max(0.0, math.sin(phase) * sgn) * 0.05 * s
+        x = sx + k * 0.065 * s
+        R(x - 0.045 * s, yb - 0.38 * s - bob, x + 0.045 * s, yb - 0.03 * s - lev, _v3_mix(c["uni"], noir, 0.35))
+        R(x - 0.05 * s, yb - 0.075 * s - lev, x + 0.05 * s, yb - 0.02 * s - lev, bottes, False)
+    # sac à dos et torse
+    h0 = yb - 0.40 * s - bob
+    pygame.draw.polygon(rs, noir, [(int(sx - 0.165 * s), int(h0)), (int(sx + 0.165 * s), int(h0)), (int(sx + 0.20 * s), int(h0 - 0.28 * s)), (int(sx - 0.20 * s), int(h0 - 0.28 * s))])
+    pygame.draw.polygon(rs, c["uni"], [(int(sx - 0.15 * s), int(h0 - 0.01 * s)), (int(sx + 0.15 * s), int(h0 - 0.01 * s)), (int(sx + 0.185 * s), int(h0 - 0.27 * s)), (int(sx - 0.185 * s), int(h0 - 0.27 * s))])
+    R(sx - 0.115 * s, h0 - 0.255 * s, sx + 0.115 * s, h0 - 0.045 * s, c["sac"])
+    pygame.draw.line(rs, _v3_mix(c["sac"], noir, 0.5), (X, int(h0 - 0.25 * s)), (X, int(h0 - 0.05 * s)), 1)
+    # bras
+    for k in (-1, 1):
+        x = sx + k * 0.205 * s
+        R(x - 0.032 * s, h0 - 0.27 * s, x + 0.032 * s, h0 - 0.06 * s, c["uni"])
+        R(x - 0.036 * s, h0 - 0.075 * s, x + 0.036 * s, h0 - 0.03 * s, noir, False)
+    # arme tenue à droite, pointée vers l'avant
+    R(sx + 0.205 * s - 0.018 * s, h0 - 0.23 * s, sx + 0.205 * s + 0.018 * s, h0 - 0.02 * s, c["arme"])
+    # casque
+    ty = h0 - 0.28 * s - 0.075 * s
+    pygame.draw.circle(rs, noir, (X, int(ty)), max(2, int(0.105 * s)))
+    pygame.draw.circle(rs, c["casque"], (X, int(ty)), max(1, int(0.092 * s)))
+    pygame.draw.circle(rs, _v3_mix(c["casque"], (255, 255, 255), 0.22), (int(sx - 0.03 * s), int(ty - 0.04 * s)), max(1, int(0.022 * s)))
+
+
+def _v3_dos(cle):
+    """Image du personnage vu de dos : dos_<skin>.png, sinon dos_defaut.png. Renvoie (image, exacte, nom du fichier) ; (None, False, "") si aucun."""
+    k = cle or "defaut"
+    if k not in VUE["dos"]:
+        trouve = (None, False, "")
+        for nom in ("dos_" + k + ".png", "dos_defaut.png"):
+            try:
+                trouve = (pygame.image.load(_asset(nom)).convert_alpha(), nom == "dos_" + k + ".png", nom)
+                break
+            except Exception:
+                continue
+        if trouve[0] is None:
+            print("[3D] image du personnage de dos introuvable (dos_defaut.png) | dossier courant :", os.getcwd())
+        VUE["dos"][k] = trouve
+    return VUE["dos"][k]
+
+
+def _v3_dos_tir(cle):
+    """Image du personnage en train de tirer (arme pointée devant) : dos_<skin>_tir.png, sinon dos_defaut_tir.png. None si absente."""
+    k = (cle or "defaut") + "_tir"
+    if k not in VUE["dos"]:
+        r = None
+        for nom in ("dos_" + k + ".png", "dos_defaut_tir.png"):
+            try:
+                r = pygame.image.load(_asset(nom)).convert_alpha()
+                break
+            except Exception:
+                continue
+        VUE["dos"][k] = (r, True, "")
+    return VUE["dos"][k][0]
+
+
+def _v3_calques(cle, hauteur, tir):
+    """Découpe le personnage en pièces à la bonne hauteur (en cache) : haut du corps, cuisse et tibia+botte de chaque jambe,
+    canon du fusil (image de base), silhouette (pour l'ombre sur les murs). On les fait bouger comme un squelette."""
+    hb = max(12, (int(hauteur) // 6) * 6)
+    k = (cle or "defaut", hb, tir)
+    c = VUE["dos_cache"].get(k)
+    if c is None:
+        if len(VUE["dos_cache"]) > 10:
+            VUE["dos_cache"].clear()
+        if tir:
+            src, defaut = _v3_dos_tir(cle), False
+        else:
+            src, _ex, nom = _v3_dos(cle)
+            defaut = (nom == "dos_defaut.png")
+        img = pygame.transform.smoothscale(src, (max(4, int(src.get_width() * hb / float(src.get_height()))), hb))
+        w, h = img.get_size()
+        ys, yc, cx, yk = int(V3_JAMBES[0] * h), int(V3_JAMBES[1] * h), int(V3_JAMBES[2] * w), int(V3_JAMBES[3] * h)
+
+        def morceau(x0, x1, y0, y1):
+            return img.subsurface(pygame.Rect(x0, y0, x1 - x0, y1 - y0)).copy()
+        haut = img.copy()
+        haut.fill((0, 0, 0, 0), pygame.Rect(0, yc, w, h - yc))
+        c = {"dim": (w, h), "ys": ys, "yk": yk, "cx": cx, "rot": {}, "canon": None, "geom": None, "sil": None,
+             "cg": morceau(0, cx, ys, yk + 2), "tg": morceau(0, cx, yk, h),
+             "cd": morceau(cx, w, ys, yk + 2), "td": morceau(cx, w, yk, h)}
+        if defaut and not tir:
+            xb, ya, yb2 = int(V3_CANON[0] * w), int(V3_CANON[1] * h), int(V3_CANON[2] * h)
+            r = pygame.Rect(0, ya, xb, yb2 - ya)
+            c["canon"] = img.subsurface(r).copy()
+            haut.fill((0, 0, 0, 0), r)
+            c["geom"] = (xb, ya, yb2 - ya)
+        c["haut"] = haut
+        try:
+            sil = img.copy()
+            sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)       # même forme, tout en noir
+            c["sil"] = sil
+        except Exception:
+            c["sil"] = None
+        VUE["dos_cache"][k] = c
+    return c
+
+
+def _v3_tourner(surf, ang, pivot):
+    """Tourne une pièce de `ang` degrés autour d'un point (le bassin, par exemple). Renvoie (image, décalage x, décalage y)."""
+    rot = pygame.transform.rotate(surf, ang)
+    w, h = surf.get_size()
+    vx, vy = w / 2.0 - pivot[0], h / 2.0 - pivot[1]
+    a = math.radians(ang)
+    nx = vx * math.cos(a) + vy * math.sin(a)
+    ny = -vx * math.sin(a) + vy * math.cos(a)
+    rw, rh = rot.get_size()
+    return rot, pivot[0] + nx - rw / 2.0, pivot[1] + ny - rh / 2.0
+
+
+def _v3_atlas(cle):
+    """Les vues du soldat sous tous les angles : soldat_<skin>.png, sinon soldat_defaut.png. Renvoie (image, exacte) ou None."""
+    k = cle or "defaut"
+    if k not in VUE["atlas"]:
+        r = None
+        for nom in (("soldat_" + k + ".png"), "soldat_defaut.png"):
+            try:
+                r = (pygame.image.load(_asset(nom)).convert_alpha(), nom == "soldat_" + k + ".png")
+                break
+            except Exception:
+                continue
+        VUE["atlas"][k] = r
+    return VUE["atlas"][k]
+
+
+def _v3_cadre(cle, atlas, vue, miroir, hauteur):
+    """Une vue du soldat à la bonne hauteur (par paliers de 6 px), éventuellement en miroir. Mise en cache."""
+    hb = max(12, (int(hauteur) // 6) * 6)
+    k = (cle or "defaut", vue, miroir, hb)
+    c = VUE["cadres"].get(k)
+    if c is None:
+        if len(VUE["cadres"]) > 24:
+            VUE["cadres"].clear()
+            VUE["tours"].clear()
+        img = atlas[0]
+        cw = img.get_width() // V3_ATLAS_N
+        cell = img.subsurface(pygame.Rect(vue * cw, 0, cw, img.get_height()))
+        c = pygame.transform.smoothscale(cell, (max(4, int(cw * hb / float(img.get_height()))), hb))
+        if miroir:
+            c = pygame.transform.flip(c, True, False)
+        VUE["cadres"][k] = c
+    return c
+
+
+def _v3_flux():
+    """Distance (en cases, par les couloirs) depuis la case du joueur. Recalculé seulement quand le joueur change de case."""
+    ci, cj = int(joueur_x // TAILLE_CASE), int(joueur_y // TAILLE_CASE)
+    cle = (id(CARTE), ci, cj)
+    if VUE["flux_cle"] == cle:
+        return VUE["flux"]
+    dist = {(ci, cj): 0}
+    file = [(ci, cj)]
+    t = 0
+    while t < len(file):
+        i, j = file[t]
+        t += 1
+        d = dist[(i, j)] + 1
+        for (a, b) in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+            if (a, b) not in dist and not _v3_mur(a, b):
+                dist[(a, b)] = d
+                file.append((a, b))
+    VUE["flux"], VUE["flux_cle"] = dist, cle
+    return dist
+
+
+def _v3_cap_ennemi(ex):
+    """3e personne : le drone suit les couloirs (il ne traverse plus les murs). Renvoie son cap, ou None pour l'ancien comportement."""
+    flux = _v3_flux()
+    ci, cj = int(ex[0] // TAILLE_CASE), int(ex[1] // TAILLE_CASE)
+    if (ci, cj) not in flux:                       # drone coincé dans un mur : on le replace sur la case libre la plus proche
+        for r in range(1, 9):
+            proches = [(ci + k, cj + m) for k in range(-r, r + 1) for m in range(-r, r + 1) if (ci + k, cj + m) in flux]
+            if proches:
+                ci, cj = min(proches, key=lambda c: (c[0] - ci) ** 2 + (c[1] - cj) ** 2)
+                ex[0], ex[1] = ci * TAILLE_CASE + TAILLE_CASE / 2, cj * TAILLE_CASE + TAILLE_CASE / 2
+                break
+        else:
+            return None
+    d = flux[(ci, cj)]
+    if d == 0:                                     # même case que le joueur : tout droit
+        return math.atan2(joueur_y - ex[1], joueur_x - ex[0]) + random.uniform(-0.08, 0.08)
+    meilleur = None
+    for (a, b) in ((ci + 1, cj), (ci - 1, cj), (ci, cj + 1), (ci, cj - 1)):
+        if flux.get((a, b), 9999) < d:
+            meilleur = (a, b)
+            break
+    if meilleur is None:
+        return None
+    tx, ty = meilleur[0] * TAILLE_CASE + TAILLE_CASE / 2, meilleur[1] * TAILLE_CASE + TAILLE_CASE / 2
+    return math.atan2(ty - ex[1], tx - ex[0]) + random.uniform(-0.03, 0.03)
+
+
+def _v3_spawn_ennemi():
+    """3e personne : les drones apparaissent loin dans le labyrinthe (par les couloirs) et arrivent en se montrant, jamais « BOOM » devant le joueur."""
+    flux = _v3_flux()
+    loin = [c for c, d in flux.items() if 9 <= d <= 18]            # assez loin pour qu'on les voie venir, assez près pour qu'ils arrivent
+    if not loin:
+        plus = [d for d in flux.values() if d >= 9]
+        if plus:
+            dmin = min(plus)
+            loin = [c for c, d in flux.items() if dmin <= d <= dmin + 3]
+        elif len(flux) >= 2:
+            dmax = max(flux.values())
+            loin = [c for c, d in flux.items() if d >= max(3, dmax - 1)]
+        else:
+            return None
+    i, j = random.choice(loin)
+    return i * TAILLE_CASE + TAILLE_CASE / 2, j * TAILLE_CASE + TAILLE_CASE / 2
+
+
+def _v3_regarder(dx, dy):
+    """Glisser le doigt : tourner la caméra (gauche/droite) et l'incliner un peu (haut/bas), comme dans un jeu en monde ouvert.
+    Le personnage regarde et tire là où la caméra regarde."""
+    VUE["cam_off"] = (VUE["cam_off"] + dx * V3_SENS_REGARD + math.pi) % (2 * math.pi) - math.pi
+    VUE["look_n"] = 90
+    VUE["pitch"] = max(-0.10, min(0.10, VUE["pitch"] - dy * 0.0004))
+
+
+def basculer_vue():
+    """Bouton 2D/3D : passe de la vue du dessus à la vue 3e personne (et inversement). Ignore le 2e événement d'un même toucher."""
+    now = pygame.time.get_ticks()
+    if now - VUE["t_bascule"] < 450:
+        return
+    VUE["t_bascule"] = now
+    PARAMS["vue"] = 0 if _v3_actif() else 1
+    VUE["look_id"] = None
+    if _v3_actif():
+        VUE["ang"] = _v3_cap_libre(math.atan2(angle_visée_y, angle_visée_x))
+        VUE["cam_d"] = 1.2
+        VUE["cam_off"] = 0.0
+    sauvegarder_parametres()
+
+
+def _v3_controle(im):
+    """Commandes en 3e personne : le joystick avance/recule (haut/bas) et tourne (gauche/droite). Renvoie dx, dy, visée x, visée y."""
+    sx = sy = 0.0
+    if joystick_actif:
+        vx, vy = manette_x - JOY_CENTRE_X, manette_y - JOY_CENTRE_Y
+        d = math.hypot(vx, vy)
+        if d > CTRL["dz"]:
+            sx, sy = vx / d, vy / d
+    if im is not None:
+        sx, sy = im
+    VUE["ang"] += sx * V3_VIT_TOURNER
+    if VUE["look_n"] > 0:
+        VUE["look_n"] -= 1
+    elif abs(sy) > 0.12 and VUE["look_id"] is None:
+        VUE["cam_off"] *= 0.94                                  # en avançant, la caméra revient derrière le soldat
+    VUE["lean"] += (sx * 20.0 - VUE["lean"]) * 0.25
+    VUE["mv"] += ((1.0 if abs(sy) > 0.12 else 0.0) - VUE["mv"]) * 0.2
+    if abs(sy) > 0.12:
+        VUE["marche"] += 0.22 * (-sy)
+    if sx > 0.25:
+        VUE["face"] = 1
+    elif sx < -0.25:
+        VUE["face"] = -1
+    a = VUE["ang"]
+    c, s = math.cos(a), math.sin(a)
+    f = -sy
+    v = joueur_vitesse * _facteur_vitesse()
+    if f > 0.12:
+        return c * f * v, s * f * v, c, s
+    if f < -0.12:
+        return c * f * v * 0.6, s * f * v * 0.6, c, s
+    return 0, 0, c, s
+
+
+def _v3_viser():
+    """Visée en 3e personne : tout droit devant, avec une petite aide si un drone ou le boss est presque dans l'axe."""
+    a = VUE["ang"]
+    hx, hy = math.cos(a), math.sin(a)
+    cibles = [(e[0], e[1]) for e in liste_ennemis]
+    if boss_actif and not boss_vaincu:
+        cibles.append((boss_x, boss_y))
+    meilleur, dmin = None, 900.0
+    for (x, y) in cibles:
+        vx, vy = x - joueur_x, y - joueur_y
+        d = math.hypot(vx, vy)
+        if d < 8 or d > dmin:
+            continue
+        if (vx * hx + vy * hy) / d > 0.94:          # environ 20 degrés de chaque côté
+            meilleur, dmin = (vx / d, vy / d), d
+    return meilleur if meilleur else (hx, hy)
+
+
+def _v3_preparer_faces():
+    """Liste, pour chaque case de mur, les faces visibles (côtés donnant sur un couloir). Refait à chaque nouveau niveau."""
+    if VUE["carte"] is CARTE:
+        return
+    faces = {}
+    for j, ligne in enumerate(CARTE):
+        for i, val in enumerate(ligne):
+            if val != 1:
+                continue
+            f = []
+            if not _v3_mur(i, j - 1):
+                f.append((i, j, i + 1, j, 0, 0, -1))
+            if not _v3_mur(i, j + 1):
+                f.append((i, j + 1, i + 1, j + 1, 0, 0, 1))
+            if not _v3_mur(i - 1, j):
+                f.append((i, j, i, j + 1, 1, -1, 0))
+            if not _v3_mur(i + 1, j):
+                f.append((i + 1, j, i + 1, j + 1, 1, 1, 0))
+            if f:
+                faces[(i, j)] = f
+    VUE["faces"] = faces
+    VUE["carte"] = CARTE
+
+
+def _v3_couvert(iv, a, b):
+    """Vrai si les colonnes [a, b) de l'écran sont déjà entièrement couvertes par des murs plus proches."""
+    for (x, y) in iv:
+        if x <= a and y >= b:
+            return True
+        if x > a:
+            break
+    return False
+
+
+def _v3_marquer(iv, a, b):
+    nouveau, place = [], False
+    for (x, y) in iv:
+        if y < a:
+            nouveau.append((x, y))
+        elif x > b:
+            if not place:
+                nouveau.append((a, b))
+                place = True
+            nouveau.append((x, y))
+        else:
+            a, b = min(a, x), max(b, y)
+    if not place:
+        nouveau.append((a, b))
+    iv[:] = nouveau
+
+
+def _v3_clip(f1, r1, f2, r2):
+    if f1 < V3_NEAR and f2 < V3_NEAR:
+        return None
+    if f1 < V3_NEAR:
+        t = (V3_NEAR - f1) / (f2 - f1)
+        r1 = r1 + (r2 - r1) * t
+        f1 = V3_NEAR
+    elif f2 < V3_NEAR:
+        t = (V3_NEAR - f2) / (f1 - f2)
+        r2 = r2 + (r1 - r2) * t
+        f2 = V3_NEAR
+    return f1, r1, f2, r2
+
+
+def dessiner_vue_3d(t_ms):
+    """Dessine tout le monde du jeu en 3e personne (à la place de la vue du dessus). Le HUD est dessiné ensuite comme d'habitude."""
+    _v3_preparer_faces()
+    animer_skin()
+    EW, EH = ecran.get_size()
+    t_debut = _time.perf_counter()
+    niv = min(2, max(0, QUALITE["niveau"]))
+    mode3d = PARAMS.get("qualite3d", 0)
+    q = ((0.34, 0.42, 0.5)[niv] * V3_QA[VUE["qa_i"]]) if mode3d == 0 else (0.3, 0.42, 0.55)[mode3d - 1]
+    RW, RH = max(160, int(EW * q)), max(90, int(EH * q))
+    if VUE["dim"] != (RW, RH):
+        VUE["surf"] = pygame.Surface((RW, RH))
+        try:
+            VUE["surf"] = VUE["surf"].convert()
+        except Exception:
+            pass
+        VUE["dim"] = (RW, RH)
+    rs = VUE["surf"]
+    focal = min(RW * 0.8, RH * 1.25)
+    sec = ETAT_FX["secousse"]
+    tremble = random.uniform(-sec, sec) * q * 0.5 if sec > 0 else 0.0
+    if VUE["look_id"] is None:
+        VUE["pitch"] *= 0.94
+    hor = int(RH * (0.36 + VUE["pitch"]) + tremble)
+    half = RW * 0.5 + (random.uniform(-sec, sec) * q * 0.5 if sec > 0 else 0.0)
+
+    px, py = joueur_x / TAILLE_CASE, joueur_y / TAILLE_CASE
+    ang = VUE["ang"] + VUE["cam_off"]                       # cap de la caméra : celui du soldat + ce qu'on a tourné au doigt
+    dirx, diry = math.cos(ang), math.sin(ang)
+    cible = V3_CAM_D_MAX
+    for pas_cam in range(1, 18):                      # on recule pas à pas et on s'arrête avant le premier mur (même très fin)
+        dd = pas_cam * 0.1
+        if dd > V3_CAM_D_MAX:
+            break
+        if _v3_bloque(px - dirx * dd, py - diry * dd, 0.14):
+            cible = dd - 0.1
+            break
+    cible = max(0.35, cible)
+    if cible < VUE["cam_d"]:
+        VUE["cam_d"] = cible
+    else:
+        VUE["cam_d"] += (cible - VUE["cam_d"]) * 0.2
+    cam_d = VUE["cam_d"]
+    camx, camy = px - dirx * cam_d, py - diry * cam_d
+
+    cm = tuple(COULEUR_MUR[:3])
+    c_ciel = _v3_mix((16, 8, 34), cm, 0.14)
+    c_ville = _v3_mix(c_ciel, cm, 0.28)
+    c_base = ((_v3_mix(V3_FOND, cm, 0.34), _v3_mix(V3_FOND, cm, 0.24)),
+              (_v3_mix(V3_FOND, (150, 45, 95), 0.5), _v3_mix(V3_FOND, (150, 45, 95), 0.38)),
+              (_v3_mix(V3_FOND, cm, 0.17), _v3_mix(V3_FOND, cm, 0.11)))
+    c_grille = _v3_mix(V3_FOND, cm, 0.38)
+    c_fen = (cm, VIOLET_CYBER, JAUNE_CYBER)
+
+    # ciel + ville au loin (défile quand on tourne)
+    rs.fill(c_ciel)
+    for (a, w, h, fen) in V3_VILLE:
+        dxa = ((a - ang + math.pi) % (2 * math.pi)) - math.pi
+        if abs(dxa) > 1.3:
+            continue
+        bx = half + dxa * focal
+        bw = w * focal
+        bh = h * RH
+        rect = (int(bx - bw / 2), int(hor - bh), int(bw), int(bh) + 1)
+        pygame.draw.rect(rs, c_ville, rect)
+        for (ox_, oy_, ic) in fen:
+            pygame.draw.rect(rs, c_fen[ic], (int(rect[0] + ox_ * rect[2]), int(rect[1] + oy_ * rect[3]),
+                                             max(1, int(RW * 0.006)), max(1, int(RW * 0.006))))
+    pygame.draw.rect(rs, V3_FOND, (0, hor, RW, RH - hor))
+    pygame.draw.line(rs, _v3_mix(c_ciel, cm, 0.7), (0, hor), (RW, hor), 1)
+
+    # grille au sol
+    R = (-1, 5, 5)[niv]
+    ix, iy = int(camx), int(camy)
+    for k in range(-R, R + 1):
+        for (x1, y1, x2, y2) in ((ix + k, iy - R, ix + k, iy + R), (ix - R, iy + k, ix + R, iy + k)):
+            ax, ay = x1 - camx, y1 - camy
+            bx2, by2 = x2 - camx, y2 - camy
+            c = _v3_clip(ax * dirx + ay * diry, -ax * diry + ay * dirx, bx2 * dirx + by2 * diry, -bx2 * diry + by2 * dirx)
+            if c is None:
+                continue
+            f1, r1, f2, r2 = c
+            s1, s2 = focal / f1, focal / f2
+            pygame.draw.line(rs, c_grille, (int(half + r1 * s1), int(hor + V3_CAMZ * s1)),
+                             (int(half + r2 * s2), int(hor + V3_CAMZ * s2)), 1)
+
+    # murs + objets, triés du plus loin au plus proche
+    items = []
+    murs = []
+    maxd2 = V3_PORTEE * V3_PORTEE
+    faces = VUE["faces"]
+    ci, cj = int(camx), int(camy)
+    Rf = int(V3_PORTEE) + 1
+    for j in range(cj - Rf, cj + Rf + 1):
+        for i in range(ci - Rf, ci + Rf + 1):
+            fl = faces.get((i, j))
+            if not fl:
+                continue
+            for (x1, y1, x2, y2, o, nx, ny) in fl:
+                mx = (x1 + x2) * 0.5 - camx
+                my = (y1 + y2) * 0.5 - camy
+                d2 = mx * mx + my * my
+                if d2 > maxd2 or (-mx) * nx + (-my) * ny <= 0:
+                    continue
+                murs.append((d2, x1, y1, x2, y2, o))
+
+    def ajouter(genre, x, y, extra=None, portee2=maxd2):
+        xc, yc = x / TAILLE_CASE, y / TAILLE_CASE
+        d2 = (xc - camx) ** 2 + (yc - camy) ** 2
+        if d2 <= portee2:
+            items.append((d2, 1, (genre, xc, yc, extra)))
+
+    if not partie_perdue and (ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0):
+        ajouter(0, joueur_x, joueur_y, None, 1e9)
+    for e in liste_ennemis:
+        ajouter(1, e[0], e[1])
+    if boss_actif and not boss_vaincu:
+        ajouter(2, boss_x, boss_y, None, 400.0)
+    for b in boules_feu:
+        ajouter(3, b[0], b[1], (b[2], b[3]))
+    for b in balles:
+        ajouter(4, b[0], b[1], (b[2], b[3]))
+    for p in liste_potions:
+        ajouter(5, p[0], p[1])
+    ajouter(6, pos_core_x, pos_core_y, "core")
+    ajouter(6, pos_sortie_x, pos_sortie_y, "sortie")
+    for o in ondes_fx:
+        ajouter(7, o[0], o[1], o)
+    for p in particules_fx[:40]:
+        ajouter(8, p[0], p[1], p)
+    if POUV.get("cfg"):
+        for o in POUV["objets"]:
+            ajouter(9, o["x"], o["y"], o)
+        for e in POUV["explos"][:]:
+            e["n"] -= 1
+            if e["n"] <= 0:
+                POUV["explos"].remove(e)
+                continue
+            ajouter(10, e["x"], e["y"], e)
+        if POUV.get("ally"):
+            ajouter(11, POUV["ally"][0], POUV["ally"][1])
+    # murs : du plus proche au plus loin ; on ignore ceux qui sont entièrement cachés derrière un mur plus proche
+    murs.sort()
+    couv = []
+    for (d2, x1, y1, x2, y2, o) in murs:
+        ax, ay = x1 - camx, y1 - camy
+        bx2, by2 = x2 - camx, y2 - camy
+        fa, ra = ax * dirx + ay * diry, -ax * diry + ay * dirx
+        fb, rb = bx2 * dirx + by2 * diry, -bx2 * diry + by2 * dirx
+        c = _v3_clip(fa, ra, fb, rb)
+        if c is None:
+            continue
+        f1, r1, f2, r2 = c
+        s1, s2 = focal / f1, focal / f2
+        X1, X2 = half + r1 * s1, half + r2 * s2
+        xa, xb = max(0, int(min(X1, X2))), min(RW, int(max(X1, X2)) + 1)
+        if xb <= xa or _v3_couvert(couv, xa, xb):
+            continue
+        _v3_marquer(couv, xa, xb)
+        poly = [(int(X1), int(hor - (V3_MUR_H - V3_CAMZ) * s1)), (int(X2), int(hor - (V3_MUR_H - V3_CAMZ) * s2)),
+                (int(X2), int(hor + V3_CAMZ * s2)), (int(X1), int(hor + V3_CAMZ * s1))]
+        un = (V3_NEAR - fa) / (fb - fa) if fb != fa else 0.0
+        t0 = 0.0 if fa >= V3_NEAR else un
+        t1 = 1.0 if fb >= V3_NEAR else un
+        items.append((d2, 0, (poly, o, fa, ra, fb, rb, t0, t1, x1, y1, x2, y2)))
+        if len(couv) == 1 and couv[0][0] <= 0 and couv[0][1] >= RW:
+            break
+    items.sort(key=lambda it: -it[0])
+
+    c_laser, c_traine = LASER["main"], LASER["trail"]
+    for (d2, genre_item, data) in items:
+        if genre_item == 0:
+            poly, o, fa, ra, fb, rb, t0, t1, wx1, wy1, wx2, wy2 = data
+            k = min(1.0, math.sqrt(d2) / V3_PORTEE) * 0.85
+            style = _v3_style((int(min(wx1, wx2)) // 3, int(min(wy1, wy2)) // 3, o))
+            pygame.draw.polygon(rs, _v3_mix(c_base[style][o], V3_FOND, k), poly)
+            detail = 2 if d2 < 16.0 else (1 if d2 < 40.0 else 0)
+            if niv == 0 and detail > 1:
+                detail = 1
+            seed = (int(wx1) * 7349 + int(wy1) * 1931 + o * 17 + int(wx2) * 13) & 0xFFFF
+            _v3_decor(rs, style, detail, k, cm, fa, ra, fb, rb, t0, t1, half, hor, focal, seed)
+            if d2 < 20.0:
+                pygame.draw.polygon(rs, _v3_mix(cm, V3_FOND, k), poly, 1)
+            continue
+
+        genre, x, y, extra = data
+        ax, ay = x - camx, y - camy
+        f = ax * dirx + ay * diry
+        if f < 0.25:
+            continue
+        r = -ax * diry + ay * dirx
+        if genre == 0 and f < 1.9:
+            f = 1.9                                  # le personnage reste bien visible même si la caméra est collée à un mur
+        s = focal / f
+        sx = half + r * s
+        if sx < -RW * 0.4 or sx > RW * 1.4:
+            continue
+        yb = hor + V3_CAMZ * s
+        isx = int(sx)
+
+        if genre == 0:      # le joueur, vu de dos
+            w = 0.17 * s
+            cle_sk = _skin_courant or ""
+            dos, exact, _nom = _v3_dos(cle_sk)
+            hd = _v3_perso_hd()
+            tir_on = bool(tir_maintenu or _in_tir())
+            VUE["vise"] += ((1.0 if tir_on else 0.0) - VUE["vise"]) * (0.35 if tir_on else 0.07)
+            aim = dos is not None and VUE["vise"] > 0.5 and _v3_dos_tir(cle_sk) is not None     # image « en train de tirer », si elle existe
+            atlas = _v3_atlas(cle_sk)
+            exact_a = bool(atlas[1]) if atlas else False
+            cal = None
+            if dos is not None and atlas is None:
+                try:
+                    cal = _v3_calques(cle_sk, 0.95 * s, aim)
+                except Exception as e:                   # sécurité : si l'animation échoue, on revient au soldat dessiné par le code
+                    print("[3D] animation du personnage indisponible :", e)
+                    VUE["dos"][cle_sk or "defaut"] = (None, False, "")
+            if atlas is not None:                        # les VRAIES vues du soldat : on voit son bon côté selon l'angle de la caméra
+                try:
+                    phi = (-VUE["cam_off"] + math.pi) % (2 * math.pi) - math.pi            # cap du soldat par rapport à la caméra (0 = de dos)
+                    ap = abs(phi)
+                    droite = phi >= 0.0
+                    fr = 0 if ap < 0.30 else (1 if ap < 0.82 else (2 if ap < 1.31 else (3 if ap < 2.36 else 4)))
+                    if fr == 0 and VUE["vise"] > 0.5:         # de dos, au tir : il tourne un peu les épaules pour montrer le fusil pointé devant
+                        fr, droite = 1, VUE["face"] >= 0
+                    miroir = (not droite) and fr != 0
+                    img = _v3_cadre(cle_sk, atlas, fr, miroir, 0.96 * s)
+                    cw_, ch_ = img.get_size()
+                    mv, ph = VUE["mv"], VUE["marche"]
+                    cs, sn = math.cos(ph), math.sin(ph)
+                    ts = t_ms / 1000.0
+                    nbb = len(balles)
+                    if nbb > VUE["nb"]:
+                        VUE["kick"] = 1.0                      # nouveau projectile : le soldat tire
+                    VUE["nb"] = nbb
+                    kick = VUE["kick"]
+                    VUE["kick"] *= 0.86
+                    bob = ((0.5 - 0.5 * math.cos(2 * ph)) * 0.020 * s * mv) + math.sin(ts * 2.3) * 0.004 * s * (1.0 - mv)      # rebond à chaque pas, respiration à l'arrêt
+                    sway = cs * 0.012 * s * mv
+                    roll = -2.4 * cs * mv + VUE["lean"] * 0.10
+                    dirf = (1 if droite else -1) if fr != 0 else 0
+                    ix = int(sx - cw_ / 2 + sway - dirf * 0.030 * s * kick)                  # recul au tir : en arrière par rapport à la direction du fusil
+                    iy = int(yb + 0.02 * s - V3_ATLAS_SEMELLES * ch_ - bob + (0.02 * s * kick if fr in (0, 4) else 0.0))
+                    # --- ombres
+                    for (r_, f_) in ((1.0, 0.30), (0.78, 0.5), (0.55, 0.72)):
+                        pygame.draw.ellipse(rs, _v3_mix(V3_FOND, (3, 5, 12), f_), (int(sx - 0.30 * s * r_), int(yb - 0.045 * s * r_), int(0.60 * s * r_), max(2, int(0.13 * s * r_))))
+                    tmur = None
+                    for pas_m in range(2, 11):
+                        tm = pas_m * 0.15
+                        if _v3_bloque(px + dirx * tm, py + diry * tm, 0.1):
+                            tmur = tm
+                            break
+                    if tmur is not None:                        # ombre sur le mur derrière lui : il ne « colle » plus au mur
+                        ks = ("sil", cle_sk or "defaut", fr, miroir, int(0.96 * s) // 6)
+                        sil = VUE["cadres"].get(ks)
+                        if sil is None:
+                            try:
+                                sil = img.copy()
+                                sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                            except Exception:
+                                sil = False
+                            VUE["cadres"][ks] = sil
+                        if sil:
+                            try:
+                                sil.set_alpha(int(140 * (1.0 - tmur / 1.55)))
+                                rs.blit(sil, (ix + int(0.05 * s), iy - int(0.015 * s)))
+                            except Exception:
+                                pass
+                    # --- le soldat, légèrement balancé quand il marche
+                    ar = max(-4, min(4, int(round(roll))))
+                    surf, ox, oy = img, 0.0, 0.0
+                    if ar != 0:
+                        kt = (cle_sk or "defaut", fr, miroir, int(0.96 * s) // 6, ar)
+                        kc = VUE["tours"].get(kt)
+                        if kc is None:
+                            if len(VUE["tours"]) > 30:
+                                VUE["tours"].clear()
+                            kc = _v3_tourner(img, float(ar), (cw_ / 2.0, V3_ATLAS_SEMELLES * ch_))
+                            VUE["tours"][kt] = kc
+                        surf, ox, oy = kc
+                    if not exact_a:                              # skin sans vues propres : aura de la couleur du skin autour du soldat de base
+                        aura = (_v3_coul_perso(hd, VUE["perso_cle"])["halo"] if hd is not None else None) or c_laser
+                        pygame.draw.ellipse(rs, _v3_mix(V3_FOND, aura, 0.7), (isx - int(0.36 * s), iy + int(0.03 * s), int(0.72 * s), int(0.95 * s)), 2)
+                    rs.blit(surf, (int(ix + ox), int(iy + oy)))
+                    fx_, fy_ = V3_ATLAS_BOUCHES[fr]
+                    if miroir:
+                        fx_ = 1.0 - fx_
+                    bout = (ix + int(fx_ * cw_), iy + int(fy_ * ch_))
+                    # --- poussière des pas
+                    cprev = VUE["cos_prev"]
+                    if mv > 0.4 and ((cprev > 0.0 >= cs) or (cprev < 0.0 <= cs)):
+                        for _ in range(4):
+                            VUE["dust"].append([random.choice((-0.11, 0.11)), 0.0, random.uniform(-0.25, 0.25), random.uniform(-0.45, -0.15), 1.0])
+                    VUE["cos_prev"] = cs
+                    for pd in VUE["dust"][:]:
+                        pd[0] += pd[2] * 0.04
+                        pd[1] += pd[3] * 0.04
+                        pd[3] += 0.03
+                        pd[4] -= 0.06
+                        if pd[4] <= 0.0:
+                            VUE["dust"].remove(pd)
+                            continue
+                        pygame.draw.circle(rs, _v3_mix(V3_FOND, (120, 130, 150), 0.55 * pd[4]), (int(sx + pd[0] * s), int(yb + pd[1] * s)), max(1, int(0.022 * s * (1.4 - pd[4]))))
+                except Exception as e:                   # sécurité : si les vues échouent, on revient à l'animation de repli
+                    print("[3D] vues du soldat indisponibles :", e)
+                    VUE["atlas"][cle_sk or "defaut"] = None
+                    bout = (isx, int(yb - 0.5 * s))
+            elif cal is not None:                        # (repli) soldat de dos découpé en squelette
+                C = cal
+                cw, ch = C["dim"]
+                ys, yk, cxm = C["ys"], C["yk"], C["cx"]
+                ix = int(sx - cw / 2)
+                iy = int(yb - ch + 0.02 * s)                                           # les semelles touchent le sol
+                mv, ph = VUE["mv"], VUE["marche"]
+                cs, sn = math.cos(ph), math.sin(ph)
+                ts = t_ms / 1000.0
+                # tir : à chaque nouveau projectile, le corps recule
+                nbb = len(balles)
+                if nbb > VUE["nb"]:
+                    VUE["kick"] = 1.0
+                VUE["nb"] = nbb
+                kick = VUE["kick"]
+                VUE["kick"] *= 0.86
+                # --- le corps : rebond (2 fois par cycle), transfert du poids, roulis, respiration à l'arrêt, recul au tir
+                bob = ((0.5 - 0.5 * math.cos(2 * ph)) * 0.016 * s * mv) + math.sin(ts * 2.3) * 0.0035 * s * (1.0 - mv)
+                sway = cs * 0.013 * s * mv
+                roll = -2.4 * cs * mv + VUE["lean"] * 0.10 + kick * 2.2 + math.sin(ts * 1.7) * 0.5 * (1.0 - mv)
+                hy0 = iy - bob + 0.028 * s * kick
+                bobh = bob * 0.6
+                # --- ombres
+                for (r_, f_) in ((1.0, 0.30), (0.78, 0.5), (0.55, 0.72)):
+                    pygame.draw.ellipse(rs, _v3_mix(V3_FOND, (3, 5, 12), f_), (int(sx - 0.30 * s * r_), int(yb - 0.045 * s * r_), int(0.60 * s * r_), max(2, int(0.13 * s * r_))))
+                # ombre du personnage sur le mur devant lui (lui donne du relief quand il est près d'un mur)
+                tmur = None
+                for pas_m in range(2, 11):
+                    tm = pas_m * 0.15
+                    if _v3_bloque(px + dirx * tm, py + diry * tm, 0.1):
+                        tmur = tm
+                        break
+                if tmur is not None and C["sil"] is not None:
+                    try:
+                        C["sil"].set_alpha(int(140 * (1.0 - tmur / 1.55)))
+                        rs.blit(C["sil"], (ix + int(0.05 * s), iy - int(0.015 * s)))
+                    except Exception:
+                        pass
+                # --- les jambes : cuisse + tibia/botte ; la jambe en l'air se plie, l'autre reste plantée au sol
+                for (cote, sgn) in (("g", 1), ("d", -1)):
+                    cj = cs * sgn
+                    z = sn * sgn
+                    lev = max(0.0, cj) ** 0.8
+                    D = (0.055 * z + 0.080 * lev) * s * mv                              # la botte monte à l'écran (loin devant ou levée)
+                    Dn = max(-0.045 * s, D) - bobh
+                    x0 = ix + (0 if cote == "g" else cxm) + int((-1 if cote == "g" else 1) * 0.012 * s * lev * mv)
+                    ytop = int(iy + ys - bobh)
+                    cu0, ti0 = C["c" + cote], C["t" + cote]
+                    hc = max(4, int(cu0.get_height() - 0.3 * Dn))
+                    ht = max(4, int(ti0.get_height() - 0.7 * Dn))
+                    rs.blit(pygame.transform.scale(cu0, (cu0.get_width(), hc)), (x0, ytop))
+                    rs.blit(pygame.transform.scale(ti0, (ti0.get_width(), ht)), (x0, ytop + hc - 2))
+                    # ombre sous la botte : plus petite et plus claire quand elle est levée
+                    bx = int(sx + (-1 if cote == "g" else 1) * V3_BOTTES * cw)
+                    fb = max(0.35, 1.0 - 0.6 * lev * mv)
+                    pygame.draw.ellipse(rs, _v3_mix(V3_FOND, (3, 5, 12), 0.88 * fb + 0.1), (bx - int(0.085 * s * fb), int(yb - 0.015 * s), int(0.17 * s * fb), max(2, int(0.045 * s * fb))))
+                    # poussière quand le pied se pose
+                    cprev = VUE["cos_prev"] * sgn
+                    if mv > 0.4 and cprev > 0.0 >= cj:
+                        for _ in range(4):
+                            VUE["dust"].append([(bx - sx) / s, 0.0, random.uniform(-0.25, 0.25), random.uniform(-0.45, -0.15), 1.0])
+                VUE["cos_prev"] = cs
+                # --- le haut du corps (tourné autour du bassin), puis le fusil
+                haut = C["haut"]
+                pivot = (cw / 2.0, 0.62 * ch)
+                ar = round(roll * 2.0) / 2.0
+                ar = max(-9.0, min(9.0, ar))
+                if abs(ar) >= 0.5:
+                    kc = C["rot"].get(ar)
+                    if kc is None:
+                        if len(C["rot"]) > 40:
+                            C["rot"].clear()
+                        kc = _v3_tourner(haut, ar, pivot)
+                        C["rot"][ar] = kc
+                    surf, ox, oy = kc
+                else:
+                    surf, ox, oy = haut, 0.0, 0.0
+                hx, hy = int(ix + sway + ox), int(hy0 + oy)
+                rs.blit(surf, (hx, hy))
+                bout = (hx + int(cw * 0.02), hy + int(ch * 0.2))
+                if C["canon"] is not None:               # le canon se raccourcit quand il tire : l'arme se tourne vers l'avant
+                    xb, ya, chh = C["geom"]
+                    f = 1.0 - 0.78 * VUE["vise"]
+                    cc = C["canon"] if f > 0.98 else pygame.transform.scale(C["canon"], (max(2, int(xb * f)), chh))
+                    cox = xb - cc.get_width()
+                    if abs(ar) >= 0.5:
+                        cc, ox2, oy2 = _v3_tourner(cc, ar, (pivot[0] - cox, pivot[1] - ya))
+                    else:
+                        ox2, oy2 = 0.0, 0.0
+                    rs.blit(cc, (int(ix + sway + cox + ox2), int(hy0 + ya + oy2)))
+                    a_ = math.radians(ar)
+                    vx_, vy_ = (cox + 2) - pivot[0], (ya + chh / 2.0) - pivot[1]
+                    bout = (int(ix + sway + pivot[0] + vx_ * math.cos(a_) + vy_ * math.sin(a_)),
+                            int(hy0 + pivot[1] - vx_ * math.sin(a_) + vy_ * math.cos(a_)))
+                elif aim:
+                    bout = (isx, hy + int(ch * 0.22))
+                if not exact and not aim:                # skin sans image propre : aura de la couleur du skin autour du soldat de base
+                    aura = (_v3_coul_perso(hd, VUE["perso_cle"])["halo"] if hd is not None else None) or c_laser
+                    pygame.draw.ellipse(rs, _v3_mix(V3_FOND, aura, 0.7), (isx - int(0.36 * s), iy + int(0.03 * s), int(0.72 * s), int(0.95 * s)), 2)
+                # --- poussière des pas
+                for pd in VUE["dust"][:]:
+                    pd[0] += pd[2] * 0.04
+                    pd[1] += pd[3] * 0.04
+                    pd[3] += 0.03
+                    pd[4] -= 0.06
+                    if pd[4] <= 0.0:
+                        VUE["dust"].remove(pd)
+                        continue
+                    pygame.draw.circle(rs, _v3_mix(V3_FOND, (120, 130, 150), 0.55 * pd[4]), (int(sx + pd[0] * s), int(yb + pd[1] * s)), max(1, int(0.022 * s * (1.4 - pd[4]))))
+            elif hd is not None:
+                pygame.draw.ellipse(rs, (5, 8, 20), (int(sx - 0.22 * s), int(yb - 0.03 * s), int(0.44 * s), max(2, int(0.08 * s))))
+                _v3_soldat(rs, sx, yb, s, _v3_coul_perso(hd, VUE["perso_cle"]), VUE["marche"], c_laser)
+                bout = (isx, int(yb - 0.5 * s))
+            else:
+                pygame.draw.ellipse(rs, (5, 8, 20), (int(sx - 0.22 * s), int(yb - 0.03 * s), int(0.44 * s), max(2, int(0.08 * s))))
+                pygame.draw.polygon(rs, BLEU_CYBER, [(int(sx - w), int(yb)), (int(sx + w), int(yb)),
+                                                     (int(sx + w * 0.75), int(yb - 0.5 * s)), (int(sx - w * 0.75), int(yb - 0.5 * s))])
+                pygame.draw.line(rs, c_laser, (isx, int(yb - 0.46 * s)), (isx, int(yb - 0.06 * s)), max(1, int(0.03 * s)))
+                pygame.draw.circle(rs, BLANC_NEON, (isx, int(yb - 0.62 * s)), max(2, int(0.11 * s)))
+                pygame.draw.rect(rs, c_laser, (int(sx + w * 0.75), int(yb - 0.52 * s), max(2, int(0.05 * s)), max(2, int(0.28 * s))))
+                bout = (isx, int(yb - 0.5 * s))
+            if (tir_maintenu or _in_tir()) and ((t_ms // 80) % 2 == 0 or VUE["kick"] > 0.4):
+                pygame.draw.circle(rs, c_laser, bout, max(2, int((0.05 + 0.05 * VUE["kick"]) * s)))
+                pygame.draw.circle(rs, BLANC_NEON, bout, max(1, int((0.03 + 0.035 * VUE["kick"]) * s)))
+            if ETAT_JOUEUR["bouclier"] > 0:
+                pygame.draw.circle(rs, c_laser, (isx, int(yb - 0.34 * s)), max(3, int(0.55 * s)), 2)
+            if POUV.get("t_phase", 0) > 0:
+                pygame.draw.circle(rs, COUL_ACTION["fantome"], (isx, int(yb - 0.34 * s)), max(3, int(0.5 * s)), 2)
+        elif genre == 1:    # drone
+            cyy = hor + (V3_CAMZ - (0.55 + math.sin(t_ms / 200.0 + x * 3) * 0.04)) * s
+            rad = max(2, int(0.2 * s))
+            pygame.draw.ellipse(rs, (5, 8, 20), (int(sx - 0.2 * s), int(yb - 0.03 * s), int(0.4 * s), max(2, int(0.07 * s))))
+            spr = _v3_plat("drone", _v3_image("drone__23_-removebg-preview.png"), 0.5 * s, 0.6, 0)
+            if spr is not None:
+                rs.blit(spr, (isx - spr.get_width() // 2, int(cyy - spr.get_height() / 2)))
+                pygame.draw.circle(rs, ROUGE_ALERTE, (isx, int(cyy)), max(1, int(0.045 * s)))      # voyant rouge : on repère les ennemis
+            else:
+                pygame.draw.circle(rs, ROUGE_ALERTE, (isx, int(cyy)), rad)
+                pygame.draw.line(rs, (255, 179, 192), (int(sx - 0.34 * s), int(cyy - 0.2 * s)), (int(sx + 0.34 * s), int(cyy - 0.2 * s)), max(1, int(0.04 * s)))
+                pygame.draw.circle(rs, CYAN_NEON, (isx, int(cyy)), max(1, rad // 3))
+        elif genre == 2:    # boss
+            cyy = int(hor + (V3_CAMZ - 0.85) * s)
+            rad = max(4, int(0.85 * s))
+            pulse = 0.65 + 0.35 * math.sin(t_ms / 260.0)
+            coul = ROUGE_ALERTE if boss_vie < boss_vie_max * 0.3 else VIOLET_CYBER
+            pygame.draw.ellipse(rs, (5, 8, 20), (int(sx - 0.8 * s), int(yb - 0.05 * s), int(1.6 * s), max(2, int(0.14 * s))))
+            vbx, vby = joueur_x / TAILLE_CASE - x, joueur_y / TAILLE_CASE - y
+            cap = math.degrees(math.atan2(vbx * dirx + vby * diry, -vbx * diry + vby * dirx)) + 90        # le dragon regarde vers le joueur
+            spr = _v3_plat("boss", _v3_image("boss.png"), min(2.0 * s, RW * 0.8), 0.7, cap, 8)
+            if spr is not None:
+                if boss_vie < boss_vie_max * 0.3:
+                    pygame.draw.ellipse(rs, ROUGE_ALERTE, (isx - spr.get_width() // 2, cyy - spr.get_height() // 2, spr.get_width(), spr.get_height()), 2)
+                rs.blit(spr, (isx - spr.get_width() // 2, cyy - spr.get_height() // 2))
+            else:
+                pygame.draw.circle(rs, _v3_mix(V3_FOND, coul, 0.55), (isx, cyy), rad)
+                pygame.draw.circle(rs, _v3_mix(coul, BLANC_NEON, pulse * 0.5), (isx, cyy), rad, max(2, int(0.06 * s)))
+                pygame.draw.circle(rs, ROUGE_ALERTE, (isx, cyy), max(2, int(0.28 * s)))
+                pygame.draw.circle(rs, BLANC_NEON, (isx, cyy), max(1, int(0.1 * s)))
+        elif genre == 3:    # boule de feu du boss
+            cyy = int(hor + (V3_CAMZ - 0.5) * s)
+            pygame.draw.circle(rs, ORANGE_MEC, (isx, cyy), max(2, int((0.18 + 0.03 * math.sin(t_ms / 90.0)) * s)))
+            pygame.draw.circle(rs, JAUNE_CYBER, (isx, cyy), max(1, int(0.09 * s)))
+        elif genre == 4:    # laser du joueur
+            cyy = int(hor + (V3_CAMZ - 0.55) * s)
+            xa, ya = x - extra[0] * 0.025, y - extra[1] * 0.025
+            fa = (xa - camx) * dirx + (ya - camy) * diry
+            if fa > 0.2:
+                ra = -(xa - camx) * diry + (ya - camy) * dirx
+                sa = focal / fa
+                pygame.draw.line(rs, c_traine, (int(half + ra * sa), int(hor + (V3_CAMZ - 0.55) * sa)), (isx, cyy), max(2, int(0.06 * s)))
+            pygame.draw.circle(rs, c_laser, (isx, cyy), max(1, int(0.05 * s)))
+        elif genre == 5:    # potion de temps
+            cyy = int(hor + (V3_CAMZ - (0.38 + 0.05 * math.sin(t_ms / 250.0))) * s)
+            pygame.draw.circle(rs, JAUNE_CYBER, (isx, cyy), max(2, int(0.2 * s)))
+            pygame.draw.circle(rs, V3_FOND, (isx, cyy), max(1, int(0.11 * s)))
+        elif genre == 6:    # faisceau du core / de la sortie (visible au-dessus des murs)
+            if extra == "core":
+                coul = ROUGE_ALERTE if (boss_actif and not boss_vaincu) else (VERT_FLUO if hack_reussi else VIOLET_CYBER)
+            else:
+                coul = VERT_FLUO if hack_reussi else ROUGE_ALERTE
+            p = 0.55 + 0.45 * math.sin(t_ms / 300.0)
+            wb = max(2, int((0.16 + 0.05 * p) * s))
+            haut = int(hor - (2.4 - V3_CAMZ) * s)
+            pygame.draw.rect(rs, _v3_mix(V3_FOND, coul, 0.35 + 0.25 * p), (isx - wb, haut, wb * 2, int(yb) - haut))
+            pygame.draw.rect(rs, coul, (isx - max(1, wb // 4), haut, max(2, wb // 2), int(yb) - haut))
+            pygame.draw.ellipse(rs, coul, (int(sx - 0.45 * s), int(yb - 0.08 * s), int(0.9 * s), max(2, int(0.16 * s))), 2)
+        elif genre == 7:    # onde de choc
+            a = extra[5] / float(extra[6])
+            pygame.draw.circle(rs, _v3_mix(V3_FOND, extra[4], a), (isx, int(hor + (V3_CAMZ - 0.4) * s)),
+                               max(2, int(extra[2] / TAILLE_CASE * s)), max(1, int(3 * a)))
+        elif genre == 8:    # particule
+            a = extra[4] / float(extra[5])
+            pygame.draw.circle(rs, _v3_mix(V3_FOND, extra[6], a), (isx, int(hor + (V3_CAMZ - 0.45) * s)), max(1, int(extra[7] * 0.015 * s * (0.5 + a))))
+        elif genre == 9:    # grenade / roquette
+            cyy = int(hor + (V3_CAMZ - 0.45) * s)
+            if extra["t"] == "gren":
+                prog = 1.0 - extra["n"] / float(extra["n0"])
+                cyy = int(hor + (V3_CAMZ - (0.2 + math.sin(math.pi * prog) * 0.9)) * s)
+                pygame.draw.circle(rs, (90, 110, 60), (isx, cyy), max(2, int(0.1 * s)))
+            else:
+                pygame.draw.circle(rs, ORANGE_MEC, (isx, cyy), max(2, int(0.12 * s)))
+                pygame.draw.circle(rs, BLANC_NEON, (isx, cyy), max(1, int(0.05 * s)))
+        elif genre == 10:   # explosion de pouvoir
+            prog = 1.0 - extra["n"] / float(extra["n0"])
+            pygame.draw.circle(rs, _v3_mix(V3_FOND, extra["c"], 1.0 - prog * 0.6), (isx, int(hor + (V3_CAMZ - 0.4) * s)),
+                               max(2, int(extra["r"] / TAILLE_CASE * (0.25 + 0.75 * prog) * s)), max(2, int(0.08 * s * (1.0 - prog))))
+        elif genre == 11:   # drone allié
+            cyy = int(hor + (V3_CAMZ - 0.6) * s)
+            pygame.draw.circle(rs, (30, 40, 58), (isx, cyy), max(2, int(0.13 * s)))
+            pygame.draw.circle(rs, CYAN_NEON, (isx, cyy), max(1, int(0.06 * s)))
+            pygame.draw.line(rs, (150, 200, 230), (int(sx - 0.22 * s), int(cyy - 0.1 * s)), (int(sx + 0.22 * s), int(cyy - 0.1 * s)), max(1, int(0.03 * s)))
+
+    if VUE["scale_ok"]:
+        try:
+            pygame.transform.scale(rs, (EW, EH), ecran)
+        except Exception:
+            VUE["scale_ok"] = False
+    if not VUE["scale_ok"]:
+        if VUE["tmp"] is None or VUE["tmp"].get_size() != (EW, EH):
+            VUE["tmp"] = pygame.Surface((EW, EH))
+            try:
+                VUE["tmp"] = VUE["tmp"].convert()
+            except Exception:
+                pass
+        pygame.transform.scale(rs, (EW, EH), VUE["tmp"])
+        ecran.blit(VUE["tmp"], (0, 0))
+
+    # auto-réglage : si le dessin 3D est trop lent, la résolution baisse (et remonte si le téléphone suit)
+    VUE["ema"] += ((_time.perf_counter() - t_debut) * 1000.0 - VUE["ema"]) * 0.12
+    VUE["cool"] -= 1
+    if VUE["cool"] <= 0 and mode3d == 0:
+        if VUE["ema"] > 17.0 and VUE["qa_i"] < len(V3_QA) - 1:
+            VUE["qa_i"] += 1
+            VUE["cool"], VUE["ema"] = 40, 14.0
+        elif VUE["ema"] < 8.0 and VUE["qa_i"] > 0:
+            VUE["qa_i"] -= 1
+            VUE["cool"], VUE["ema"] = 150, 12.0
+# ===== VUE 3E PERSONNE FIN
+
+
 async def main():
     global DRAW, ECHELLE, _cache_boss, _cache_drones, _cible, _dt_logique, _echelle_active, _ecoule, _ecran_reel, _k_logique, _maintenant, _pas, _tm0, _tm1, _tm2, _tm3, ang, ang_drone, ang_orbite, ang_q, angle_affichage_boss, angle_arrondi_boss, angle_boss, angle_visée_x, angle_visée_y, astuce, b, bh, boss_angle_precedent, boss_fx_faite, boss_surface_cache, boss_vaincu, boss_vie, boss_x, boss_y, boule, bw, bx, bx0, bx_e, bx_ecran, by, by0, by_e, by_ecran, case, cbx, cby, centre_avatar, cfx, cfy, ci, cible, clic_detecte, clic_x, clic_y, clignote, col_sortie, colonne_max, colonne_min, core_accessible, couleur_aura_boss, couleur_bordure, couleur_ligne, couleur_lueur_core, couleur_node, couleur_timer, curseur, cx, cy, d, d_boss, d_rep, db, decal_x, decal_y, defil_max, defilement_niveaux, delai_max, delai_min, demi, dernier_x_glissement_niveaux, dir_x, dir_y, dist, dist_dir, dist_min, drone_rot, dx, dy, ecran, en_pause, ennemis_restants_a_spawner, espacement_infos, est_boss_node, etat_actuel, event, ex, ex_spawn, ey_spawn, fps_bas_consecutifs, frames_total, fx_ecran, fy_ecran, glissement_niveaux_actif, gris_credit, hack_reussi, haut_piste, hauteur_contenu, hauteur_visible, id_touch_joystick, id_touch_tir, idx, idx_max_affiche, idx_max_clic, idx_min_affiche, idx_min_clic, img_joueur_actuel, index_nationalite, indication_niveaux, indice, info_drones, jauge_hack, joueur_x, joueur_y, joystick_actif, jx_e, jy_e, k_cadre, k_seg, k_traine, largeur_barre_boss, largeur_rempli, largeur_v, lc, lg, li, ligne_max, ligne_min, lignes, lignes_infos, lint, long_piste, long_pouce, lr, lueurs, lx, ly, manette_x, manette_y, masque, message_defaite, minuteur_cadence_tir, minuteur_potion, minuteur_spawn, minuteur_tir_boss, mort_fx_faite, ms, musique_lancee, nb_colonnes_carte, nb_lignes_carte, niveau_max_atteint, niveau_sauvegarde_affichage, ombres_actives, ox, oy, p_core, p_sortie, panneau_largeur, panneau_x, partie_gagnee, partie_perdue, pas, photo_profil_surface, points_chemin, police_l, police_texte, potion, pulsation, pulsation_feu, pulsation_node, pulse_boss, px_ecran, px_potion, py_ecran, py_potion, r_bouclier, ratio_vie_boss, rayon_affiche, rect_timer, rx, ry, saisie_pseudo_active, sec, secondes_restantes, surf_nat, surf_pseudo, t_ms, tag, tag_boss, tb, temps_restant_frames, texte_ligne, texte_node, texte_pseudo, texte_timer, th_hack, ti, ti_icone, til, tir_maintenu, tirer_balle, tl, tn, tp, tp5, txt_vie_boss, type_glissement_niveaux, victoire_fx_faite, vitesse_deplacement_boss, vx, vy, x_actuel_glissement, x_barre, x_barre_boss, x_node, x_node_clic, x_v, xk, y_depart_infos, y_node, y_node_clic, y_nouveau, y_pouce, y_zone, yy
     await ecran_de_demarrage()
@@ -5297,11 +6499,25 @@ async def main():
                 sauvegarder_parametres()
                 pygame.quit()
                 sys.exit()
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_v and etat_actuel == ETAT_JEU and not partie_gagnee and not partie_perdue:
+                basculer_vue()                               # touche V : vue du dessus <-> 3e personne
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3 and etat_actuel == ETAT_JEU and _v3_actif() and not en_pause:
+                VUE["look_id"] = "souris"                    # PC : clic droit maintenu + déplacement = tourner la caméra
+                VUE["look_x"], VUE["look_y"] = pos_ev(event)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+                if VUE["look_id"] == "souris":
+                    VUE["look_id"] = None
+            elif event.type == pygame.MOUSEMOTION and VUE["look_id"] == "souris":
+                _lx, _ly = pos_ev(event)
+                _v3_regarder(_lx - VUE["look_x"], _ly - VUE["look_y"])
+                VUE["look_x"], VUE["look_y"] = _lx, _ly
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 clic_detecte = True
                 clic_x, clic_y = pos_ev(event)
                 if etat_actuel == ETAT_JEU and rect_bouton_pause.collidepoint(clic_x, clic_y) and not partie_gagnee and not partie_perdue:
                     basculer_pause()
+                elif etat_actuel == ETAT_JEU and not partie_gagnee and not partie_perdue and rect_bouton_vue.collidepoint(clic_x, clic_y):
+                    basculer_vue()
                 elif etat_actuel == ETAT_JEU and not en_pause and not partie_gagnee and not partie_perdue and _toucher_pouvoir(clic_x, clic_y):
                     pass
                 elif etat_actuel == ETAT_JEU and not en_pause and rect_tir_tactile.collidepoint(clic_x, clic_y):
@@ -5333,6 +6549,8 @@ async def main():
                 if etat_actuel == ETAT_JEU and not partie_gagnee and not partie_perdue:
                     if rect_bouton_pause.collidepoint(clic_x, clic_y):
                         basculer_pause()
+                    elif rect_bouton_vue.collidepoint(clic_x, clic_y):
+                        basculer_vue()
                     elif not en_pause and _toucher_pouvoir(clic_x, clic_y):
                         pass
                     elif not en_pause and rect_tir_tactile.collidepoint(clic_x, clic_y):
@@ -5343,6 +6561,8 @@ async def main():
                     elif not en_pause and math.hypot(clic_x - JOY_CENTRE_X, clic_y - JOY_CENTRE_Y) <= JOY_RAYON_SOCLE + 40:
                         joystick_actif, id_touch_joystick = True, event.finger_id
                         placer_manette(clic_x, clic_y)
+                    elif not en_pause and _v3_actif() and VUE["look_id"] is None:        # 3e personne : un doigt posé ailleurs fait tourner la caméra
+                        VUE["look_id"], VUE["look_x"], VUE["look_y"] = event.finger_id, clic_x, clic_y
                 elif etat_actuel == ETAT_NIVEAUX:
                     glissement_niveaux_actif = True
                     type_glissement_niveaux = event.finger_id
@@ -5383,11 +6603,19 @@ async def main():
             if event.type == pygame.FINGERMOTION and joystick_actif and event.finger_id == id_touch_joystick:
                 placer_manette(event.x * LARGEUR, event.y * HAUTEUR)
 
+            if event.type == pygame.FINGERMOTION and VUE["look_id"] is not None and event.finger_id == VUE["look_id"]:
+                _lx, _ly = event.x * LARGEUR, event.y * HAUTEUR
+                _v3_regarder(_lx - VUE["look_x"], _ly - VUE["look_y"])
+                VUE["look_x"], VUE["look_y"] = _lx, _ly
+
             if event.type == pygame.FINGERMOTION and glissement_niveaux_actif and event.finger_id == type_glissement_niveaux:
                 x_actuel_glissement = event.x * LARGEUR
                 defilement_niveaux += x_actuel_glissement - dernier_x_glissement_niveaux
                 defilement_niveaux = min(0, defilement_niveaux)
                 dernier_x_glissement_niveaux = x_actuel_glissement
+
+            if event.type == pygame.FINGERUP and VUE["look_id"] is not None and event.finger_id == VUE["look_id"]:
+                VUE["look_id"] = None
 
             if event.type == pygame.FINGERUP and joystick_actif and event.finger_id == id_touch_joystick:
                 joystick_actif, id_touch_joystick = False, None
@@ -5586,13 +6814,13 @@ async def main():
                 if ennemis_restants_a_spawner > 0:
                     minuteur_spawn -= 1
                     if minuteur_spawn <= 0:
-                        ex_spawn, ey_spawn = position_spawn_ennemi(CARTE)
+                        ex_spawn, ey_spawn = (_v3_spawn_ennemi() if _v3_actif() else None) or position_spawn_ennemi(CARTE)
                         liste_ennemis.append([ex_spawn, ey_spawn, vitesse_ennemis_niveau])
                         ennemis_restants_a_spawner -= 1
                         delai_min, delai_max = calcul_delais_spawn(niveau_actuel)
                         minuteur_spawn = random.randint(delai_min, delai_max)
 
-                if joystick_actif:
+                if joystick_actif and not _v3_actif():
                     vx, vy = manette_x - JOY_CENTRE_X, manette_y - JOY_CENTRE_Y
                     dist = math.hypot(vx, vy)
                     if dist > CTRL["dz"]:
@@ -5606,7 +6834,7 @@ async def main():
                                 img_joueur_actuel = img_joueur_droite
 
                 _im = _in_deplacement()
-                if _im is not None:                          # clavier (ZQSD / WASD / flèches) ou stick gauche
+                if _im is not None and not _v3_actif():      # clavier (ZQSD / WASD / flèches) ou stick gauche
                     dx, dy = _im[0] * joueur_vitesse * _facteur_vitesse(), _im[1] * joueur_vitesse * _facteur_vitesse()
                     angle_visée_x, angle_visée_y = _im[0], _im[1]
                     if MODE_GRAPHIQUE == "REALISTE":
@@ -5615,6 +6843,8 @@ async def main():
                         elif _im[0] > 0.2:
                             img_joueur_actuel = img_joueur_droite
 
+                if _v3_actif():
+                    dx, dy, angle_visée_x, angle_visée_y = _v3_controle(_im)
                 if dx != 0 and not check_collision_murs(joueur_x + dx, joueur_y):
                     joueur_x += dx
                 if dy != 0 and not check_collision_murs(joueur_x, joueur_y + dy):
@@ -5664,7 +6894,9 @@ async def main():
                         balles.remove(b)
 
                 for ex in liste_ennemis[:]:
-                    ang = math.atan2(joueur_y - ex[1], joueur_x - ex[0]) + random.uniform(-0.08, 0.08)
+                    ang = _v3_cap_ennemi(ex) if _v3_actif() else None
+                    if ang is None:
+                        ang = math.atan2(joueur_y - ex[1], joueur_x - ex[0]) + random.uniform(-0.08, 0.08)
                     _fe = _facteur_ennemi(ex[0], ex[1])
                     ex[0] += math.cos(ang) * ex[2] * _fe
                     ex[1] += math.sin(ang) * ex[2] * _fe
@@ -6121,170 +7353,173 @@ async def main():
                 _ecran_reel = ecran
                 ecran = obtenir_cible_monde()
                 DRAW = _DESSIN_ECHELLE
-            dessiner_fond_ville(ox, oy, t_ms, (ox, oy, len(CARTE[0]) * TAILLE_CASE, len(CARTE) * TAILLE_CASE))
-            dessiner_cadre_carte(ox, oy, 0)
-            nb_lignes_carte, nb_colonnes_carte = len(CARTE), len(CARTE[0])
-            colonne_min = max(0, int((-ox) // TAILLE_CASE) - 1)
-            colonne_max = min(nb_colonnes_carte, int((LARGEUR - ox) // TAILLE_CASE) + 2)
-            ligne_min = max(0, int((-oy) // TAILLE_CASE) - 1)
-            ligne_max = min(nb_lignes_carte, int((HAUTEUR - oy) // TAILLE_CASE) + 2)
+            if _v3_actif():
+                dessiner_vue_3d(t_ms)
+            else:
+                dessiner_fond_ville(ox, oy, t_ms, (ox, oy, len(CARTE[0]) * TAILLE_CASE, len(CARTE) * TAILLE_CASE))
+                dessiner_cadre_carte(ox, oy, 0)
+                nb_lignes_carte, nb_colonnes_carte = len(CARTE), len(CARTE[0])
+                colonne_min = max(0, int((-ox) // TAILLE_CASE) - 1)
+                colonne_max = min(nb_colonnes_carte, int((LARGEUR - ox) // TAILLE_CASE) + 2)
+                ligne_min = max(0, int((-oy) // TAILLE_CASE) - 1)
+                ligne_max = min(nb_lignes_carte, int((HAUTEUR - oy) // TAILLE_CASE) + 2)
 
-            lueurs = []
-            demi = TAILLE_CASE // 2
-            ombres_actives = bool(PARAMS["ombres"]) and QUALITE["niveau"] >= 1
-            for li in range(ligne_min, ligne_max):
-                lg = CARTE[li]
-                for ci in range(colonne_min, colonne_max):
-                    case = lg[ci]
-                    rx, ry = ci * TAILLE_CASE + ox, li * TAILLE_CASE + oy
-                    if case == 1:
-                        masque = 0
-                        if li > 0 and CARTE[li - 1][ci] != 1:
-                            masque |= 1
-                        if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] != 1:
-                            masque |= 2
-                        if ci > 0 and lg[ci - 1] != 1:
-                            masque |= 4
-                        if ci < nb_colonnes_carte - 1 and lg[ci + 1] != 1:
-                            masque |= 8
-                        ecran.blit(tuile_mur(COULEUR_MUR, masque), (rx, ry))
-                        continue
+                lueurs = []
+                demi = TAILLE_CASE // 2
+                ombres_actives = bool(PARAMS["ombres"]) and QUALITE["niveau"] >= 1
+                for li in range(ligne_min, ligne_max):
+                    lg = CARTE[li]
+                    for ci in range(colonne_min, colonne_max):
+                        case = lg[ci]
+                        rx, ry = ci * TAILLE_CASE + ox, li * TAILLE_CASE + oy
+                        if case == 1:
+                            masque = 0
+                            if li > 0 and CARTE[li - 1][ci] != 1:
+                                masque |= 1
+                            if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] != 1:
+                                masque |= 2
+                            if ci > 0 and lg[ci - 1] != 1:
+                                masque |= 4
+                            if ci < nb_colonnes_carte - 1 and lg[ci + 1] != 1:
+                                masque |= 8
+                            ecran.blit(tuile_mur(COULEUR_MUR, masque), (rx, ry))
+                            continue
 
-                    ms = 0
-                    if ombres_actives:
-                        if li > 0 and CARTE[li - 1][ci] == 1:
-                            ms |= 1
-                        if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] == 1:
-                            ms |= 2
-                        if ci > 0 and lg[ci - 1] == 1:
-                            ms |= 4
-                        if ci < nb_colonnes_carte - 1 and lg[ci + 1] == 1:
-                            ms |= 8
-                    ecran.blit(tuile_sol(COULEUR_MUR, (li + ci) % 2, ms), (rx, ry))
-                    if case == 2:
-                        if boss_actif and not boss_vaincu:
-                            p_core = 0.6 + 0.4 * math.sin(t_ms / 180.0)
-                            DRAW.rect(ecran, eclaircir(ROUGE_ALERTE, p_core), (rx + 3, ry + 3, TAILLE_CASE - 6, TAILLE_CASE - 6), 5)
-                            DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + 12, ry + 12), (rx + TAILLE_CASE - 12, ry + TAILLE_CASE - 12), 3)
-                            DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + TAILLE_CASE - 12, ry + 12), (rx + 12, ry + TAILLE_CASE - 12), 3)
-                            lueurs.append((rx + demi, ry + demi, 110, ROUGE_ALERTE, 0.55 * p_core))
-                        else:
-                            if MODE_GRAPHIQUE == "REALISTE":
-                                ecran.blit(img_core, (rx, ry))
+                        ms = 0
+                        if ombres_actives:
+                            if li > 0 and CARTE[li - 1][ci] == 1:
+                                ms |= 1
+                            if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] == 1:
+                                ms |= 2
+                            if ci > 0 and lg[ci - 1] == 1:
+                                ms |= 4
+                            if ci < nb_colonnes_carte - 1 and lg[ci + 1] == 1:
+                                ms |= 8
+                        ecran.blit(tuile_sol(COULEUR_MUR, (li + ci) % 2, ms), (rx, ry))
+                        if case == 2:
+                            if boss_actif and not boss_vaincu:
+                                p_core = 0.6 + 0.4 * math.sin(t_ms / 180.0)
+                                DRAW.rect(ecran, eclaircir(ROUGE_ALERTE, p_core), (rx + 3, ry + 3, TAILLE_CASE - 6, TAILLE_CASE - 6), 5)
+                                DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + 12, ry + 12), (rx + TAILLE_CASE - 12, ry + TAILLE_CASE - 12), 3)
+                                DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + TAILLE_CASE - 12, ry + 12), (rx + 12, ry + TAILLE_CASE - 12), 3)
+                                lueurs.append((rx + demi, ry + demi, 110, ROUGE_ALERTE, 0.55 * p_core))
                             else:
-                                DRAW.rect(ecran, VIOLET_CYBER, (rx, ry, TAILLE_CASE, TAILLE_CASE))
-                            couleur_lueur_core = VERT_FLUO if hack_reussi else VIOLET_CYBER
-                            lueurs.append((rx + demi, ry + demi, 120, couleur_lueur_core, 0.5 + 0.2 * math.sin(t_ms / 300.0)))
-                    elif case == 3:
-                        col_sortie = VERT_FLUO if hack_reussi else ROUGE_ALERTE
-                        p_sortie = 0.55 + 0.45 * math.sin(t_ms / (200.0 if hack_reussi else 350.0))
-                        DRAW.rect(ecran, melange(NOIR_ESPACE, col_sortie, 0.18), (rx + 4, ry + 4, TAILLE_CASE - 8, TAILLE_CASE - 8))
-                        for k_cadre in range(3):
-                            DRAW.rect(ecran, eclaircir(col_sortie, max(0.0, p_sortie - k_cadre * 0.2)),
-                                             (rx + 4 + k_cadre * 8, ry + 4 + k_cadre * 8,
-                                              TAILLE_CASE - 8 - k_cadre * 16, TAILLE_CASE - 8 - k_cadre * 16), 3)
-                        lueurs.append((rx + demi, ry + demi, 100, col_sortie, 0.35 + 0.35 * p_sortie))
+                                if MODE_GRAPHIQUE == "REALISTE":
+                                    ecran.blit(img_core, (rx, ry))
+                                else:
+                                    DRAW.rect(ecran, VIOLET_CYBER, (rx, ry, TAILLE_CASE, TAILLE_CASE))
+                                couleur_lueur_core = VERT_FLUO if hack_reussi else VIOLET_CYBER
+                                lueurs.append((rx + demi, ry + demi, 120, couleur_lueur_core, 0.5 + 0.2 * math.sin(t_ms / 300.0)))
+                        elif case == 3:
+                            col_sortie = VERT_FLUO if hack_reussi else ROUGE_ALERTE
+                            p_sortie = 0.55 + 0.45 * math.sin(t_ms / (200.0 if hack_reussi else 350.0))
+                            DRAW.rect(ecran, melange(NOIR_ESPACE, col_sortie, 0.18), (rx + 4, ry + 4, TAILLE_CASE - 8, TAILLE_CASE - 8))
+                            for k_cadre in range(3):
+                                DRAW.rect(ecran, eclaircir(col_sortie, max(0.0, p_sortie - k_cadre * 0.2)),
+                                                 (rx + 4 + k_cadre * 8, ry + 4 + k_cadre * 8,
+                                                  TAILLE_CASE - 8 - k_cadre * 16, TAILLE_CASE - 8 - k_cadre * 16), 3)
+                            lueurs.append((rx + demi, ry + demi, 100, col_sortie, 0.35 + 0.35 * p_sortie))
 
-            dessiner_cadre_carte(ox, oy, 1)
-            if ombres_actives:
+                dessiner_cadre_carte(ox, oy, 1)
+                if ombres_actives:
+                    if not partie_perdue:
+                        dessiner_ombre(joueur_x + ox + 5, joueur_y + oy + 16, TAILLE_PERSO + 14, 22)
+                    for ex in liste_ennemis:
+                        dessiner_ombre(ex[0] + ox + 4, ex[1] + oy + 18, 44, 16)
+                    if boss_actif and not boss_vaincu:
+                        dessiner_ombre(boss_x + ox + 10, boss_y + oy + int(TAILLE_BOSS * 0.38), int(TAILLE_BOSS * 0.8), int(TAILLE_BOSS * 0.26))
                 if not partie_perdue:
-                    dessiner_ombre(joueur_x + ox + 5, joueur_y + oy + 16, TAILLE_PERSO + 14, 22)
+                    lueurs.append((joueur_x + ox, joueur_y + oy, 120, BLEU_CYBER, 0.38))
+                for lx, ly, lr, lc, lint in lueurs:
+                    dessiner_halo(lx, ly, lr if QUALITE["niveau"] >= 2 else int(lr * 0.7), lc, lint)
+
+                animer_skin()
+                for b in balles:
+                    bx_e, by_e = int(b[0] + ox), int(b[1] + oy)
+                    DRAW.line(ecran, LASER["trail"], (int(bx_e - b[2] * 3.2), int(by_e - b[3] * 3.2)), (bx_e, by_e), 9)
+                    DRAW.line(ecran, LASER["main"], (int(bx_e - b[2] * 2.0), int(by_e - b[3] * 2.0)), (bx_e, by_e), 5)
+                    DRAW.circle(ecran, BLANC_NEON, (bx_e, by_e), 4)
+                    dessiner_halo(bx_e, by_e, 24, LASER["main"], 0.95, 0)
+
+                _dessiner_pouvoirs_monde(ox, oy, t_ms)
+
+                for potion in liste_potions:
+                    px_ecran, py_ecran = int(potion[0] + ox), int(potion[1] + oy)
+                    pulsation = 3 * math.sin(pygame.time.get_ticks() / 150)
+                    dessiner_halo(px_ecran, py_ecran, 36, JAUNE_CYBER, 0.85)
+                    ang_orbite = pygame.time.get_ticks() / 380.0
+                    DRAW.circle(ecran, BLANC_NEON, (int(px_ecran + math.cos(ang_orbite) * 27), int(py_ecran + math.sin(ang_orbite) * 27)), 3)
+                    DRAW.circle(ecran, JAUNE_CYBER, (px_ecran, py_ecran), int(18 + pulsation))
+                    DRAW.circle(ecran, NOIR_ESPACE, (px_ecran, py_ecran), int(11 + pulsation))
+                    tp5 = rendu_texte(police_petite, "+5", True, JAUNE_CYBER)
+                    ecran.blit(tp5, (px_ecran - tp5.get_width() // 2, py_ecran - tp5.get_height() // 2))
+
                 for ex in liste_ennemis:
-                    dessiner_ombre(ex[0] + ox + 4, ex[1] + oy + 18, 44, 16)
-                if boss_actif and not boss_vaincu:
-                    dessiner_ombre(boss_x + ox + 10, boss_y + oy + int(TAILLE_BOSS * 0.38), int(TAILLE_BOSS * 0.8), int(TAILLE_BOSS * 0.26))
-            if not partie_perdue:
-                lueurs.append((joueur_x + ox, joueur_y + oy, 120, BLEU_CYBER, 0.38))
-            for lx, ly, lr, lc, lint in lueurs:
-                dessiner_halo(lx, ly, lr if QUALITE["niveau"] >= 2 else int(lr * 0.7), lc, lint)
-
-            animer_skin()
-            for b in balles:
-                bx_e, by_e = int(b[0] + ox), int(b[1] + oy)
-                DRAW.line(ecran, LASER["trail"], (int(bx_e - b[2] * 3.2), int(by_e - b[3] * 3.2)), (bx_e, by_e), 9)
-                DRAW.line(ecran, LASER["main"], (int(bx_e - b[2] * 2.0), int(by_e - b[3] * 2.0)), (bx_e, by_e), 5)
-                DRAW.circle(ecran, BLANC_NEON, (bx_e, by_e), 4)
-                dessiner_halo(bx_e, by_e, 24, LASER["main"], 0.95, 0)
-
-            _dessiner_pouvoirs_monde(ox, oy, t_ms)
-
-            for potion in liste_potions:
-                px_ecran, py_ecran = int(potion[0] + ox), int(potion[1] + oy)
-                pulsation = 3 * math.sin(pygame.time.get_ticks() / 150)
-                dessiner_halo(px_ecran, py_ecran, 36, JAUNE_CYBER, 0.85)
-                ang_orbite = pygame.time.get_ticks() / 380.0
-                DRAW.circle(ecran, BLANC_NEON, (int(px_ecran + math.cos(ang_orbite) * 27), int(py_ecran + math.sin(ang_orbite) * 27)), 3)
-                DRAW.circle(ecran, JAUNE_CYBER, (px_ecran, py_ecran), int(18 + pulsation))
-                DRAW.circle(ecran, NOIR_ESPACE, (px_ecran, py_ecran), int(11 + pulsation))
-                tp5 = rendu_texte(police_petite, "+5", True, JAUNE_CYBER)
-                ecran.blit(tp5, (px_ecran - tp5.get_width() // 2, py_ecran - tp5.get_height() // 2))
-
-            for ex in liste_ennemis:
-                if len(liste_ennemis) <= 10:
-                    dessiner_halo(ex[0] + ox, ex[1] + oy, 30, ROUGE_ALERTE, 0.75)
-                if MODE_GRAPHIQUE == "REALISTE":
-                    ang_drone = math.degrees(math.atan2(-(joueur_y - ex[1]), joueur_x - ex[0])) - 90
-                    ang_q = int(round(ang_drone / 6.0)) * 6
-                    drone_rot = _cache_drones.get(ang_q)
-                    if drone_rot is None:
-                        drone_rot = pygame.transform.rotate(img_drone, ang_q)
-                        _cache_drones[ang_q] = drone_rot
-                    ecran.blit(drone_rot, (int(ex[0] + ox - drone_rot.get_width() // 2), int(ex[1] + oy - drone_rot.get_height() // 2)))
-                else:
-                    DRAW.circle(ecran, ROUGE_ALERTE, (int(ex[0] + ox), int(ex[1] + oy)), 16)
-
-            if boss_actif and not boss_vaincu:
-                bx_ecran, by_ecran = int(boss_x + ox), int(boss_y + oy)
-                pulse_boss = 0.65 + 0.35 * math.sin(t_ms / 260.0)
-                couleur_aura_boss = ROUGE_ALERTE if boss_vie < boss_vie_max * 0.3 else VIOLET_CYBER
-                dessiner_halo(bx_ecran, by_ecran, 160 if QUALITE["niveau"] >= 2 else 110, couleur_aura_boss, 0.75 * pulse_boss)
-                if BOSS_IMAGE_DISPONIBLE:
-                    angle_affichage_boss = math.degrees(math.atan2(-(joueur_y - boss_y), joueur_x - boss_x)) - 90
-                    angle_arrondi_boss = round(angle_affichage_boss / 6) * 6
-                    if boss_surface_cache is None or angle_arrondi_boss != boss_angle_precedent:
-                        boss_surface_cache = _cache_boss.get(angle_arrondi_boss)
-                        if boss_surface_cache is None:
-                            if len(_cache_boss) >= 40:
-                                _cache_boss.pop(next(iter(_cache_boss)))
-                            boss_surface_cache = pygame.transform.rotate(img_boss, angle_arrondi_boss)
-                            _cache_boss[angle_arrondi_boss] = boss_surface_cache
-                        boss_angle_precedent = angle_arrondi_boss
-                    ecran.blit(boss_surface_cache, (bx_ecran - boss_surface_cache.get_width() // 2, by_ecran - boss_surface_cache.get_height() // 2))
-                else:
-                    DRAW.circle(ecran, VIOLET_CYBER, (bx_ecran, by_ecran), int(TAILLE_BOSS / 2))
-                    tb = rendu_texte(police_bouton, "BOSS", True, BLANC_NEON)
-                    ecran.blit(tb, (bx_ecran - tb.get_width() // 2, by_ecran - tb.get_height() // 2))
-
-            for boule in boules_feu:
-                fx_ecran, fy_ecran = int(boule[0] + ox), int(boule[1] + oy)
-                for k_traine in (3, 2, 1):
-                    DRAW.circle(ecran, eclaircir(ORANGE_MEC, 0.22 * (4 - k_traine)),
-                                       (int(fx_ecran - boule[2] * k_traine * 2.4), int(fy_ecran - boule[3] * k_traine * 2.4)),
-                                       5 + (4 - k_traine) * 3)
-                dessiner_halo(fx_ecran, fy_ecran, 42, ORANGE_MEC, 1.0)
-                pulsation_feu = 3 * math.sin(pygame.time.get_ticks() / 90)
-                DRAW.circle(ecran, ORANGE_MEC, (fx_ecran, fy_ecran), int(16 + pulsation_feu))
-                DRAW.circle(ecran, JAUNE_CYBER, (fx_ecran, fy_ecran), int(9 + pulsation_feu))
-
-            if not partie_perdue:
-                jx_e, jy_e = int(joueur_x + ox), int(joueur_y + oy) + int(3 * math.sin(t_ms / 230.0))
-                if ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0:          # clignote après un coup encaissé
+                    if len(liste_ennemis) <= 10:
+                        dessiner_halo(ex[0] + ox, ex[1] + oy, 30, ROUGE_ALERTE, 0.75)
                     if MODE_GRAPHIQUE == "REALISTE":
-                        if POUV.get("t_phase", 0) > 0:
-                            img_joueur_actuel.set_alpha(120)                  # phase : le joueur devient transparent
-                        ecran.blit(img_joueur_actuel, (jx_e - img_joueur_actuel.get_width() // 2, jy_e - img_joueur_actuel.get_height() // 2))
-                        img_joueur_actuel.set_alpha(255)
+                        ang_drone = math.degrees(math.atan2(-(joueur_y - ex[1]), joueur_x - ex[0])) - 90
+                        ang_q = int(round(ang_drone / 6.0)) * 6
+                        drone_rot = _cache_drones.get(ang_q)
+                        if drone_rot is None:
+                            drone_rot = pygame.transform.rotate(img_drone, ang_q)
+                            _cache_drones[ang_q] = drone_rot
+                        ecran.blit(drone_rot, (int(ex[0] + ox - drone_rot.get_width() // 2), int(ex[1] + oy - drone_rot.get_height() // 2)))
                     else:
-                        DRAW.rect(ecran, VERT_FLUO, (jx_e - TAILLE_PERSO // 2, jy_e - TAILLE_PERSO // 2, TAILLE_PERSO, TAILLE_PERSO))
-                if ETAT_JOUEUR["bouclier"] > 0:
-                    r_bouclier = 36 + int(2 * math.sin(t_ms / 160.0))
-                    DRAW.circle(ecran, eclaircir(LASER["main"], 0.4), (jx_e, jy_e), r_bouclier + 3, 3)
-                    DRAW.circle(ecran, LASER["main"], (jx_e, jy_e), r_bouclier, 2)
-                    dessiner_halo(jx_e, jy_e, 56, LASER["main"], 0.55)
+                        DRAW.circle(ecran, ROUGE_ALERTE, (int(ex[0] + ox), int(ex[1] + oy)), 16)
 
-            dessiner_fx(ox, oy)
-            if QUALITE["niveau"] >= 2:
-                ecran.blit(obtenir_vignette(), (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+                if boss_actif and not boss_vaincu:
+                    bx_ecran, by_ecran = int(boss_x + ox), int(boss_y + oy)
+                    pulse_boss = 0.65 + 0.35 * math.sin(t_ms / 260.0)
+                    couleur_aura_boss = ROUGE_ALERTE if boss_vie < boss_vie_max * 0.3 else VIOLET_CYBER
+                    dessiner_halo(bx_ecran, by_ecran, 160 if QUALITE["niveau"] >= 2 else 110, couleur_aura_boss, 0.75 * pulse_boss)
+                    if BOSS_IMAGE_DISPONIBLE:
+                        angle_affichage_boss = math.degrees(math.atan2(-(joueur_y - boss_y), joueur_x - boss_x)) - 90
+                        angle_arrondi_boss = round(angle_affichage_boss / 6) * 6
+                        if boss_surface_cache is None or angle_arrondi_boss != boss_angle_precedent:
+                            boss_surface_cache = _cache_boss.get(angle_arrondi_boss)
+                            if boss_surface_cache is None:
+                                if len(_cache_boss) >= 40:
+                                    _cache_boss.pop(next(iter(_cache_boss)))
+                                boss_surface_cache = pygame.transform.rotate(img_boss, angle_arrondi_boss)
+                                _cache_boss[angle_arrondi_boss] = boss_surface_cache
+                            boss_angle_precedent = angle_arrondi_boss
+                        ecran.blit(boss_surface_cache, (bx_ecran - boss_surface_cache.get_width() // 2, by_ecran - boss_surface_cache.get_height() // 2))
+                    else:
+                        DRAW.circle(ecran, VIOLET_CYBER, (bx_ecran, by_ecran), int(TAILLE_BOSS / 2))
+                        tb = rendu_texte(police_bouton, "BOSS", True, BLANC_NEON)
+                        ecran.blit(tb, (bx_ecran - tb.get_width() // 2, by_ecran - tb.get_height() // 2))
+
+                for boule in boules_feu:
+                    fx_ecran, fy_ecran = int(boule[0] + ox), int(boule[1] + oy)
+                    for k_traine in (3, 2, 1):
+                        DRAW.circle(ecran, eclaircir(ORANGE_MEC, 0.22 * (4 - k_traine)),
+                                           (int(fx_ecran - boule[2] * k_traine * 2.4), int(fy_ecran - boule[3] * k_traine * 2.4)),
+                                           5 + (4 - k_traine) * 3)
+                    dessiner_halo(fx_ecran, fy_ecran, 42, ORANGE_MEC, 1.0)
+                    pulsation_feu = 3 * math.sin(pygame.time.get_ticks() / 90)
+                    DRAW.circle(ecran, ORANGE_MEC, (fx_ecran, fy_ecran), int(16 + pulsation_feu))
+                    DRAW.circle(ecran, JAUNE_CYBER, (fx_ecran, fy_ecran), int(9 + pulsation_feu))
+
+                if not partie_perdue:
+                    jx_e, jy_e = int(joueur_x + ox), int(joueur_y + oy) + int(3 * math.sin(t_ms / 230.0))
+                    if ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0:          # clignote après un coup encaissé
+                        if MODE_GRAPHIQUE == "REALISTE":
+                            if POUV.get("t_phase", 0) > 0:
+                                img_joueur_actuel.set_alpha(120)                  # phase : le joueur devient transparent
+                            ecran.blit(img_joueur_actuel, (jx_e - img_joueur_actuel.get_width() // 2, jy_e - img_joueur_actuel.get_height() // 2))
+                            img_joueur_actuel.set_alpha(255)
+                        else:
+                            DRAW.rect(ecran, VERT_FLUO, (jx_e - TAILLE_PERSO // 2, jy_e - TAILLE_PERSO // 2, TAILLE_PERSO, TAILLE_PERSO))
+                    if ETAT_JOUEUR["bouclier"] > 0:
+                        r_bouclier = 36 + int(2 * math.sin(t_ms / 160.0))
+                        DRAW.circle(ecran, eclaircir(LASER["main"], 0.4), (jx_e, jy_e), r_bouclier + 3, 3)
+                        DRAW.circle(ecran, LASER["main"], (jx_e, jy_e), r_bouclier, 2)
+                        dessiner_halo(jx_e, jy_e, 56, LASER["main"], 0.55)
+
+                dessiner_fx(ox, oy)
+                if QUALITE["niveau"] >= 2:
+                    ecran.blit(obtenir_vignette(), (0, 0), special_flags=pygame.BLEND_RGB_MULT)
             if _echelle_active:
                 ecran = _ecran_reel
                 DRAW = pygame.draw
@@ -6313,6 +7548,13 @@ async def main():
                 else:
                     DRAW.rect(ecran, BLEU_CYBER, (BTN_PAUSE_X - 11, BTN_PAUSE_Y - 12, 7, 24))
                     DRAW.rect(ecran, BLEU_CYBER, (BTN_PAUSE_X + 4, BTN_PAUSE_Y - 12, 7, 24))
+
+            if not partie_gagnee and not partie_perdue:
+                dessiner_halo(BTN_VUE_X, BTN_VUE_Y, 52, BLEU_CYBER, 0.5, 2)
+                DRAW.circle(ecran, (10, 10, 20), (BTN_VUE_X, BTN_VUE_Y), BTN_PAUSE_RAYON)
+                DRAW.circle(ecran, BLEU_CYBER, (BTN_VUE_X, BTN_VUE_Y), BTN_PAUSE_RAYON, 3)
+                t_vue = rendu_texte(police_petite, "2D" if _v3_actif() else "3D", True, BLEU_CYBER)
+                ecran.blit(t_vue, (BTN_VUE_X - t_vue.get_width() // 2, BTN_VUE_Y - t_vue.get_height() // 2))
 
             if boss_actif and not boss_vaincu:
                 info_drones = rendu_texte(police_petite, "BOSS ACTIF : TIRE SANS ARRÊT ET ESQUIVE LE FEU", True, ROUGE_ALERTE)
