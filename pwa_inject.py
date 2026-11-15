@@ -34,6 +34,9 @@ if ("serviceWorker" in navigator) {
 <script src="controls.js"></script>
 """
 
+# validation du site chez la régie publicitaire Mondiad (propriété du site)
+MONDIAD = '<meta name="mnd-ver" content="hpsde4hjri79orspougnoa" />'
+
 if 'rel="manifest"' not in html:
     if re.search(r"</head>", html, re.I):
         html = re.sub(r"</head>", TETE + "</head>", html, count=1, flags=re.I)
@@ -51,6 +54,11 @@ if "serviceWorker.register" not in html:
         html = re.sub(r"</body>", PIED + "</body>", html, count=1, flags=re.I)
     else:
         html = html + PIED
+if 'name="mnd-ver"' not in html:
+    if re.search(r"</head>", html, re.I):
+        html = re.sub(r"</head>", MONDIAD + "\n</head>", html, count=1, flags=re.I)
+    else:
+        html = MONDIAD + "\n" + html
 # nom affiché dans l'onglet et dans la liste des applications
 html = re.sub(r"<title>[^<]*</title>", "<title>Flex Cyberpunk</title>", html, count=1, flags=re.I)
 
