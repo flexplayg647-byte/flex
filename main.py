@@ -4966,11 +4966,54 @@ def fin_pret():
     return pygame.time.get_ticks() - FIN["t0"] >= DELAI_BOUTONS_FIN
 
 
+# ==================== PUBLICITÉ (version web uniquement) ====================
+# La pub s'affiche seulement sur l'écran de fin de mission (le jeu est à l'arrêt), jamais en pleine partie.
+PUB_TOUS_LES_N = 3            # une pub toutes les 3 fins de mission
+PUB_ESPACEMENT_MS = 180000    # et au moins 3 minutes entre deux pubs
+PUB_ATTENTE_MS = 1000         # on laisse 1 seconde au joueur pour voir son résultat avant la pub
+PUB = {"fins": 0, "attente": None, "derniere": -10 ** 9}
+
+
+def pubs_autorisees():
+    """Plus tard : False pour les joueurs qui ont acheté « RETIRER LES PUBS »."""
+    try:
+        return not BOUTIQUE.get("pubs_retirees", False)
+    except Exception:
+        return True
+
+
+def planifier_pub():
+    """Appelée une fois à chaque fin de mission : décide si une pub sera montrée sur cet écran de fin."""
+    PUB["attente"] = None
+    if not IS_WEB or not pubs_autorisees():
+        return
+    PUB["fins"] += 1
+    maintenant = pygame.time.get_ticks()
+    if PUB["fins"] % PUB_TOUS_LES_N == 0 and maintenant - PUB["derniere"] >= PUB_ESPACEMENT_MS:
+        PUB["attente"] = maintenant
+
+
+def verifier_pub():
+    """Appelée à chaque image tant que l'écran de fin est affiché : lance la pub une seule fois."""
+    if PUB["attente"] is None or TRANS["actif"]:
+        return
+    if pygame.time.get_ticks() - PUB["attente"] < PUB_ATTENTE_MS:
+        return
+    PUB["attente"] = None
+    PUB["derniere"] = pygame.time.get_ticks()
+    try:
+        import platform as _pfpub
+        _pfpub.window.flexPub()
+    except Exception:
+        pass
+
+
 def demarrer_ecran_fin(victoire):
     """Appelé une seule fois quand la mission se termine : prépare étoiles, record ou conseil."""
     FIN["t0"] = pygame.time.get_ticks()
     FIN["record"] = False
     _stat("level_win" if victoire else "level_lose", niveau_actuel)
+    planifier_pub()
     if victoire:
         _install_rappel_victoire()
     if victoire:
@@ -5036,6 +5079,7 @@ def _panneau_fin(couleur, y_haut, y_bas, avancement):
 
 
 def dessiner_ecran_victoire():
+    verifier_pub()
     t = pygame.time.get_ticks() - FIN["t0"]
     cx = LARGEUR // 2
     ecran.blit(obtenir_voile(LARGEUR, HAUTEUR, (4, 12, 14, 170)), (0, 0))
@@ -5081,6 +5125,7 @@ def dessiner_ecran_victoire():
 
 
 def dessiner_ecran_defaite():
+    verifier_pub()
     t = pygame.time.get_ticks() - FIN["t0"]
     cx = LARGEUR // 2
     ecran.blit(obtenir_voile(LARGEUR, HAUTEUR, (22, 0, 6, 190)), (0, 0))

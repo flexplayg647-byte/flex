@@ -37,6 +37,24 @@ if ("serviceWorker" in navigator) {
 # validation du site chez la régie publicitaire Mondiad (propriété du site)
 MONDIAD = '<meta name="mnd-ver" content="hpsde4hjri79orspougnoa" />'
 
+# publicité Mondiad (interstitiel) : le jeu appelle window.flexPub() sur l'écran de fin de mission
+PUB_JS = """
+<script>
+window.flexPub = function () {
+  try {
+    var ancien = document.getElementById("flex-pub-mondiad");
+    if (ancien) { ancien.remove(); }
+    var s = document.createElement("script");
+    s.id = "flex-pub-mondiad";
+    s.async = true;
+    s.src = "https://ss.mrmnd.com/interstitial.js";
+    s.setAttribute("data-mndintid", "7c641f72-6c25-4dcb-ac96-3ab156b8ee29");
+    document.head.appendChild(s);
+  } catch (e) {}
+};
+</script>
+"""
+
 if 'rel="manifest"' not in html:
     if re.search(r"</head>", html, re.I):
         html = re.sub(r"</head>", TETE + "</head>", html, count=1, flags=re.I)
@@ -59,6 +77,11 @@ if 'name="mnd-ver"' not in html:
         html = re.sub(r"</head>", MONDIAD + "\n</head>", html, count=1, flags=re.I)
     else:
         html = MONDIAD + "\n" + html
+if "window.flexPub" not in html:
+    if re.search(r"</head>", html, re.I):
+        html = re.sub(r"</head>", PUB_JS + "</head>", html, count=1, flags=re.I)
+    else:
+        html = PUB_JS + html
 # nom affiché dans l'onglet et dans la liste des applications
 html = re.sub(r"<title>[^<]*</title>", "<title>Flex Cyberpunk</title>", html, count=1, flags=re.I)
 
