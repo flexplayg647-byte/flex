@@ -535,9 +535,254 @@ def heure_serveur_s():
     return now
 
 
+
+# ==================== MULTIJOUEUR EN LIGNE (Firebase Realtime Database) — version web uniquement ====================
+_JS_MULTI = r"""
+(function(){
+if(window.flexMP){return;}
+var DBURL="https://flex-cyberpunk-c49e8-default-rtdb.firebaseio.com";
+var V="10.14.1";
+var MAXJ=6, NSALLES=30;
+var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0};
+var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="";
+function charger(cb){
+  if(window.firebase&&firebase.database){cb();return;}
+  var s=document.createElement("script");
+  s.src="https://www.gstatic.com/firebasejs/"+V+"/firebase-database-compat.js";
+  s.onload=cb;
+  s.onerror=function(){M.status="err";M.err="script";};
+  document.head.appendChild(s);
+}
+function ecouter(){
+  listRef=db.ref("rooms/"+M.room+"/players");
+  listRef.on("value",function(s){
+    var a=[];
+    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),x:+v.x||0,y:+v.y||0,a:+v.a||0});});
+    M.json=JSON.stringify(a);M.n=a.length;M.ver++;
+  });
+}
+M.join=function(level){
+  if(M.status==="joining"||M.status==="ok"){return;}
+  var A=window.flexAuth;
+  if(!A||!A.uid||!A.pseudo){M.status="err";M.err="login";return;}
+  uid=A.uid;pseudo=A.pseudo;
+  M.status="joining";M.err="";M.json="[]";M.n=0;
+  charger(function(){
+    try{
+      db=firebase.app().database(DBURL);
+      var i=0;
+      var essayer=function(){
+        i++;
+        if(i>NSALLES){M.status="err";M.err="pleines";return;}
+        var rid="salle"+i;
+        db.ref("rooms/"+rid).transaction(function(cur){
+          var me={p:pseudo,x:0,y:0,a:0};
+          if(cur===null||typeof cur!=="object"||!cur.players){
+            var pl={};pl[uid]=me;
+            return {seed:Math.floor(Math.random()*2000000000),level:level,players:pl};
+          }
+          var n=Object.keys(cur.players).length;
+          if(!cur.players[uid]&&n>=MAXJ){return;}
+          cur.players[uid]=me;
+          return cur;
+        },function(err,committed,snap){
+          if(err){M.status="err";M.err="reseau";return;}
+          if(!committed){essayer();return;}
+          var v=snap.val()||{};
+          M.room=rid;M.seed=v.seed|0;M.level=v.level|0;
+          myRef=db.ref("rooms/"+rid+"/players/"+uid);
+          myRef.onDisconnect().remove();
+          ecouter();
+          connRef=db.ref(".info/connected");
+          connRef.on("value",function(s){
+            if(s.val()===true&&M.status==="ok"&&myRef){myRef.onDisconnect().remove();myRef.update({p:pseudo});}
+          });
+          M.status="ok";
+        },false);
+      };
+      essayer();
+    }catch(e){M.status="err";M.err=String(e).slice(0,60);}
+  });
+};
+M.leave=function(){
+  try{if(listRef){listRef.off();listRef=null;}}catch(e){}
+  try{if(connRef){connRef.off();connRef=null;}}catch(e){}
+  try{if(myRef){myRef.onDisconnect().cancel();myRef.remove();myRef=null;}}catch(e){}
+  M.status="idle";M.err="";M.room="";M.json="[]";M.n=0;M.ver++;
+};
+M.send=function(x,y,a){
+  if(M.status!=="ok"||!myRef){return;}
+  var t=Date.now();if(t-lastSend<100){return;}lastSend=t;
+  try{myRef.update({x:Math.round(x),y:Math.round(y),a:Math.round(a*100)/100});}catch(e){}
+};
+})();
+"""
+
+MP_NIVEAU = 6          # mission utilisée pour la salle en ligne (provisoire, avant la grande salle dédiée)
+MP_MAX = 6             # joueurs maximum par salle
+MP = {"actif": False, "etat": "idle", "seed": 0, "niveau": MP_NIVEAU, "salle": "", "autres": [], "ver": -1,
+      "n": 1, "msg": [], "t0": 0, "lisse": {}, "pseudo": "", "uid": ""}
+_MP_COULEURS = [(0, 255, 255), (255, 60, 200), (255, 230, 60), (120, 255, 120), (255, 140, 40), (170, 120, 255)]
+_MP_ERREURS = {
+    "login": ["Connecte-toi avec Google et choisis", "ton pseudo (icône profil) pour jouer en ligne."],
+    "pleines": ["Toutes les salles sont pleines.", "Réessaie dans un instant."],
+    "reseau": ["Réseau indisponible.", "Vérifie ta connexion et réessaie."],
+    "script": ["Impossible de charger le multijoueur.", "Vérifie ta connexion et réessaie."],
+}
+
+
+def _mp_js():
+    if not IS_WEB:
+        return None
+    try:
+        return _pfs.window.flexMP
+    except Exception:
+        return None
+
+
+def mp_chercher_salle():
+    """Clic sur MULTIJOUEUR : lance la recherche automatique d'une salle (aucun code à saisir)."""
+    MP.update(actif=False, etat="recherche", msg=[], autres=[], ver=-1, n=1, lisse={}, t0=pygame.time.get_ticks())
+    j = _mp_js()
+    fa = _fa()
+    if j is None or fa is None:
+        MP.update(etat="erreur", msg=["Le multijoueur est disponible", "dans la version en ligne du jeu."])
+        return
+    try:
+        MP["pseudo"], MP["uid"] = str(fa.pseudo or ""), str(fa.uid or "")
+        j.join(int(MP_NIVEAU))
+    except Exception:
+        MP.update(etat="erreur", msg=_MP_ERREURS["reseau"])
+
+
+def mp_quitter():
+    j = _mp_js()
+    try:
+        if j is not None:
+            j.leave()
+    except Exception:
+        pass
+    MP.update(actif=False, etat="idle", autres=[], ver=-1, n=1, salle="", lisse={})
+
+
+def _mp_tick():
+    """Appelé à chaque image : suit la recherche de salle, puis échange les positions avec les autres joueurs."""
+    if MP["etat"] == "recherche":
+        if etat_actuel != ETAT_MULTI or TRANS["actif"]:
+            return
+        j = _mp_js()
+        try:
+            st = str(j.status)
+        except Exception:
+            st = "err"
+        if st == "ok":
+            try:
+                MP["seed"], MP["niveau"], MP["salle"] = int(j.seed), int(j.level), str(j.room)
+            except Exception:
+                MP["seed"], MP["salle"] = 1, ""
+            MP["actif"], MP["etat"] = True, "jeu"
+            lancer_transition(("niveau", MP["niveau"]))
+        elif st == "err":
+            try:
+                code = str(j.err)
+            except Exception:
+                code = "reseau"
+            MP.update(etat="erreur", msg=_MP_ERREURS.get(code, _MP_ERREURS["reseau"]))
+            try:
+                j.leave()
+            except Exception:
+                pass
+        elif pygame.time.get_ticks() - MP["t0"] > 20000:
+            MP.update(etat="erreur", msg=_MP_ERREURS["reseau"])
+            try:
+                j.leave()
+            except Exception:
+                pass
+        return
+    if not MP["actif"]:
+        return
+    if etat_actuel == ETAT_MENU:
+        mp_quitter()
+        return
+    if etat_actuel != ETAT_JEU:
+        return
+    j = _mp_js()
+    if j is None:
+        return
+    try:
+        j.send(float(joueur_x), float(joueur_y), math.atan2(angle_visée_y, angle_visée_x))
+        v = int(j.ver)
+        if v != MP["ver"]:
+            MP["ver"] = v
+            tous = json.loads(str(j.json))
+            MP["n"] = len(tous)
+            MP["autres"] = [o for o in tous if o.get("u") != MP["uid"]]
+    except Exception:
+        pass
+
+
+def _mp_dessiner_autres(ox, oy):
+    """Dessine les autres joueurs (avec leur pseudo au-dessus) et le pseudo du joueur local."""
+    lisse = MP["lisse"]
+    vus = set()
+    for o in MP["autres"]:
+        u = str(o.get("u", ""))
+        vus.add(u)
+        tx, ty = float(o.get("x", 0)), float(o.get("y", 0))
+        p = lisse.get(u)
+        if p is None:
+            p = lisse[u] = [tx, ty]
+        p[0] += (tx - p[0]) * 0.3
+        p[1] += (ty - p[1]) * 0.3
+        sx, sy = int(p[0] + ox), int(p[1] + oy)
+        if sx < -80 or sx > LARGEUR + 80 or sy < -90 or sy > HAUTEUR + 80:
+            continue
+        col = _MP_COULEURS[sum(ord(c) for c in u) % len(_MP_COULEURS)]
+        a = float(o.get("a", 0))
+        dessiner_halo(sx, sy, 52, col, 0.6)
+        DRAW.circle(ecran, GRIS_HACKER, (sx, sy), 22)
+        DRAW.circle(ecran, col, (sx, sy), 22, 3)
+        DRAW.line(ecran, col, (sx, sy), (int(sx + 24 * math.cos(a)), int(sy + 24 * math.sin(a))), 5)
+        tag_j = rendu_texte(police_petite, str(o.get("p", "?")), True, col)
+        ecran.blit(tag_j, (sx - tag_j.get_width() // 2, sy - 52))
+    for u in list(lisse):
+        if u not in vus:
+            del lisse[u]
+    if MP["pseudo"]:
+        tag_moi = rendu_texte(police_petite, MP["pseudo"], True, VERT_FLUO)
+        ecran.blit(tag_moi, (int(joueur_x + ox) - tag_moi.get_width() // 2, int(joueur_y + oy) - 52))
+    info = rendu_texte(police_petite, f"EN LIGNE  •  {max(1, MP['n'])}/{MP_MAX} joueurs", True, VERT_FLUO)
+    ecran.blit(info, (LARGEUR // 2 - info.get_width() // 2, HAUTEUR - 36))
+
+
+def dessiner_multi_attente():
+    """Écran de recherche de salle (ou message d'erreur)."""
+    dessiner_fond_menu()
+    dessiner_panneau_neon((LARGEUR - 500) // 2, 500, VERT_FLUO, False, 150)
+    dessiner_titre_glitch("MULTIJOUEUR", police_titre, LARGEUR // 2, HAUTEUR // 4)
+    if MP["etat"] == "erreur":
+        y = HAUTEUR // 2 - 20
+        for ligne in MP["msg"]:
+            t = rendu_texte(police_petite, ligne, True, ROUGE_ALERTE)
+            ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y))
+            y += 34
+    else:
+        points = "." * (1 + (pygame.time.get_ticks() // 400) % 3)
+        t = rendu_texte(police_jeu, "RECHERCHE D'UNE SALLE" + points, True, BLANC_NEON)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR // 2 - 30))
+        t2 = rendu_texte(police_petite, "Tu rejoins automatiquement les autres joueurs", True, VERT_FLUO)
+        ecran.blit(t2, (LARGEUR // 2 - t2.get_width() // 2, HAUTEUR // 2 + 20))
+    bouton_neon(rect_retour_niveaux, ROUGE_ALERTE, "< RETOUR", police_bouton)
+    dessiner_marque(HAUTEUR - 84)
+
+
 def _injecter_firebase():
     try:
         _pfs.window.eval(_JS_HEURE)
+    except Exception:
+        pass
+    try:
+        _pfs.window.eval(_JS_MULTI)
     except Exception:
         pass
     try:
@@ -644,7 +889,7 @@ def _ouvrir_classement():
 
 def _stat(type_, niveau=0):
     """Envoie une statistique anonyme (visite, connexion, début/fin de niveau). Ne plante jamais le jeu."""
-    if not IS_WEB:
+    if not IS_WEB or MP["actif"]:
         return
     try:
         _pfs.window.flexAuth.log(type_, int(niveau))
@@ -2360,6 +2605,7 @@ ETAT_PARAMS = 6
 ETAT_BOUTIQUE = 7
 ETAT_EDITEUR = 8
 ETAT_DEFIS = 9
+ETAT_MULTI = 10
 etat_actuel = ETAT_MENU
 en_pause = False
 
@@ -2420,7 +2666,12 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
             niveau_max_atteint = niveau_actuel
             sauvegarder_progression(niveau_max_atteint)
 
+    if MP["actif"]:
+        random.seed(MP["seed"])          # même labyrinthe pour tous les joueurs de la salle
     niveau_data = generer_niveau(niveau_actuel)
+    if MP["actif"]:
+        random.seed()
+        niveau_data["nb_ennemis"] = 0     # étape 1 : pas encore de drones partagés
     CARTE = niveau_data["carte"]
     COULEUR_MUR = niveau_data["couleur_mur"]
     liste_ennemis = []
@@ -2743,6 +2994,7 @@ clock = pygame.time.Clock()
 rect_bouton_jouer = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 - 60, 300, 55)
 rect_bouton_aide = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 + 20, 300, 55)
 rect_bouton_boutique = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 + 100, 300, 55)
+rect_bouton_multi = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 + 180, 300, 55)
 rect_bouton_retour = pygame.Rect(40, 40, 160, 50)   # en haut à gauche : ne cache plus le texte du guide
 rect_bouton_rejouer = pygame.Rect(LARGEUR // 2 - 260, HAUTEUR // 2 + 60, 240, 65)
 rect_bouton_suivant = pygame.Rect(LARGEUR // 2 + 20, HAUTEUR // 2 + 60, 240, 65)
@@ -3425,6 +3677,9 @@ def accorder_recompense(victoire):
     if MISSION["versee"]:
         return
     MISSION["versee"] = True
+    if MP["actif"]:                      # multijoueur (étape 1) : aucune pièce ni défi
+        MISSION["recompense"] = {"total": 0, "base": 0, "temps": 0, "drones": 0, "boss": 0, "reduite": False}
+        return
     r = calculer_recompense(victoire)
     MISSION["recompense"] = r
     BOUTIQUE["pieces"] += r["total"]
@@ -4530,7 +4785,7 @@ def _in_cibles():
     if e == ETAT_MENU:
         noms = ["rect_bouton_jouer", "rect_bouton_aide", "rect_bouton_boutique", "rect_icone_profil", "rect_icone_infos", "rect_icone_params", "rect_icone_defis"]
         if IS_WEB:
-            noms += ["rect_icone_classement", "rect_icone_skins"]
+            noms += ["rect_bouton_multi", "rect_icone_classement", "rect_icone_skins"]
             if _inst_visible:
                 noms.append("rect_icone_install")
         return _in_rects(*noms)
@@ -5022,7 +5277,7 @@ def demarrer_ecran_fin(victoire):
         cle = str(niveau_actuel)
         ancien = BOUTIQUE["etoiles"].get(cle, 0)
         FIN["record"] = 0 < ancien < etoiles
-        if etoiles > ancien:
+        if etoiles > ancien and not MP["actif"]:
             BOUTIQUE["etoiles"][cle] = etoiles
         FIN["etoiles"] = etoiles
     else:
@@ -5359,7 +5614,7 @@ for _k in range(36):
 
 
 def _v3_actif():
-    return PARAMS.get("vue", 0) == 1
+    return PARAMS.get("vue", 0) == 1 and not MP["actif"]      # multijoueur : vue du dessus uniquement
 
 
 def _v3_mix(a, b, k):
@@ -5827,6 +6082,8 @@ def _v3_regarder(dx, dy):
 
 def basculer_vue():
     """Bouton 2D/3D : passe de la vue du dessus à la vue 3e personne (et inversement). Ignore le 2e événement d'un même toucher."""
+    if MP["actif"]:                      # multijoueur : la vue du dessus reste imposée
+        return
     now = pygame.time.get_ticks()
     if now - VUE["t_bascule"] < 450:
         return
@@ -6730,6 +6987,9 @@ async def main():
                             DEF.update(scroll=0.0, drag=False, id=None)
                         elif etat_actuel == ETAT_EDITEUR:
                             ED.update(drag=False, id=None, cible=None, bouton=None, selection=None, mode="deplacer")
+                    elif _cible[0] == "multi":
+                        mp_chercher_salle()
+                        etat_actuel = ETAT_MULTI
                     elif _cible[0] == "params":
                         PAR["origine"], PAR["scroll"], PAR["drag"], PAR["id"] = _cible[1], 0.0, False, None
                         etat_actuel = ETAT_PARAMS
@@ -6748,6 +7008,7 @@ async def main():
                             musique_lancee = True
                             appliquer_audio()
                     elif _cible[0] == "quitter_partie":
+                        mp_quitter()
                         reinitialiser_partie(False)
                         etat_actuel = ETAT_MENU
                         en_pause = False
@@ -6755,7 +7016,7 @@ async def main():
                         reinitialiser_partie(False)
                         en_pause = False
                     elif _cible[0] == "suivant":
-                        reinitialiser_partie(True)
+                        reinitialiser_partie(not MP["actif"])
                         en_pause = False
             elif TRANS["phase"] == 1 and _ecoule >= TRANS["duree"]:
                 TRANS["phase"], TRANS["t0"] = 2, pygame.time.get_ticks()
@@ -6769,6 +7030,8 @@ async def main():
                 lancer_transition(("etat", ETAT_AIDE))
             elif rect_bouton_boutique.collidepoint(clic_x, clic_y):
                 lancer_transition(("etat", ETAT_BOUTIQUE))
+            elif IS_WEB and rect_bouton_multi.collidepoint(clic_x, clic_y):
+                lancer_transition(("multi",))
             elif rect_icone_profil.collidepoint(clic_x, clic_y):
                 lancer_transition(("etat", ETAT_PROFIL))
             elif rect_icone_infos.collidepoint(clic_x, clic_y):
@@ -6797,6 +7060,9 @@ async def main():
                     if math.hypot(clic_x - x_node_clic, clic_y - y_node_clic) <= NIVEAU_NODE_RAYON + 10:
                         lancer_transition(("niveau", idx))
                         break
+        elif etat_actuel == ETAT_MULTI and clic_detecte and rect_retour_niveaux.collidepoint(clic_x, clic_y):
+            mp_quitter()
+            lancer_transition(("etat", ETAT_MENU))
         elif etat_actuel == ETAT_AIDE and clic_detecte and rect_bouton_retour.collidepoint(clic_x, clic_y):
             lancer_transition(("etat", ETAT_MENU))
         elif etat_actuel == ETAT_INFOS and clic_detecte and rect_retour_infos.collidepoint(clic_x, clic_y):
@@ -7029,6 +7295,8 @@ async def main():
                             son_victoire.play()
                 tirer_balle = False          # un appui ne tire qu'une seule fois, même s'il y a plusieurs pas
 
+        if MP["actif"] or MP["etat"] == "recherche":
+            _mp_tick()
         _tm1 = _time.perf_counter()
         if etat_actuel == ETAT_JEU:
             if partie_perdue and not mort_fx_faite:
@@ -7089,6 +7357,8 @@ async def main():
             bouton_neon(rect_bouton_jouer, ROSE_SYNTH, "COMMENCER", police_bouton, plein=True, pulse=True)
             bouton_neon(rect_bouton_aide, BLEU_CYBER, "GUIDE TACTIQUE", police_bouton)
             bouton_neon(rect_bouton_boutique, JAUNE_CYBER, "BOUTIQUE", police_bouton)
+            if IS_WEB:
+                bouton_neon(rect_bouton_multi, VERT_FLUO, "MULTIJOUEUR", police_bouton)
             dessiner_pieces(LARGEUR // 2, 36)
             dessiner_avertissement()
             dessiner_marque(HAUTEUR - 84)
@@ -7382,6 +7652,9 @@ async def main():
         elif etat_actuel == ETAT_DEFIS:
             dessiner_defis()
 
+        elif etat_actuel == ETAT_MULTI:
+            dessiner_multi_attente()
+
         elif etat_actuel == ETAT_PARAMS:
             dessiner_parametres()
 
@@ -7546,6 +7819,8 @@ async def main():
                     DRAW.circle(ecran, ORANGE_MEC, (fx_ecran, fy_ecran), int(16 + pulsation_feu))
                     DRAW.circle(ecran, JAUNE_CYBER, (fx_ecran, fy_ecran), int(9 + pulsation_feu))
 
+                if MP["actif"]:
+                    _mp_dessiner_autres(ox, oy)
                 if not partie_perdue:
                     jx_e, jy_e = int(joueur_x + ox), int(joueur_y + oy) + int(3 * math.sin(t_ms / 230.0))
                     if ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0:          # clignote après un coup encaissé
