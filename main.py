@@ -543,8 +543,8 @@ if(window.flexMP){return;}
 var DBURL="https://flex-cyberpunk-c49e8-default-rtdb.firebaseio.com";
 var V="10.14.1";
 var MAXJ=6, NSALLES=30;
-var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0};
-var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="";
+var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0};
+var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="",skin="",pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9;
 function charger(cb){
   if(window.firebase&&firebase.database){cb();return;}
   var s=document.createElement("script");
@@ -557,7 +557,7 @@ function ecouter(){
   listRef=db.ref("rooms/"+M.room+"/players");
   listRef.on("value",function(s){
     var a=[];
-    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),x:+v.x||0,y:+v.y||0,a:+v.a||0});});
+    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0});});
     M.json=JSON.stringify(a);M.n=a.length;M.ver++;
   });
 }
@@ -565,7 +565,7 @@ M.join=function(level){
   if(M.status==="joining"||M.status==="ok"){return;}
   var A=window.flexAuth;
   if(!A||!A.uid||!A.pseudo){M.status="err";M.err="login";return;}
-  uid=A.uid;pseudo=A.pseudo;
+  uid=A.uid;pseudo=A.pseudo;skin=String(A.skinActif||"").slice(0,40);
   M.status="joining";M.err="";M.json="[]";M.n=0;
   charger(function(){
     try{
@@ -576,7 +576,7 @@ M.join=function(level){
         if(i>NSALLES){M.status="err";M.err="pleines";return;}
         var rid="salle"+i;
         db.ref("rooms/"+rid).transaction(function(cur){
-          var me={p:pseudo,x:0,y:0,a:0};
+          var me={p:pseudo,s:skin,x:0,y:0,a:0};
           if(cur===null||typeof cur!=="object"||!cur.players){
             var pl={};pl[uid]=me;
             return {seed:Math.floor(Math.random()*2000000000),level:level,players:pl};
@@ -595,7 +595,7 @@ M.join=function(level){
           ecouter();
           connRef=db.ref(".info/connected");
           connRef.on("value",function(s){
-            if(s.val()===true&&M.status==="ok"&&myRef){myRef.onDisconnect().remove();myRef.update({p:pseudo});}
+            if(s.val()===true&&M.status==="ok"&&myRef){myRef.onDisconnect().remove();myRef.update({p:pseudo,s:skin});}
           });
           M.status="ok";
         },false);
@@ -608,12 +608,19 @@ M.leave=function(){
   try{if(listRef){listRef.off();listRef=null;}}catch(e){}
   try{if(connRef){connRef.off();connRef=null;}}catch(e){}
   try{if(myRef){myRef.onDisconnect().cancel();myRef.remove();myRef=null;}}catch(e){}
-  M.status="idle";M.err="";M.room="";M.json="[]";M.n=0;M.ver++;
+  M.status="idle";M.err="";M.room="";M.json="[]";M.n=0;M.ver++;M.rtt=0;pending=false;lastX=-1e9;lastY=-1e9;lastA=-1e9;
 };
 M.send=function(x,y,a){
   if(M.status!=="ok"||!myRef){return;}
-  var t=Date.now();if(t-lastSend<100){return;}lastSend=t;
-  try{myRef.update({x:Math.round(x),y:Math.round(y),a:Math.round(a*100)/100});}catch(e){}
+  var t=Date.now();
+  if(pending&&t-pendT<3000){return;}
+  if(t-lastSend<80){return;}
+  x=Math.round(x);y=Math.round(y);a=Math.round(a*10)/10;
+  if(x===lastX&&y===lastY&&a===lastA){return;}
+  lastSend=t;lastX=x;lastY=y;lastA=a;pending=true;pendT=t;
+  try{
+    myRef.update({x:x,y:y,a:a}).then(function(){pending=false;M.rtt=Date.now()-t;}).catch(function(){pending=false;});
+  }catch(e){pending=false;}
 };
 })();
 """
@@ -621,7 +628,7 @@ M.send=function(x,y,a){
 MP_NIVEAU = 6          # mission utilisée pour la salle en ligne (provisoire, avant la grande salle dédiée)
 MP_MAX = 6             # joueurs maximum par salle
 MP = {"actif": False, "etat": "idle", "seed": 0, "niveau": MP_NIVEAU, "salle": "", "autres": [], "ver": -1,
-      "n": 1, "msg": [], "t0": 0, "lisse": {}, "pseudo": "", "uid": ""}
+      "n": 1, "msg": [], "t0": 0, "lisse": {}, "pseudo": "", "uid": "", "sprites": {}, "t_dessin": 0, "rtt": 0, "tick": 0}
 _MP_COULEURS = [(0, 255, 255), (255, 60, 200), (255, 230, 60), (120, 255, 120), (255, 140, 40), (170, 120, 255)]
 _MP_ERREURS = {
     "login": ["Connecte-toi avec Google et choisis", "ton pseudo (icône profil) pour jouer en ligne."],
@@ -717,32 +724,65 @@ def _mp_tick():
             tous = json.loads(str(j.json))
             MP["n"] = len(tous)
             MP["autres"] = [o for o in tous if o.get("u") != MP["uid"]]
+        MP["tick"] += 1
+        if MP["tick"] % 30 == 0:
+            MP["rtt"] = int(j.rtt)
     except Exception:
         pass
 
 
+def _mp_sprites(sid):
+    """Sprites (droite, gauche) du skin d'un joueur, gardés en mémoire."""
+    global _planche_skins
+    c = MP["sprites"].get(sid)
+    if c is not None:
+        return c
+    try:
+        if sid in SKIN_IDS:
+            if _planche_skins is None:
+                _planche_skins = pygame.image.load(_asset("skins_sheet.png")).convert_alpha()
+            i = SKIN_IDS.index(sid)
+            morceau = _planche_skins.subsurface(pygame.Rect((i % 6) * 160, (i // 6) * 160, 160, 160)).copy()
+            img = pygame.transform.smoothscale(morceau, (TAILLE_PERSO, TAILLE_PERSO))
+        else:
+            img = _img_joueur_defaut
+        c = (img, pygame.transform.flip(img, True, False))
+    except Exception:
+        c = (img_joueur_droite, img_joueur_gauche)
+    MP["sprites"][sid] = c
+    return c
+
+
 def _mp_dessiner_autres(ox, oy):
-    """Dessine les autres joueurs (avec leur pseudo au-dessus) et le pseudo du joueur local."""
+    """Dessine les autres joueurs (leur personnage, leur pseudo au-dessus) et le pseudo du joueur local."""
     lisse = MP["lisse"]
+    maintenant = pygame.time.get_ticks()
+    dt = min(0.25, max(0.0, (maintenant - MP["t_dessin"]) / 1000.0)) if MP["t_dessin"] else 0.016
+    MP["t_dessin"] = maintenant
+    k = 1.0 - math.exp(-dt * 10.0)                  # lissage indépendant du nombre d'images par seconde
     vus = set()
     for o in MP["autres"]:
         u = str(o.get("u", ""))
         vus.add(u)
         tx, ty = float(o.get("x", 0)), float(o.get("y", 0))
         p = lisse.get(u)
-        if p is None:
-            p = lisse[u] = [tx, ty]
-        p[0] += (tx - p[0]) * 0.3
-        p[1] += (ty - p[1]) * 0.3
+        if p is None or abs(tx - p[0]) + abs(ty - p[1]) > 500:
+            p = lisse[u] = [tx, ty]                 # trop loin (réapparition) : on le replace d'un coup
+        p[0] += (tx - p[0]) * k
+        p[1] += (ty - p[1]) * k
         sx, sy = int(p[0] + ox), int(p[1] + oy)
         if sx < -80 or sx > LARGEUR + 80 or sy < -90 or sy > HAUTEUR + 80:
             continue
         col = _MP_COULEURS[sum(ord(c) for c in u) % len(_MP_COULEURS)]
         a = float(o.get("a", 0))
-        dessiner_halo(sx, sy, 52, col, 0.6)
-        DRAW.circle(ecran, GRIS_HACKER, (sx, sy), 22)
-        DRAW.circle(ecran, col, (sx, sy), 22, 3)
-        DRAW.line(ecran, col, (sx, sy), (int(sx + 24 * math.cos(a)), int(sy + 24 * math.sin(a))), 5)
+        dessiner_halo(sx, sy, 46, col, 0.45)
+        if MODE_GRAPHIQUE == "REALISTE":
+            spr = _mp_sprites(str(o.get("s", "")))
+            img = spr[0] if math.cos(a) >= 0 else spr[1]
+            ecran.blit(img, (sx - img.get_width() // 2, sy - img.get_height() // 2))
+        else:
+            DRAW.rect(ecran, col, (sx - TAILLE_PERSO // 2, sy - TAILLE_PERSO // 2, TAILLE_PERSO, TAILLE_PERSO))
+        DRAW.circle(ecran, col, (int(sx + 34 * math.cos(a)), int(sy + 34 * math.sin(a))), 4)     # petit point : direction de visée
         tag_j = rendu_texte(police_petite, str(o.get("p", "?")), True, col)
         ecran.blit(tag_j, (sx - tag_j.get_width() // 2, sy - 52))
     for u in list(lisse):
@@ -751,7 +791,12 @@ def _mp_dessiner_autres(ox, oy):
     if MP["pseudo"]:
         tag_moi = rendu_texte(police_petite, MP["pseudo"], True, VERT_FLUO)
         ecran.blit(tag_moi, (int(joueur_x + ox) - tag_moi.get_width() // 2, int(joueur_y + oy) - 52))
-    info = rendu_texte(police_petite, f"EN LIGNE  •  {max(1, MP['n'])}/{MP_MAX} joueurs", True, VERT_FLUO)
+    rtt = MP["rtt"]
+    txt = f"EN LIGNE  •  {max(1, MP['n'])}/{MP_MAX} joueurs"
+    if rtt > 0:
+        txt += f"  •  {rtt} ms"
+    col_info = VERT_FLUO if rtt < 200 else (JAUNE_CYBER if rtt < 500 else ROUGE_ALERTE)
+    info = rendu_texte(police_petite, txt, True, col_info)
     ecran.blit(info, (LARGEUR // 2 - info.get_width() // 2, HAUTEUR - 36))
 
 
