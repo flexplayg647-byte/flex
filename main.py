@@ -1037,40 +1037,75 @@ def dessiner_multi_attente():
 # Le monde est découpé en zones (« chunks ») de 640 px. Chaque zone est fabriquée à partir du numéro de la partie
 # et de ses coordonnées : deux téléphones avec le même numéro obtiennent exactement le même parc (arbres, bâtiments...).
 # Seules les zones proches du joueur existent en mémoire ; les autres sont déchargées.
-PARC_MONDE = 9600                  # taille du monde en px (carré)
+# Le monde est divisé en grandes régions de 4x4 zones qui ont chacune un « biome » (prairie, forêt, ville, lac, rocailles).
 PARC_CH = 640                      # taille d'une zone
-PARC_NC = PARC_MONDE // PARC_CH    # nombre de zones par côté
-PARC_ALLEES = (1600, 4800, 8000)   # axes des allées (verticales et horizontales)
+PARC_NC = 48                       # nombre de zones par côté
+PARC_MONDE = PARC_CH * PARC_NC     # 30 720 px de côté (environ 10 fois la surface de la première version)
+PARC_PAS, PARC_DEC, PARC_NAXES = 3200, 1600, 10     # allées tous les 3 200 px (10 axes dans chaque sens)
 PARC_LARG_ALLEE = 150
-PARC_CENTRE = PARC_MONDE // 2
-PARC_R_PLACE = 420                 # rayon de la place centrale (fontaine)
-PARC = {"actif": False, "seed": 1, "x": 0.0, "y": 0.0, "face": 1, "donnees": {}, "surf": {}, "mini": None, "ms_gen": 0.0}
+PARC_R_PLACE = 330                 # rayon des places (fontaine), placées à certains croisements
+PARC_REGION = 4                    # une région = 4x4 zones
+PARC = {"actif": False, "seed": 1, "x": 0.0, "y": 0.0, "face": 1, "donnees": {}, "surf": {}, "mini": None,
+        "ms_gen": 0.0, "vus": set()}
 _PC_HERBE, _PC_HERBE_CL, _PC_HERBE_FO = (72, 142, 74), (84, 156, 84), (62, 126, 66)
 _PC_SABLE, _PC_SABLE_BORD = (208, 192, 152), (172, 154, 114)
 _PC_EAU, _PC_EAU_CL = (52, 122, 198), (110, 170, 226)
 _PC_TOITS = [((170, 84, 62), (130, 60, 44)), ((96, 108, 128), (66, 76, 94)), ((196, 168, 108), (150, 124, 74)),
              ((120, 140, 120), (84, 102, 86)), ((176, 120, 150), (132, 84, 108))]
 _PC_FLEURS = [(250, 250, 250), (250, 220, 70), (240, 120, 170), (170, 130, 240), (250, 150, 70)]
+_PC_BIOMES = ["Prairie", "Forêt", "Ville", "Lac", "Rocailles"]
+_PC_BIOME_COUL = [(96, 170, 90), (36, 104, 58), (150, 150, 164), (70, 130, 210), (140, 128, 108)]
+# paramètres par biome : essais d'arbres, proba de bâtiment, proba d'étang, essais de rochers, de buissons, de fleurs
+_PC_BIOME_P = {0: (30, 0.28, 0.05, 4, 24, 22), 1: (70, 0.05, 0.04, 5, 36, 10), 2: (14, 0.95, 0.0, 1, 10, 8),
+               3: (24, 0.08, 0.55, 4, 20, 14), 4: (16, 0.05, 0.05, 26, 12, 6)}
+
+
+def _parc_biome(cx, cy):
+    t = random.Random(PARC["seed"] * 131 + (cx // PARC_REGION) * 7919 + (cy // PARC_REGION) * 104729).random()
+    return 0 if t < 0.34 else 1 if t < 0.58 else 2 if t < 0.74 else 3 if t < 0.86 else 4
+
+
+def _parc_dist_axe(v):
+    k = min(PARC_NAXES - 1, max(0, round((v - PARC_DEC) / PARC_PAS)))
+    return abs(v - (PARC_DEC + k * PARC_PAS))
+
+
+def _parc_place_proche(x, y):
+    """Centre de la place la plus proche (une place sur 3 croisements dans chaque sens), ou None."""
+    i, j = round((x - PARC_DEC) / PARC_PAS), round((y - PARC_DEC) / PARC_PAS)
+    if 0 <= i < PARC_NAXES and 0 <= j < PARC_NAXES and i % 3 == 1 and j % 3 == 1:
+        return PARC_DEC + i * PARC_PAS, PARC_DEC + j * PARC_PAS
+    return None
 
 
 def _parc_sur_allee(x, y, marge=0):
-    """Vrai si le point est sur une allée ou sur la place centrale (avec une marge)."""
+    """Vrai si le point est sur une allée ou sur une place (avec une marge)."""
     m = PARC_LARG_ALLEE // 2 + marge
-    for a in PARC_ALLEES:
-        if abs(x - a) < m or abs(y - a) < m:
-            return True
-    return (x - PARC_CENTRE) ** 2 + (y - PARC_CENTRE) ** 2 < (PARC_R_PLACE + marge) ** 2
+    if _parc_dist_axe(x) < m or _parc_dist_axe(y) < m:
+        return True
+    pl = _parc_place_proche(x, y)
+    return pl is not None and (x - pl[0]) ** 2 + (y - pl[1]) ** 2 < (PARC_R_PLACE + marge) ** 2
+
+
+def _parc_bande(v0, v1, m):
+    k0 = int((v0 - PARC_DEC) // PARC_PAS)
+    for k in (k0, k0 + 1):
+        if 0 <= k < PARC_NAXES:
+            a = PARC_DEC + k * PARC_PAS
+            if v0 < a + m and v1 > a - m:
+                return True
+    return False
 
 
 def _parc_rect_sur_allee(x, y, w, h, marge):
     m = PARC_LARG_ALLEE // 2 + marge
-    for a in PARC_ALLEES:
-        if x < a + m and x + w > a - m:
-            return True
-        if y < a + m and y + h > a - m:
-            return True
-    nx, ny = min(max(PARC_CENTRE, x), x + w), min(max(PARC_CENTRE, y), y + h)
-    return (nx - PARC_CENTRE) ** 2 + (ny - PARC_CENTRE) ** 2 < (PARC_R_PLACE + marge) ** 2
+    if _parc_bande(x, x + w, m) or _parc_bande(y, y + h, m):
+        return True
+    pl = _parc_place_proche(x + w / 2, y + h / 2)
+    if pl is None:
+        return False
+    nx, ny = min(max(pl[0], x), x + w), min(max(pl[1], y), y + h)
+    return (nx - pl[0]) ** 2 + (ny - pl[1]) ** 2 < (PARC_R_PLACE + marge) ** 2
 
 
 def _parc_gen(cx, cy):
@@ -1081,17 +1116,23 @@ def _parc_gen(cx, cy):
     rng = random.Random(PARC["seed"] * 73856093 ^ cx * 19349663 ^ cy * 83492791)
     x0, y0 = cx * PARC_CH, cy * PARC_CH
     M = 30                                                   # aucun objet ne touche le bord de la zone
-    d = {"batiments": [], "etangs": [], "arbres": [], "buissons": [], "rochers": [], "bancs": [], "fleurs": [],
+    bio = _parc_biome(cx, cy)
+    n_arb, p_bat, p_etg, n_roc, n_bus, n_fle = _PC_BIOME_P[bio]
+    d = {"biome": bio, "batiments": [], "etangs": [], "arbres": [], "buissons": [], "rochers": [], "bancs": [], "fleurs": [],
          "taches": [], "fontaine": None, "obs_c": [], "obs_r": []}
     for _ in range(rng.randint(8, 13)):
         d["taches"].append((x0 + rng.randint(0, PARC_CH), y0 + rng.randint(0, PARC_CH), rng.randint(50, 130), rng.randint(40, 100), rng.randint(0, 1)))
-    if (cx, cy) == (PARC_CENTRE // PARC_CH, PARC_CENTRE // PARC_CH):
-        d["fontaine"] = (PARC_CENTRE, PARC_CENTRE, 100)
-        d["obs_c"].append((PARC_CENTRE, PARC_CENTRE, 108))
+    pl = _parc_place_proche(x0 + PARC_CH // 2, y0 + PARC_CH // 2)
+    if pl is not None and (pl[0] // PARC_CH, pl[1] // PARC_CH) == (cx, cy):
+        d["fontaine"] = (pl[0], pl[1], 80)
+        d["obs_c"].append((pl[0], pl[1], 88))
     # bâtiments (vus du dessus : simples toits)
-    for _ in range((1 + (1 if rng.random() < 0.18 else 0)) if rng.random() < 0.55 else 0):
-        for _essai in range(12):
-            w, h = rng.randint(180, 330), rng.randint(150, 270)
+    n_bat = (1 + (1 if rng.random() < 0.5 else 0) + (1 if rng.random() < 0.2 else 0)) if rng.random() < p_bat else 0
+    if bio == 2 and n_bat:
+        n_bat += 1 + (1 if rng.random() < 0.5 else 0)             # les régions « Ville » sont bien plus construites
+    for _ in range(n_bat):
+        for _essai in range(20):
+            w, h = (rng.randint(140, 260), rng.randint(120, 220)) if bio == 2 else (rng.randint(180, 330), rng.randint(150, 270))
             bx, by = x0 + rng.randint(M, PARC_CH - M - w), y0 + rng.randint(M, PARC_CH - M - h)
             if _parc_rect_sur_allee(bx, by, w, h, 34):
                 continue
@@ -1100,12 +1141,12 @@ def _parc_gen(cx, cy):
             d["batiments"].append((bx, by, w, h, rng.randint(0, len(_PC_TOITS) - 1)))
             d["obs_r"].append((bx, by, w, h))
             break
-    # étang
-    if rng.random() < 0.08:
+    # étang (grands dans les régions « Lac »)
+    if rng.random() < p_etg:
         for _essai in range(6):
-            rx, ry = rng.randint(90, 150), rng.randint(70, 120)
-            ex, ey = x0 + rng.randint(M + rx, PARC_CH - M - rx), y0 + rng.randint(M + ry, PARC_CH - M - ry)
-            if _parc_rect_sur_allee(ex - rx, ey - ry, rx * 2, ry * 2, 20):
+            rx, ry = (rng.randint(140, 240), rng.randint(110, 200)) if bio == 3 else (rng.randint(90, 150), rng.randint(70, 120))
+            ex, ey = x0 + rng.randint(M + rx + 10, PARC_CH - M - rx - 10), y0 + rng.randint(M + ry + 10, PARC_CH - M - ry - 10)
+            if _parc_rect_sur_allee(ex - rx - 10, ey - ry - 10, rx * 2 + 20, ry * 2 + 20, 20):
                 continue
             if any(ex - rx < o[0] + o[2] + 30 and ex + rx > o[0] - 30 and ey - ry < o[1] + o[3] + 30 and ey + ry > o[1] - 30 for o in d["batiments"]):
                 continue
@@ -1120,11 +1161,11 @@ def _parc_gen(cx, cy):
             if bx - r - 14 < x < bx + bw + r + 14 and by - r - 14 < y < by + bh + r + 14:
                 return False
         for ex, ey, rx, ry in d["etangs"]:
-            if ((x - ex) / (rx + r)) ** 2 + ((y - ey) / (ry + r)) ** 2 < 1.0:
+            if ((x - ex) / (rx + r + 10)) ** 2 + ((y - ey) / (ry + r + 10)) ** 2 < 1.0:
                 return False
         return True
 
-    for _ in range(52):                                      # arbres
+    for _ in range(n_arb):                                   # arbres
         r = rng.randint(26, 48)
         x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
         if not libre(x, y, r, int(r * 0.5) + 6):
@@ -1133,23 +1174,25 @@ def _parc_gen(cx, cy):
             continue
         d["arbres"].append((x, y, r))
         d["obs_c"].append((x, y, max(9, int(r * 0.3))))
-    for _ in range(24):                                      # buissons (on peut passer dessus)
+    for _ in range(n_bus):                                   # buissons (on peut passer dessus)
         r = rng.randint(12, 20)
         x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
         if libre(x, y, r, r):
             d["buissons"].append((x, y, r))
-    for _ in range(6):                                       # rochers
-        r = rng.randint(14, 26)
+    for _ in range(n_roc):                                   # rochers
+        r = rng.randint(14, 34 if bio == 4 else 26)
         x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
         if libre(x, y, r, r + 4):
             d["rochers"].append((x, y, r))
             d["obs_c"].append((x, y, int(r * 0.9)))
-    for a in PARC_ALLEES:                                    # bancs le long des allées
-        if x0 <= a < x0 + PARC_CH and rng.random() < 0.6:
-            d["bancs"].append((a + rng.choice((-96, 96)) - 9, y0 + rng.randint(M, PARC_CH - M - 44), 18, 44))
-        if y0 <= a < y0 + PARC_CH and rng.random() < 0.6:
-            d["bancs"].append((x0 + rng.randint(M, PARC_CH - M - 44), a + rng.choice((-96, 96)) - 9, 44, 18))
-    for _ in range(16):                                      # fleurs
+    for _ in range(1):                                       # bancs le long des allées
+        ax = PARC_DEC + min(PARC_NAXES - 1, max(0, round((x0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS))) * PARC_PAS
+        if x0 <= ax < x0 + PARC_CH and rng.random() < 0.6:
+            d["bancs"].append((ax + rng.choice((-96, 96)) - 9, y0 + rng.randint(M, PARC_CH - M - 44), 18, 44))
+        ay = PARC_DEC + min(PARC_NAXES - 1, max(0, round((y0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS))) * PARC_PAS
+        if y0 <= ay < y0 + PARC_CH and rng.random() < 0.6:
+            d["bancs"].append((x0 + rng.randint(M, PARC_CH - M - 44), ay + rng.choice((-96, 96)) - 9, 44, 18))
+    for _ in range(n_fle):                                   # fleurs
         x, y = x0 + rng.randint(M, PARC_CH - M), y0 + rng.randint(M, PARC_CH - M)
         if libre(x, y, 4, 4):
             d["fleurs"].append((x, y, rng.randint(0, len(_PC_FLEURS) - 1)))
@@ -1182,20 +1225,24 @@ def _parc_peindre(cx, cy):
     for x, y, rx, ry, c in d["taches"]:
         dr.ellipse(surf, (_PC_HERBE_CL, _PC_HERBE_FO)[c], (x - x0 - rx, y - y0 - ry, rx * 2, ry * 2))
     demi = PARC_LARG_ALLEE // 2
-    for a in PARC_ALLEES:                                    # allées : bordure d'abord, puis le sable (les croisements restent propres)
-        if x0 - 80 < a < x0 + PARC_CH + 80:
-            dr.rect(surf, _PC_SABLE_BORD, (a - demi - 4 - x0, 0, PARC_LARG_ALLEE + 8, PARC_CH))
-        if y0 - 80 < a < y0 + PARC_CH + 80:
-            dr.rect(surf, _PC_SABLE_BORD, (0, a - demi - 4 - y0, PARC_CH, PARC_LARG_ALLEE + 8))
-    for a in PARC_ALLEES:
-        if x0 - 80 < a < x0 + PARC_CH + 80:
-            dr.rect(surf, _PC_SABLE, (a - demi - x0, 0, PARC_LARG_ALLEE, PARC_CH))
-        if y0 - 80 < a < y0 + PARC_CH + 80:
-            dr.rect(surf, _PC_SABLE, (0, a - demi - y0, PARC_CH, PARC_LARG_ALLEE))
-    nx, ny = min(max(PARC_CENTRE, x0), x0 + PARC_CH), min(max(PARC_CENTRE, y0), y0 + PARC_CH)
-    if (nx - PARC_CENTRE) ** 2 + (ny - PARC_CENTRE) ** 2 < (PARC_R_PLACE + 6) ** 2:      # place centrale
-        dr.circle(surf, _PC_SABLE_BORD, (PARC_CENTRE - x0, PARC_CENTRE - y0), PARC_R_PLACE + 5)
-        dr.circle(surf, _PC_SABLE, (PARC_CENTRE - x0, PARC_CENTRE - y0), PARC_R_PLACE)
+    kx = round((x0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
+    ky = round((y0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
+    ax = PARC_DEC + kx * PARC_PAS if 0 <= kx < PARC_NAXES and x0 - 80 < PARC_DEC + kx * PARC_PAS < x0 + PARC_CH + 80 else None
+    ay = PARC_DEC + ky * PARC_PAS if 0 <= ky < PARC_NAXES and y0 - 80 < PARC_DEC + ky * PARC_PAS < y0 + PARC_CH + 80 else None
+    if ax is not None:                                       # allées : bordure d'abord, puis le sable (les croisements restent propres)
+        dr.rect(surf, _PC_SABLE_BORD, (ax - demi - 4 - x0, 0, PARC_LARG_ALLEE + 8, PARC_CH))
+    if ay is not None:
+        dr.rect(surf, _PC_SABLE_BORD, (0, ay - demi - 4 - y0, PARC_CH, PARC_LARG_ALLEE + 8))
+    if ax is not None:
+        dr.rect(surf, _PC_SABLE, (ax - demi - x0, 0, PARC_LARG_ALLEE, PARC_CH))
+    if ay is not None:
+        dr.rect(surf, _PC_SABLE, (0, ay - demi - y0, PARC_CH, PARC_LARG_ALLEE))
+    pl = _parc_place_proche(x0 + PARC_CH // 2, y0 + PARC_CH // 2)
+    if pl is not None:
+        nx, ny = min(max(pl[0], x0), x0 + PARC_CH), min(max(pl[1], y0), y0 + PARC_CH)
+        if (nx - pl[0]) ** 2 + (ny - pl[1]) ** 2 < (PARC_R_PLACE + 6) ** 2:      # place
+            dr.circle(surf, _PC_SABLE_BORD, (pl[0] - x0, pl[1] - y0), PARC_R_PLACE + 5)
+            dr.circle(surf, _PC_SABLE, (pl[0] - x0, pl[1] - y0), PARC_R_PLACE)
     if d["fontaine"]:
         fx, fy, fr = d["fontaine"]
         c = (fx - x0, fy - y0)
@@ -1203,7 +1250,7 @@ def _parc_peindre(cx, cy):
         dr.circle(surf, (190, 190, 198), c, fr + 8)
         dr.circle(surf, _PC_EAU, c, fr)
         dr.circle(surf, _PC_EAU_CL, c, int(fr * 0.62))
-        dr.circle(surf, (230, 245, 255), c, 16)
+        dr.circle(surf, (230, 245, 255), c, 14)
     for ex, ey, rx, ry in d["etangs"]:
         dr.ellipse(surf, _PC_SABLE_BORD, (ex - x0 - rx - 10, ey - y0 - ry - 10, rx * 2 + 20, ry * 2 + 20))
         dr.ellipse(surf, _PC_EAU, (ex - x0 - rx, ey - y0 - ry, rx * 2, ry * 2))
@@ -1238,7 +1285,16 @@ def _parc_peindre(cx, cy):
         dr.circle(surf, (32, 108, 50), (x - x0, y - y0), r)
         dr.circle(surf, (50, 138, 64), (x - x0 - r // 6, y - y0 - r // 6), int(r * 0.72))
         dr.circle(surf, (88, 176, 92), (x - x0 - r // 3, y - y0 - r // 3), max(4, int(r * 0.3)))
-    return surf
+    bord = (20, 48, 28)                                      # bord du monde : bande sombre (le joueur ne peut pas la franchir)
+    if cx == 0:
+        dr.rect(surf, bord, (0, 0, 60, PARC_CH))
+    if cx == PARC_NC - 1:
+        dr.rect(surf, bord, (PARC_CH - 60, 0, 60, PARC_CH))
+    if cy == 0:
+        dr.rect(surf, bord, (0, 0, PARC_CH, 60))
+    if cy == PARC_NC - 1:
+        dr.rect(surf, bord, (0, PARC_CH - 60, PARC_CH, 60))
+    return surf.convert()                                    # même format que l'écran : affichage plus rapide
 
 
 def _parc_gerer(cam_x, cam_y):
@@ -1257,27 +1313,43 @@ def _parc_gerer(cam_x, cam_y):
         PARC["donnees"].pop(cle, None)
 
 
+_PC_MINI = 168                                               # taille de la mini-carte
+
+
+def _parc_mini_axes():
+    mini, k = PARC["mini"], _PC_MINI / PARC_MONDE
+    for i in range(PARC_NAXES):
+        a = int((PARC_DEC + i * PARC_PAS) * k)
+        pygame.draw.line(mini, (120, 110, 88), (a, 0), (a, _PC_MINI), 1)
+        pygame.draw.line(mini, (120, 110, 88), (0, a), (_PC_MINI, a), 1)
+
+
+def _parc_decouvrir(x, y):
+    """La mini-carte ne montre que les régions déjà visitées : il faut explorer pour les découvrir."""
+    rx, ry = int(x // (PARC_CH * PARC_REGION)), int(y // (PARC_CH * PARC_REGION))
+    if (rx, ry) in PARC["vus"] or PARC["mini"] is None:
+        return
+    PARC["vus"].add((rx, ry))
+    k, taille = _PC_MINI / PARC_MONDE, PARC_CH * PARC_REGION
+    bio = _parc_biome(rx * PARC_REGION, ry * PARC_REGION)
+    pygame.draw.rect(PARC["mini"], _PC_BIOME_COUL[bio], (int(rx * taille * k), int(ry * taille * k), int(taille * k) + 1, int(taille * k) + 1))
+    _parc_mini_axes()
+
+
 def parc_demarrer():
-    PARC.update(actif=True, seed=random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0)
-    PARC["x"], PARC["y"] = float(PARC_CENTRE), float(PARC_CENTRE + 640)
+    PARC.update(actif=True, seed=random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0, vus=set())
+    PARC["x"], PARC["y"] = float(PARC_DEC + 4 * PARC_PAS), float(PARC_DEC + 4 * PARC_PAS + 450)   # sous la place du milieu
     cam_x, cam_y = PARC["x"] - LARGEUR // 2, PARC["y"] - HAUTEUR // 2
     for _ in range(4):                                       # quelques zones tout de suite (l'écran de chargement masque le délai)
         _parc_gerer(cam_x, cam_y)
-    S = 170                                                  # mini-carte (dessinée une seule fois)
-    mini = pygame.Surface((S, S))
-    mini.fill((36, 96, 50))
-    k = S / PARC_MONDE
-    for a in PARC_ALLEES:
-        pygame.draw.line(mini, _PC_SABLE, (int(a * k), 0), (int(a * k), S), 3)
-        pygame.draw.line(mini, _PC_SABLE, (0, int(a * k)), (S, int(a * k)), 3)
-    pygame.draw.circle(mini, _PC_SABLE, (S // 2, S // 2), int(PARC_R_PLACE * k))
-    pygame.draw.circle(mini, _PC_EAU, (S // 2, S // 2), max(2, int(100 * k)))
-    pygame.draw.rect(mini, (230, 240, 230), (0, 0, S, S), 2)
-    PARC["mini"] = mini
+    PARC["mini"] = pygame.Surface((_PC_MINI, _PC_MINI))
+    PARC["mini"].fill((16, 30, 22))
+    _parc_mini_axes()
+    pygame.draw.rect(PARC["mini"], (230, 240, 230), (0, 0, _PC_MINI, _PC_MINI), 2)
 
 
 def parc_liberer():
-    PARC.update(actif=False, donnees={}, surf={}, mini=None)
+    PARC.update(actif=False, donnees={}, surf={}, mini=None, vus=set())
 
 
 def jouer_parc():
@@ -1313,7 +1385,7 @@ def jouer_parc():
     cam_x = int(min(max(PARC["x"] - LARGEUR // 2, 0), PARC_MONDE - LARGEUR))
     cam_y = int(min(max(PARC["y"] - HAUTEUR // 2, 0), PARC_MONDE - HAUTEUR))
     _parc_gerer(cam_x, cam_y)
-    ecran.fill((30, 70, 38))
+    _parc_decouvrir(PARC["x"], PARC["y"])
     for cx in range(max(0, cam_x // PARC_CH), min(PARC_NC - 1, (cam_x + LARGEUR) // PARC_CH) + 1):
         for cy in range(max(0, cam_y // PARC_CH), min(PARC_NC - 1, (cam_y + HAUTEUR) // PARC_CH) + 1):
             surf = PARC["surf"].get((cx, cy))
@@ -1330,11 +1402,10 @@ def jouer_parc():
     else:
         pygame.draw.rect(ecran, VERT_FLUO, (sx - 16, sy - 16, 32, 32))
     # mini-carte du côté opposé au bouton pause
-    S = 170
-    mx0 = 24 if rect_bouton_pause.centerx > LARGEUR // 2 else LARGEUR - S - 24
+    mx0 = 24 if rect_bouton_pause.centerx > LARGEUR // 2 else LARGEUR - _PC_MINI - 24
     if PARC["mini"] is not None:
         ecran.blit(PARC["mini"], (mx0, 24))
-        k = S / PARC_MONDE
+        k = _PC_MINI / PARC_MONDE
         pygame.draw.circle(ecran, ROUGE_ALERTE, (mx0 + int(PARC["x"] * k), 24 + int(PARC["y"] * k)), 4)
     # joystick tactile (le bouton TIR viendra avec le combat)
     ecran.blit(SURF_SOCLE_JOY, (JOY_CENTRE_X - JOY_RAYON_SOCLE - 6, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 6))
@@ -1342,7 +1413,8 @@ def jouer_parc():
     DRAW.circle(ecran, (0, 120, 190), (int(manette_x), int(manette_y)), JOY_RAYON_MANETTE)
     DRAW.circle(ecran, CYAN_NEON, (int(manette_x), int(manette_y)), max(2, JOY_RAYON_MANETTE - 4))
     bouton_neon(rect_bouton_pause, ROUGE_ALERTE, "X", police_bouton)
-    info = rendu_texte(police_petite, f"PARC TEST  •  {int(clock.get_fps())} FPS  •  {len(PARC['surf'])} zones  •  zone {PARC['ms_gen']:.0f} ms", True, BLANC_NEON)
+    bio = _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))]
+    info = rendu_texte(police_petite, f"{bio.upper()}  •  {int(clock.get_fps())} FPS  •  {len(PARC['surf'])} zones  •  {PARC['ms_gen']:.0f} ms", True, BLANC_NEON)
     ecran.blit(info, (LARGEUR // 2 - info.get_width() // 2, HAUTEUR - 36))
 
 
