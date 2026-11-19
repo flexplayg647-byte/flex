@@ -543,8 +543,8 @@ if(window.flexMP){return;}
 var DBURL="https://flex-cyberpunk-c49e8-default-rtdb.firebaseio.com";
 var V="10.14.1";
 var MAXJ=6, NSALLES=30;
-var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0};
-var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="",skin="",pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9;
+var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0,en:"",enHas:false,enVer:0,rest:0};
+var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="",skin="",pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9,lastF=-1,lastFA=0,enRef=null,killsRef=null,pendEn=false,pendEnT=0,isHost=false,kills=[];
 function charger(cb){
   if(window.firebase&&firebase.database){cb();return;}
   var s=document.createElement("script");
@@ -557,7 +557,7 @@ function ecouter(){
   listRef=db.ref("rooms/"+M.room+"/players");
   listRef.on("value",function(s){
     var a=[];
-    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0});});
+    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0,f:v.f|0,fa:+v.fa||0});});
     M.json=JSON.stringify(a);M.n=a.length;M.ver++;
   });
 }
@@ -576,7 +576,7 @@ M.join=function(level){
         if(i>NSALLES){M.status="err";M.err="pleines";return;}
         var rid="salle"+i;
         db.ref("rooms/"+rid).transaction(function(cur){
-          var me={p:pseudo,s:skin,x:0,y:0,a:0};
+          var me={p:pseudo,s:skin,x:0,y:0,a:0,f:0,fa:0};
           if(cur===null||typeof cur!=="object"||!cur.players){
             var pl={};pl[uid]=me;
             return {seed:Math.floor(Math.random()*2000000000),level:level,players:pl};
@@ -593,6 +593,8 @@ M.join=function(level){
           myRef=db.ref("rooms/"+rid+"/players/"+uid);
           myRef.onDisconnect().remove();
           ecouter();
+          enRef=db.ref("rooms/"+rid+"/en");
+          enRef.on("value",function(s){var v=s.val()||{};M.enHas=s.exists();M.en=String(v.d||"");M.rest=v.r|0;M.enVer++;});
           connRef=db.ref(".info/connected");
           connRef.on("value",function(s){
             if(s.val()===true&&M.status==="ok"&&myRef){myRef.onDisconnect().remove();myRef.update({p:pseudo,s:skin});}
@@ -607,20 +609,45 @@ M.join=function(level){
 M.leave=function(){
   try{if(listRef){listRef.off();listRef=null;}}catch(e){}
   try{if(connRef){connRef.off();connRef=null;}}catch(e){}
+  try{if(enRef){enRef.off();enRef=null;}}catch(e){}
+  try{if(killsRef){killsRef.off();killsRef=null;}}catch(e){}
+  isHost=false;kills=[];M.en="";M.enHas=false;M.rest=0;pendEn=false;lastF=-1;
   try{if(myRef){myRef.onDisconnect().cancel();myRef.remove();myRef=null;}}catch(e){}
   M.status="idle";M.err="";M.room="";M.json="[]";M.n=0;M.ver++;M.rtt=0;pending=false;lastX=-1e9;lastY=-1e9;lastA=-1e9;
 };
-M.send=function(x,y,a){
+M.send=function(x,y,a,f,fa){
   if(M.status!=="ok"||!myRef){return;}
   var t=Date.now();
   if(pending&&t-pendT<3000){return;}
   if(t-lastSend<80){return;}
-  x=Math.round(x);y=Math.round(y);a=Math.round(a*10)/10;
-  if(x===lastX&&y===lastY&&a===lastA){return;}
-  lastSend=t;lastX=x;lastY=y;lastA=a;pending=true;pendT=t;
+  x=Math.round(x);y=Math.round(y);a=Math.round(a*10)/10;f=f|0;fa=Math.round(fa*10)/10;
+  if(x===lastX&&y===lastY&&a===lastA&&f===lastF){return;}
+  lastSend=t;lastX=x;lastY=y;lastA=a;lastF=f;lastFA=fa;pending=true;pendT=t;
   try{
-    myRef.update({x:x,y:y,a:a}).then(function(){pending=false;M.rtt=Date.now()-t;}).catch(function(){pending=false;});
+    myRef.update({x:x,y:y,a:a,f:f,fa:fa}).then(function(){pending=false;M.rtt=Date.now()-t;}).catch(function(){pending=false;});
   }catch(e){pending=false;}
+};
+M.setHost=function(h){
+  h=!!h;if(h===isHost){return;}
+  isHost=h;
+  if(h&&db&&M.room){
+    killsRef=db.ref("rooms/"+M.room+"/kills");
+    killsRef.on("child_added",function(s){kills.push(+s.key);try{s.ref.remove();}catch(e){}});
+  }else if(killsRef){try{killsRef.off();}catch(e){}killsRef=null;}
+};
+M.takeKills=function(){var a=kills;kills=[];return JSON.stringify(a);};
+M.kill=function(id){
+  if(M.status!=="ok"||!db||!M.room){return;}
+  try{db.ref("rooms/"+M.room+"/kills/"+(id|0)).set(Date.now());}catch(e){}
+};
+M.sendDrones=function(d,r){
+  if(M.status!=="ok"||!db||!M.room){return;}
+  var t=Date.now();
+  if(pendEn&&t-pendEnT<3000){return;}
+  pendEn=true;pendEnT=t;
+  try{
+    db.ref("rooms/"+M.room+"/en").set({d:d,r:r|0}).then(function(){pendEn=false;}).catch(function(){pendEn=false;});
+  }catch(e){pendEn=false;}
 };
 })();
 """
@@ -628,7 +655,9 @@ M.send=function(x,y,a){
 MP_NIVEAU = 6          # mission utilisée pour la salle en ligne (provisoire, avant la grande salle dédiée)
 MP_MAX = 6             # joueurs maximum par salle
 MP = {"actif": False, "etat": "idle", "seed": 0, "niveau": MP_NIVEAU, "salle": "", "autres": [], "ver": -1,
-      "n": 1, "msg": [], "t0": 0, "lisse": {}, "pseudo": "", "uid": "", "sprites": {}, "t_dessin": 0, "rtt": 0, "tick": 0}
+      "n": 1, "msg": [], "t0": 0, "lisse": {}, "pseudo": "", "uid": "", "sprites": {}, "t_dessin": 0, "rtt": 0, "tick": 0,
+      "hote": False, "en_cible": {}, "en_lisse": {}, "en_ver": -1, "en_recu": False, "rest": 0, "next_id": 1,
+      "tues": {}, "nb_base": 0, "f": 0, "fa": 0.0, "f_vu": {}, "balles_d": [], "t_en": 0, "t_maj": 0, "dbg": "", "n_prev": 0}
 _MP_COULEURS = [(0, 255, 255), (255, 60, 200), (255, 230, 60), (120, 255, 120), (255, 140, 40), (170, 120, 255)]
 _MP_ERREURS = {
     "login": ["Connecte-toi avec Google et choisis", "ton pseudo (icône profil) pour jouer en ligne."],
@@ -670,6 +699,7 @@ def mp_quitter():
     except Exception:
         pass
     MP.update(actif=False, etat="idle", autres=[], ver=-1, n=1, salle="", lisse={})
+    _mp_reset_partie()
 
 
 def _mp_tick():
@@ -717,18 +747,194 @@ def _mp_tick():
     if j is None:
         return
     try:
-        j.send(float(joueur_x), float(joueur_y), math.atan2(angle_visée_y, angle_visée_x))
+        j.send(float(joueur_x), float(joueur_y), math.atan2(angle_visée_y, angle_visée_x), int(MP["f"]), float(MP["fa"]))
         v = int(j.ver)
         if v != MP["ver"]:
             MP["ver"] = v
             tous = json.loads(str(j.json))
             MP["n"] = len(tous)
             MP["autres"] = [o for o in tous if o.get("u") != MP["uid"]]
+            for o in MP["autres"]:                                   # tirs des autres joueurs (affichage)
+                u, f = o.get("u"), int(o.get("f", 0))
+                vu = MP["f_vu"].get(u)
+                MP["f_vu"][u] = f
+                if vu is not None and f > vu:
+                    ang = float(o.get("fa", 0))
+                    for q in range(min(f - vu, 3)):
+                        MP["balles_d"].append([float(o.get("x", 0)) - math.cos(ang) * 39 * q, float(o.get("y", 0)) - math.sin(ang) * 39 * q,
+                                               math.cos(ang) * 13, math.sin(ang) * 13, 50, _mp_couleur(u)])
+                    if len(MP["balles_d"]) > 60:
+                        del MP["balles_d"][:20]
+            uids = sorted(str(o.get("u")) for o in tous)               # l'hôte = le plus petit identifiant présent
+            hote = bool(uids) and uids[0] == MP["uid"]
+            if hote and not MP["hote"]:
+                _mp_devenir_hote(len(tous))
+            elif not hote and MP["hote"]:
+                MP["hote"] = False
+                j.setHost(False)
+            if MP["hote"] and len(tous) > MP["n_prev"] > 0:           # un joueur de plus : on ajoute des drones
+                global ennemis_restants_a_spawner
+                ennemis_restants_a_spawner += MP["nb_base"] // 2
+            MP["n_prev"] = len(tous)
         MP["tick"] += 1
         if MP["tick"] % 30 == 0:
             MP["rtt"] = int(j.rtt)
     except Exception:
         pass
+    try:
+        _mp_sync_drones(j)
+    except Exception as e:
+        MP["dbg"] = repr(e)[:70]
+
+
+def _mp_couleur(u):
+    return _MP_COULEURS[sum(ord(c) for c in str(u)) % len(_MP_COULEURS)]
+
+
+def _mp_client():
+    """Vrai si on est en multijoueur sans être l'hôte (l'hôte est le seul à déplacer les drones)."""
+    return MP["actif"] and not MP["hote"]
+
+
+def _mp_id():
+    if not MP["actif"]:
+        return 0
+    MP["next_id"] += 1
+    return MP["next_id"]
+
+
+def _mp_cible(x, y):
+    """Position du joueur le plus proche d'un drone : le joueur local ou un autre joueur de la salle."""
+    cx, cy = joueur_x, joueur_y
+    if MP["actif"]:
+        meilleur = (cx - x) ** 2 + (cy - y) ** 2
+        for o in MP["autres"]:
+            ax, ay = float(o.get("x", 0)), float(o.get("y", 0))
+            if ax == 0 and ay == 0:
+                continue                                  # joueur pas encore placé
+            d = (ax - x) ** 2 + (ay - y) ** 2
+            if d < meilleur:
+                meilleur, cx, cy = d, ax, ay
+    return cx, cy
+
+
+def _mp_tuer(ex):
+    """Un drone vient d'être détruit chez ce joueur : l'hôte est prévenu et le retire pour tout le monde."""
+    if not MP["actif"] or len(ex) < 4 or MP["hote"]:
+        return
+    MP["tues"][ex[3]] = pygame.time.get_ticks()
+    j = _mp_js()
+    try:
+        if j is not None:
+            j.kill(int(ex[3]))
+    except Exception:
+        pass
+
+
+def _mp_tir_local(b):
+    """Un tir vient de partir : le compteur de tirs et sa direction sont envoyés aux autres joueurs."""
+    MP["f"] += 1
+    MP["fa"] = math.atan2(b[3], b[2])
+
+
+def _mp_reset_partie():
+    j = _mp_js()
+    try:
+        if j is not None:
+            j.setHost(False)
+    except Exception:
+        pass
+    MP.update(hote=False, en_cible={}, en_lisse={}, en_ver=-1, en_recu=False, rest=0, tues={}, f=0, fa=0.0,
+              f_vu={}, balles_d=[], t_en=0, t_maj=0, dbg="", n_prev=0)
+
+
+def _mp_devenir_hote(n_joueurs):
+    """Ce joueur devient l'hôte : il fait vivre les drones pour toute la salle."""
+    global ennemis_restants_a_spawner, minuteur_spawn
+    j = _mp_js()
+    if j is not None:
+        j.setHost(True)
+    MP["hote"] = True
+    if MP["en_recu"]:                                     # l'ancien hôte est parti : on reprend ses drones
+        liste_ennemis[:] = [[x, y, vitesse_ennemis_niveau, i] for i, (x, y) in MP["en_cible"].items()]
+        ennemis_restants_a_spawner = MP["rest"]
+        MP["next_id"] = max(list(MP["en_cible"]) + [MP["next_id"]]) + 1
+    else:
+        liste_ennemis[:] = []
+        ennemis_restants_a_spawner = int(MP["nb_base"] * max(1, n_joueurs))
+    minuteur_spawn = 60
+
+
+def _mp_sync_drones(j):
+    """Hôte : envoie l'état des drones à tous et retire ceux détruits par les autres. Autres joueurs : reçoivent et affichent."""
+    global ennemis_restants_a_spawner
+    maintenant = pygame.time.get_ticks()
+    if MP["hote"]:
+        ids = json.loads(str(j.takeKills()))
+        if ids:
+            ids = set(int(i) for i in ids)
+            for ex in liste_ennemis[:]:
+                if len(ex) > 3 and ex[3] in ids:
+                    liste_ennemis.remove(ex)
+                    creer_explosion(ex[0], ex[1], ROUGE_ALERTE, 24, 7.0, 3.0)
+        if maintenant - MP["t_en"] >= 160:                 # environ 6 envois par seconde
+            MP["t_en"] = maintenant
+            txt = ";".join(f"{e[3]},{int(e[0])},{int(e[1])}" for e in liste_ennemis[:80] if len(e) > 3)
+            j.sendDrones(txt, int(ennemis_restants_a_spawner))
+        return
+    v = int(j.enVer)
+    if v != MP["en_ver"]:
+        MP["en_ver"] = v
+        cible = {}
+        for part in str(j.en).split(";"):
+            if part:
+                try:
+                    i, x, y = part.split(",")
+                    cible[int(i)] = (float(x), float(y))
+                except Exception:
+                    pass
+        MP["en_cible"] = cible
+        MP["en_recu"] = bool(j.enHas)
+        MP["rest"] = int(j.rest)
+    ennemis_restants_a_spawner = MP["rest"]
+    dt = min(0.25, max(0.0, (maintenant - MP["t_maj"]) / 1000.0)) if MP["t_maj"] else 0.016
+    MP["t_maj"] = maintenant
+    k = 1.0 - math.exp(-dt * 12.0)
+    cible, lisse, tues = MP["en_cible"], MP["en_lisse"], MP["tues"]
+    for i in list(lisse):
+        if i not in cible:
+            if i not in tues:
+                creer_explosion(lisse[i][0], lisse[i][1], ROUGE_ALERTE, 24, 7.0, 3.0)
+            del lisse[i]
+    sortie = []
+    for i, (tx, ty) in cible.items():
+        if i in tues:
+            continue
+        pos = lisse.get(i)
+        if pos is None or abs(tx - pos[0]) + abs(ty - pos[1]) > 400:
+            pos = lisse[i] = [tx, ty]
+        pos[0] += (tx - pos[0]) * k
+        pos[1] += (ty - pos[1]) * k
+        sortie.append([pos[0], pos[1], vitesse_ennemis_niveau, i])
+    liste_ennemis[:] = sortie
+    for i in [i for i, t in tues.items() if maintenant - t > 6000]:
+        del tues[i]
+
+
+def _mp_dessiner_balles(ox, oy):
+    """Tirs des autres joueurs (affichage seulement : ce sont leurs téléphones qui comptent les touches)."""
+    restantes = []
+    for b in MP["balles_d"]:
+        b[0] += b[2]
+        b[1] += b[3]
+        b[4] -= 1
+        cx, cy = int(b[0] // TAILLE_CASE), int(b[1] // TAILLE_CASE)
+        if b[4] <= 0 or not (0 <= cx < len(CARTE[0]) and 0 <= cy < len(CARTE)) or CARTE[cy][cx] == 1:
+            continue
+        restantes.append(b)
+        sx, sy = int(b[0] + ox), int(b[1] + oy)
+        DRAW.line(ecran, b[5], (sx, sy), (int(sx - b[2] * 1.6), int(sy - b[3] * 1.6)), 4)
+    MP["balles_d"] = restantes
 
 
 def _mp_sprites(sid):
@@ -760,6 +966,7 @@ def _mp_dessiner_autres(ox, oy):
     dt = min(0.25, max(0.0, (maintenant - MP["t_dessin"]) / 1000.0)) if MP["t_dessin"] else 0.016
     MP["t_dessin"] = maintenant
     k = 1.0 - math.exp(-dt * 10.0)                  # lissage indépendant du nombre d'images par seconde
+    _mp_dessiner_balles(ox, oy)
     vus = set()
     for o in MP["autres"]:
         u = str(o.get("u", ""))
@@ -795,9 +1002,14 @@ def _mp_dessiner_autres(ox, oy):
     txt = f"EN LIGNE  •  {max(1, MP['n'])}/{MP_MAX} joueurs"
     if rtt > 0:
         txt += f"  •  {rtt} ms"
+    if MP["hote"]:
+        txt += "  •  HÔTE"
     col_info = VERT_FLUO if rtt < 200 else (JAUNE_CYBER if rtt < 500 else ROUGE_ALERTE)
     info = rendu_texte(police_petite, txt, True, col_info)
     ecran.blit(info, (LARGEUR // 2 - info.get_width() // 2, HAUTEUR - 36))
+    if MP["dbg"]:
+        err = rendu_texte(police_petite, "ERR " + MP["dbg"], True, ROUGE_ALERTE)
+        ecran.blit(err, (LARGEUR // 2 - err.get_width() // 2, HAUTEUR - 66))
 
 
 def dessiner_multi_attente():
@@ -2716,7 +2928,9 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     niveau_data = generer_niveau(niveau_actuel)
     if MP["actif"]:
         random.seed()
-        niveau_data["nb_ennemis"] = 0     # étape 1 : pas encore de drones partagés
+        MP["nb_base"] = niveau_data["nb_ennemis"]
+        niveau_data["nb_ennemis"] = 0     # c'est l'hôte qui lance les drones (voir _mp_devenir_hote)
+        _mp_reset_partie()
     CARTE = niveau_data["carte"]
     COULEUR_MUR = niveau_data["couleur_mur"]
     liste_ennemis = []
@@ -7167,11 +7381,11 @@ async def main():
                         liste_potions.remove(potion)
                         temps_restant_frames = min(temps_restant_frames + BONUS_POTION_FRAMES + STATS["potion"], plafond_temps_frames)
 
-                if ennemis_restants_a_spawner > 0:
+                if ennemis_restants_a_spawner > 0 and not _mp_client():
                     minuteur_spawn -= 1
                     if minuteur_spawn <= 0:
                         ex_spawn, ey_spawn = (_v3_spawn_ennemi() if _v3_actif() else None) or position_spawn_ennemi(CARTE)
-                        liste_ennemis.append([ex_spawn, ey_spawn, vitesse_ennemis_niveau])
+                        liste_ennemis.append([ex_spawn, ey_spawn, vitesse_ennemis_niveau, _mp_id()])
                         ennemis_restants_a_spawner -= 1
                         delai_min, delai_max = calcul_delais_spawn(niveau_actuel)
                         minuteur_spawn = random.randint(delai_min, delai_max)
@@ -7236,6 +7450,8 @@ async def main():
                         balles.append([joueur_x, joueur_y, (bx / db) * 13, (by / db) * 13, _perfo()])
                     else:
                         balles.append([joueur_x, joueur_y, angle_visée_x * 13, angle_visée_y * 13, _perfo()])
+                    if MP["actif"] and balles:
+                        _mp_tir_local(balles[-1])
 
                 # CORRECTION DE LA FUITE DE MÉMOIRE DES BALLES
                 for b in balles[:]:
@@ -7250,18 +7466,21 @@ async def main():
                         balles.remove(b)
 
                 for ex in liste_ennemis[:]:
-                    ang = _v3_cap_ennemi(ex) if _v3_actif() else None
-                    if ang is None:
-                        ang = math.atan2(joueur_y - ex[1], joueur_x - ex[0]) + random.uniform(-0.08, 0.08)
-                    _fe = _facteur_ennemi(ex[0], ex[1])
-                    ex[0] += math.cos(ang) * ex[2] * _fe
-                    ex[1] += math.sin(ang) * ex[2] * _fe
-                    if QUALITE["niveau"] >= 1 and len(liste_ennemis) <= 8 and random.random() < 0.3:
-                        creer_propulsion(ex[0], ex[1], math.cos(ang) * ex[2], math.sin(ang) * ex[2], ROUGE_ALERTE)
+                    if not _mp_client():                              # en multijoueur, seul l'hôte déplace les drones
+                        ang = _v3_cap_ennemi(ex) if _v3_actif() else None
+                        if ang is None:
+                            _cx, _cy = _mp_cible(ex[0], ex[1])
+                            ang = math.atan2(_cy - ex[1], _cx - ex[0]) + random.uniform(-0.08, 0.08)
+                        _fe = _facteur_ennemi(ex[0], ex[1])
+                        ex[0] += math.cos(ang) * ex[2] * _fe
+                        ex[1] += math.sin(ang) * ex[2] * _fe
+                        if QUALITE["niveau"] >= 1 and len(liste_ennemis) <= 8 and random.random() < 0.3:
+                            creer_propulsion(ex[0], ex[1], math.cos(ang) * ex[2], math.sin(ang) * ex[2], ROUGE_ALERTE)
                     for b in balles[:]:
                         if math.hypot(ex[0] - b[0], ex[1] - b[1]) < 28:
                             if ex in liste_ennemis:
                                 liste_ennemis.remove(ex)
+                                _mp_tuer(ex)
                                 MISSION["drones"] += 1
                                 creer_explosion(ex[0], ex[1], ROUGE_ALERTE, 24, 7.0, 3.0)
                                 if SON_ACTIF:
@@ -7274,6 +7493,7 @@ async def main():
                     if not partie_perdue and math.hypot(joueur_x - ex[0], joueur_y - ex[1]) < (TAILLE_PERSO / 2 + 16):
                         if not subir_degats("SYSTÈME CORROMPU") and ex in liste_ennemis:
                             liste_ennemis.remove(ex)          # le choc détruit le drone
+                            _mp_tuer(ex)
                             MISSION["drones"] += 1
                             creer_explosion(ex[0], ex[1], ROUGE_ALERTE, 24, 7.0, 3.0)
 
