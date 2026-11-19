@@ -1033,6 +1033,319 @@ def dessiner_multi_attente():
     dessiner_marque(HAUTEUR - 84)
 
 
+# ==================== PARC : très grande carte en vue du dessus, créée par zones (test solo) ====================
+# Le monde est découpé en zones (« chunks ») de 640 px. Chaque zone est fabriquée à partir du numéro de la partie
+# et de ses coordonnées : deux téléphones avec le même numéro obtiennent exactement le même parc (arbres, bâtiments...).
+# Seules les zones proches du joueur existent en mémoire ; les autres sont déchargées.
+PARC_MONDE = 9600                  # taille du monde en px (carré)
+PARC_CH = 640                      # taille d'une zone
+PARC_NC = PARC_MONDE // PARC_CH    # nombre de zones par côté
+PARC_ALLEES = (1600, 4800, 8000)   # axes des allées (verticales et horizontales)
+PARC_LARG_ALLEE = 150
+PARC_CENTRE = PARC_MONDE // 2
+PARC_R_PLACE = 420                 # rayon de la place centrale (fontaine)
+PARC = {"actif": False, "seed": 1, "x": 0.0, "y": 0.0, "face": 1, "donnees": {}, "surf": {}, "mini": None, "ms_gen": 0.0}
+_PC_HERBE, _PC_HERBE_CL, _PC_HERBE_FO = (72, 142, 74), (84, 156, 84), (62, 126, 66)
+_PC_SABLE, _PC_SABLE_BORD = (208, 192, 152), (172, 154, 114)
+_PC_EAU, _PC_EAU_CL = (52, 122, 198), (110, 170, 226)
+_PC_TOITS = [((170, 84, 62), (130, 60, 44)), ((96, 108, 128), (66, 76, 94)), ((196, 168, 108), (150, 124, 74)),
+             ((120, 140, 120), (84, 102, 86)), ((176, 120, 150), (132, 84, 108))]
+_PC_FLEURS = [(250, 250, 250), (250, 220, 70), (240, 120, 170), (170, 130, 240), (250, 150, 70)]
+
+
+def _parc_sur_allee(x, y, marge=0):
+    """Vrai si le point est sur une allée ou sur la place centrale (avec une marge)."""
+    m = PARC_LARG_ALLEE // 2 + marge
+    for a in PARC_ALLEES:
+        if abs(x - a) < m or abs(y - a) < m:
+            return True
+    return (x - PARC_CENTRE) ** 2 + (y - PARC_CENTRE) ** 2 < (PARC_R_PLACE + marge) ** 2
+
+
+def _parc_rect_sur_allee(x, y, w, h, marge):
+    m = PARC_LARG_ALLEE // 2 + marge
+    for a in PARC_ALLEES:
+        if x < a + m and x + w > a - m:
+            return True
+        if y < a + m and y + h > a - m:
+            return True
+    nx, ny = min(max(PARC_CENTRE, x), x + w), min(max(PARC_CENTRE, y), y + h)
+    return (nx - PARC_CENTRE) ** 2 + (ny - PARC_CENTRE) ** 2 < (PARC_R_PLACE + marge) ** 2
+
+
+def _parc_gen(cx, cy):
+    """Contenu d'une zone : objets et obstacles (calcul léger, identique sur tous les téléphones)."""
+    d = PARC["donnees"].get((cx, cy))
+    if d is not None:
+        return d
+    rng = random.Random(PARC["seed"] * 73856093 ^ cx * 19349663 ^ cy * 83492791)
+    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    M = 30                                                   # aucun objet ne touche le bord de la zone
+    d = {"batiments": [], "etangs": [], "arbres": [], "buissons": [], "rochers": [], "bancs": [], "fleurs": [],
+         "taches": [], "fontaine": None, "obs_c": [], "obs_r": []}
+    for _ in range(rng.randint(8, 13)):
+        d["taches"].append((x0 + rng.randint(0, PARC_CH), y0 + rng.randint(0, PARC_CH), rng.randint(50, 130), rng.randint(40, 100), rng.randint(0, 1)))
+    if (cx, cy) == (PARC_CENTRE // PARC_CH, PARC_CENTRE // PARC_CH):
+        d["fontaine"] = (PARC_CENTRE, PARC_CENTRE, 100)
+        d["obs_c"].append((PARC_CENTRE, PARC_CENTRE, 108))
+    # bâtiments (vus du dessus : simples toits)
+    for _ in range((1 + (1 if rng.random() < 0.18 else 0)) if rng.random() < 0.55 else 0):
+        for _essai in range(12):
+            w, h = rng.randint(180, 330), rng.randint(150, 270)
+            bx, by = x0 + rng.randint(M, PARC_CH - M - w), y0 + rng.randint(M, PARC_CH - M - h)
+            if _parc_rect_sur_allee(bx, by, w, h, 34):
+                continue
+            if any(bx < o[0] + o[2] + 40 and bx + w + 40 > o[0] and by < o[1] + o[3] + 40 and by + h + 40 > o[1] for o in d["batiments"]):
+                continue
+            d["batiments"].append((bx, by, w, h, rng.randint(0, len(_PC_TOITS) - 1)))
+            d["obs_r"].append((bx, by, w, h))
+            break
+    # étang
+    if rng.random() < 0.08:
+        for _essai in range(6):
+            rx, ry = rng.randint(90, 150), rng.randint(70, 120)
+            ex, ey = x0 + rng.randint(M + rx, PARC_CH - M - rx), y0 + rng.randint(M + ry, PARC_CH - M - ry)
+            if _parc_rect_sur_allee(ex - rx, ey - ry, rx * 2, ry * 2, 20):
+                continue
+            if any(ex - rx < o[0] + o[2] + 30 and ex + rx > o[0] - 30 and ey - ry < o[1] + o[3] + 30 and ey + ry > o[1] - 30 for o in d["batiments"]):
+                continue
+            d["etangs"].append((ex, ey, rx, ry))
+            d["obs_c"].append((ex, ey, int(min(rx, ry) * 0.85)))
+            break
+
+    def libre(x, y, r, marge_allee):
+        if _parc_sur_allee(x, y, marge_allee):
+            return False
+        for bx, by, bw, bh, _c in d["batiments"]:
+            if bx - r - 14 < x < bx + bw + r + 14 and by - r - 14 < y < by + bh + r + 14:
+                return False
+        for ex, ey, rx, ry in d["etangs"]:
+            if ((x - ex) / (rx + r)) ** 2 + ((y - ey) / (ry + r)) ** 2 < 1.0:
+                return False
+        return True
+
+    for _ in range(52):                                      # arbres
+        r = rng.randint(26, 48)
+        x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
+        if not libre(x, y, r, int(r * 0.5) + 6):
+            continue
+        if any((x - o[0]) ** 2 + (y - o[1]) ** 2 < (0.5 * (r + o[2])) ** 2 for o in d["arbres"]):
+            continue
+        d["arbres"].append((x, y, r))
+        d["obs_c"].append((x, y, max(9, int(r * 0.3))))
+    for _ in range(24):                                      # buissons (on peut passer dessus)
+        r = rng.randint(12, 20)
+        x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
+        if libre(x, y, r, r):
+            d["buissons"].append((x, y, r))
+    for _ in range(6):                                       # rochers
+        r = rng.randint(14, 26)
+        x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
+        if libre(x, y, r, r + 4):
+            d["rochers"].append((x, y, r))
+            d["obs_c"].append((x, y, int(r * 0.9)))
+    for a in PARC_ALLEES:                                    # bancs le long des allées
+        if x0 <= a < x0 + PARC_CH and rng.random() < 0.6:
+            d["bancs"].append((a + rng.choice((-96, 96)) - 9, y0 + rng.randint(M, PARC_CH - M - 44), 18, 44))
+        if y0 <= a < y0 + PARC_CH and rng.random() < 0.6:
+            d["bancs"].append((x0 + rng.randint(M, PARC_CH - M - 44), a + rng.choice((-96, 96)) - 9, 44, 18))
+    for _ in range(16):                                      # fleurs
+        x, y = x0 + rng.randint(M, PARC_CH - M), y0 + rng.randint(M, PARC_CH - M)
+        if libre(x, y, 4, 4):
+            d["fleurs"].append((x, y, rng.randint(0, len(_PC_FLEURS) - 1)))
+    PARC["donnees"][(cx, cy)] = d
+    return d
+
+
+def parc_bloque(x, y, r=16):
+    """Vrai si un joueur de rayon r à (x, y) touche un obstacle (arbre, bâtiment, rocher, étang, bord du monde)."""
+    if x < 60 or y < 60 or x > PARC_MONDE - 60 or y > PARC_MONDE - 60:
+        return True
+    d = _parc_gen(int(x // PARC_CH), int(y // PARC_CH))
+    for ox_, oy_, rr in d["obs_c"]:
+        s_ = rr + r
+        if (x - ox_) ** 2 + (y - oy_) ** 2 < s_ * s_:
+            return True
+    for bx, by, bw, bh in d["obs_r"]:
+        if bx - r < x < bx + bw + r and by - r < y < by + bh + r:
+            return True
+    return False
+
+
+def _parc_peindre(cx, cy):
+    """Dessine une zone une seule fois dans une image : ensuite, l'afficher ne coûte qu'un seul blit."""
+    d = _parc_gen(cx, cy)
+    surf = pygame.Surface((PARC_CH, PARC_CH))
+    surf.fill(_PC_HERBE)
+    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    dr = pygame.draw
+    for x, y, rx, ry, c in d["taches"]:
+        dr.ellipse(surf, (_PC_HERBE_CL, _PC_HERBE_FO)[c], (x - x0 - rx, y - y0 - ry, rx * 2, ry * 2))
+    demi = PARC_LARG_ALLEE // 2
+    for a in PARC_ALLEES:                                    # allées : bordure d'abord, puis le sable (les croisements restent propres)
+        if x0 - 80 < a < x0 + PARC_CH + 80:
+            dr.rect(surf, _PC_SABLE_BORD, (a - demi - 4 - x0, 0, PARC_LARG_ALLEE + 8, PARC_CH))
+        if y0 - 80 < a < y0 + PARC_CH + 80:
+            dr.rect(surf, _PC_SABLE_BORD, (0, a - demi - 4 - y0, PARC_CH, PARC_LARG_ALLEE + 8))
+    for a in PARC_ALLEES:
+        if x0 - 80 < a < x0 + PARC_CH + 80:
+            dr.rect(surf, _PC_SABLE, (a - demi - x0, 0, PARC_LARG_ALLEE, PARC_CH))
+        if y0 - 80 < a < y0 + PARC_CH + 80:
+            dr.rect(surf, _PC_SABLE, (0, a - demi - y0, PARC_CH, PARC_LARG_ALLEE))
+    nx, ny = min(max(PARC_CENTRE, x0), x0 + PARC_CH), min(max(PARC_CENTRE, y0), y0 + PARC_CH)
+    if (nx - PARC_CENTRE) ** 2 + (ny - PARC_CENTRE) ** 2 < (PARC_R_PLACE + 6) ** 2:      # place centrale
+        dr.circle(surf, _PC_SABLE_BORD, (PARC_CENTRE - x0, PARC_CENTRE - y0), PARC_R_PLACE + 5)
+        dr.circle(surf, _PC_SABLE, (PARC_CENTRE - x0, PARC_CENTRE - y0), PARC_R_PLACE)
+    if d["fontaine"]:
+        fx, fy, fr = d["fontaine"]
+        c = (fx - x0, fy - y0)
+        dr.circle(surf, (150, 150, 158), c, fr + 14)
+        dr.circle(surf, (190, 190, 198), c, fr + 8)
+        dr.circle(surf, _PC_EAU, c, fr)
+        dr.circle(surf, _PC_EAU_CL, c, int(fr * 0.62))
+        dr.circle(surf, (230, 245, 255), c, 16)
+    for ex, ey, rx, ry in d["etangs"]:
+        dr.ellipse(surf, _PC_SABLE_BORD, (ex - x0 - rx - 10, ey - y0 - ry - 10, rx * 2 + 20, ry * 2 + 20))
+        dr.ellipse(surf, _PC_EAU, (ex - x0 - rx, ey - y0 - ry, rx * 2, ry * 2))
+        dr.ellipse(surf, _PC_EAU_CL, (ex - x0 - rx * 0.6, ey - y0 - ry * 0.55, rx * 1.0, ry * 0.7))
+    for bx, by, bw, bh in d["bancs"]:
+        dr.rect(surf, (120, 82, 52), (bx - x0, by - y0, bw, bh))
+        dr.rect(surf, (82, 54, 34), (bx - x0, by - y0, bw, bh), 2)
+    for x, y, c in d["fleurs"]:
+        dr.circle(surf, _PC_FLEURS[c], (x - x0, y - y0), 3)
+    for x, y, r in d["buissons"]:
+        dr.circle(surf, (34, 104, 54), (x - x0 + 3, y - y0 + 4), r)
+        dr.circle(surf, (44, 124, 62), (x - x0, y - y0), r)
+        dr.circle(surf, (70, 152, 84), (x - x0 - r // 3, y - y0 - r // 3), max(3, r // 3))
+    for x, y, r in d["rochers"]:
+        dr.circle(surf, (96, 96, 104), (x - x0 + 4, y - y0 + 5), r)
+        dr.circle(surf, (132, 132, 140), (x - x0, y - y0), r)
+        dr.circle(surf, (168, 168, 176), (x - x0 - r // 3, y - y0 - r // 3), max(3, r // 3))
+    for bx, by, bw, bh, ci in d["batiments"]:                # bâtiments : ombre, toit, arête, petits équipements
+        clair, fonce = _PC_TOITS[ci]
+        rx_, ry_ = bx - x0, by - y0
+        dr.rect(surf, (40, 84, 48), (rx_ + 14, ry_ + 16, bw, bh))
+        dr.rect(surf, fonce, (rx_, ry_, bw, bh))
+        dr.rect(surf, clair, (rx_ + 8, ry_ + 8, bw - 16, bh - 16))
+        if bw >= bh:
+            dr.line(surf, fonce, (rx_ + 8, ry_ + bh // 2), (rx_ + bw - 8, ry_ + bh // 2), 4)
+        else:
+            dr.line(surf, fonce, (rx_ + bw // 2, ry_ + 8), (rx_ + bw // 2, ry_ + bh - 8), 4)
+        dr.rect(surf, (96, 96, 104), (rx_ + bw - 46, ry_ + 18, 24, 24))
+        dr.rect(surf, (150, 150, 158), (rx_ + bw - 42, ry_ + 22, 16, 16))
+    for x, y, r in sorted(d["arbres"], key=lambda t: t[1]):  # arbres : ombre, feuillage, reflets
+        dr.circle(surf, (46, 100, 52), (x - x0 + 8, y - y0 + 10), r)
+        dr.circle(surf, (32, 108, 50), (x - x0, y - y0), r)
+        dr.circle(surf, (50, 138, 64), (x - x0 - r // 6, y - y0 - r // 6), int(r * 0.72))
+        dr.circle(surf, (88, 176, 92), (x - x0 - r // 3, y - y0 - r // 3), max(4, int(r * 0.3)))
+    return surf
+
+
+def _parc_gerer(cam_x, cam_y):
+    """Crée au plus une zone par image (la plus proche du joueur) et décharge les zones lointaines."""
+    t0 = _time.perf_counter()
+    c0x, c1x = max(0, int((cam_x - 320) // PARC_CH)), min(PARC_NC - 1, int((cam_x + LARGEUR + 320) // PARC_CH))
+    c0y, c1y = max(0, int((cam_y - 320) // PARC_CH)), min(PARC_NC - 1, int((cam_y + HAUTEUR + 320) // PARC_CH))
+    manquantes = [(cx, cy) for cx in range(c0x, c1x + 1) for cy in range(c0y, c1y + 1) if (cx, cy) not in PARC["surf"]]
+    if manquantes:
+        px, py = PARC["x"] / PARC_CH, PARC["y"] / PARC_CH
+        manquantes.sort(key=lambda c: (c[0] + 0.5 - px) ** 2 + (c[1] + 0.5 - py) ** 2)
+        PARC["surf"][manquantes[0]] = _parc_peindre(*manquantes[0])
+        PARC["ms_gen"] = (_time.perf_counter() - t0) * 1000.0
+    for cle in [c for c in PARC["surf"] if c[0] < c0x - 1 or c[0] > c1x + 1 or c[1] < c0y - 1 or c[1] > c1y + 1]:
+        del PARC["surf"][cle]
+        PARC["donnees"].pop(cle, None)
+
+
+def parc_demarrer():
+    PARC.update(actif=True, seed=random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0)
+    PARC["x"], PARC["y"] = float(PARC_CENTRE), float(PARC_CENTRE + 640)
+    cam_x, cam_y = PARC["x"] - LARGEUR // 2, PARC["y"] - HAUTEUR // 2
+    for _ in range(4):                                       # quelques zones tout de suite (l'écran de chargement masque le délai)
+        _parc_gerer(cam_x, cam_y)
+    S = 170                                                  # mini-carte (dessinée une seule fois)
+    mini = pygame.Surface((S, S))
+    mini.fill((36, 96, 50))
+    k = S / PARC_MONDE
+    for a in PARC_ALLEES:
+        pygame.draw.line(mini, _PC_SABLE, (int(a * k), 0), (int(a * k), S), 3)
+        pygame.draw.line(mini, _PC_SABLE, (0, int(a * k)), (S, int(a * k)), 3)
+    pygame.draw.circle(mini, _PC_SABLE, (S // 2, S // 2), int(PARC_R_PLACE * k))
+    pygame.draw.circle(mini, _PC_EAU, (S // 2, S // 2), max(2, int(100 * k)))
+    pygame.draw.rect(mini, (230, 240, 230), (0, 0, S, S), 2)
+    PARC["mini"] = mini
+
+
+def parc_liberer():
+    PARC.update(actif=False, donnees={}, surf={}, mini=None)
+
+
+def jouer_parc():
+    """Boucle du parc (test solo) : déplacement, collisions, zones créées au fil du déplacement, affichage."""
+    if not PARC["actif"]:
+        return
+    if (clic_detecte and rect_bouton_pause.collidepoint(clic_x, clic_y)) or pygame.key.get_pressed()[pygame.K_ESCAPE]:
+        parc_liberer()
+        lancer_transition(("etat", ETAT_MENU))
+        return
+    dx = dy = 0.0
+    vit = joueur_vitesse * _facteur_vitesse()
+    if joystick_actif:
+        vx, vy = manette_x - JOY_CENTRE_X, manette_y - JOY_CENTRE_Y
+        dist = math.hypot(vx, vy)
+        if dist > CTRL["dz"]:
+            dx, dy = vx / dist * vit, vy / dist * vit
+            if vx < -15:
+                PARC["face"] = 0
+            elif vx > 15:
+                PARC["face"] = 1
+    im = _in_deplacement()
+    if im is not None:
+        dx, dy = im[0] * vit, im[1] * vit
+        if im[0] < -0.2:
+            PARC["face"] = 0
+        elif im[0] > 0.2:
+            PARC["face"] = 1
+    if dx != 0 and not parc_bloque(PARC["x"] + dx, PARC["y"]):
+        PARC["x"] += dx
+    if dy != 0 and not parc_bloque(PARC["x"], PARC["y"] + dy):
+        PARC["y"] += dy
+    cam_x = int(min(max(PARC["x"] - LARGEUR // 2, 0), PARC_MONDE - LARGEUR))
+    cam_y = int(min(max(PARC["y"] - HAUTEUR // 2, 0), PARC_MONDE - HAUTEUR))
+    _parc_gerer(cam_x, cam_y)
+    ecran.fill((30, 70, 38))
+    for cx in range(max(0, cam_x // PARC_CH), min(PARC_NC - 1, (cam_x + LARGEUR) // PARC_CH) + 1):
+        for cy in range(max(0, cam_y // PARC_CH), min(PARC_NC - 1, (cam_y + HAUTEUR) // PARC_CH) + 1):
+            surf = PARC["surf"].get((cx, cy))
+            px, py = cx * PARC_CH - cam_x, cy * PARC_CH - cam_y
+            if surf is not None:
+                ecran.blit(surf, (px, py))
+            else:
+                ecran.fill(_PC_HERBE, (px, py, PARC_CH, PARC_CH))        # zone pas encore prête : herbe unie
+    sx, sy = int(PARC["x"] - cam_x), int(PARC["y"] - cam_y)
+    pygame.draw.ellipse(ecran, (30, 70, 36), (sx - 18, sy + 8, 36, 14))
+    if MODE_GRAPHIQUE == "REALISTE":
+        img = img_joueur_droite if PARC["face"] else img_joueur_gauche
+        ecran.blit(img, (sx - img.get_width() // 2, sy - img.get_height() // 2))
+    else:
+        pygame.draw.rect(ecran, VERT_FLUO, (sx - 16, sy - 16, 32, 32))
+    # mini-carte du côté opposé au bouton pause
+    S = 170
+    mx0 = 24 if rect_bouton_pause.centerx > LARGEUR // 2 else LARGEUR - S - 24
+    if PARC["mini"] is not None:
+        ecran.blit(PARC["mini"], (mx0, 24))
+        k = S / PARC_MONDE
+        pygame.draw.circle(ecran, ROUGE_ALERTE, (mx0 + int(PARC["x"] * k), 24 + int(PARC["y"] * k)), 4)
+    # joystick tactile (le bouton TIR viendra avec le combat)
+    ecran.blit(SURF_SOCLE_JOY, (JOY_CENTRE_X - JOY_RAYON_SOCLE - 6, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 6))
+    DRAW.circle(ecran, VERT_FLUO, (JOY_CENTRE_X, JOY_CENTRE_Y), JOY_RAYON_SOCLE, 4)
+    DRAW.circle(ecran, (0, 120, 190), (int(manette_x), int(manette_y)), JOY_RAYON_MANETTE)
+    DRAW.circle(ecran, CYAN_NEON, (int(manette_x), int(manette_y)), max(2, JOY_RAYON_MANETTE - 4))
+    bouton_neon(rect_bouton_pause, ROUGE_ALERTE, "X", police_bouton)
+    info = rendu_texte(police_petite, f"PARC TEST  •  {int(clock.get_fps())} FPS  •  {len(PARC['surf'])} zones  •  zone {PARC['ms_gen']:.0f} ms", True, BLANC_NEON)
+    ecran.blit(info, (LARGEUR // 2 - info.get_width() // 2, HAUTEUR - 36))
+
+
 def _injecter_firebase():
     try:
         _pfs.window.eval(_JS_HEURE)
@@ -2863,6 +3176,7 @@ ETAT_BOUTIQUE = 7
 ETAT_EDITEUR = 8
 ETAT_DEFIS = 9
 ETAT_MULTI = 10
+ETAT_PARC = 11
 etat_actuel = ETAT_MENU
 en_pause = False
 
@@ -3254,6 +3568,7 @@ rect_bouton_jouer = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 - 60, 300, 55)
 rect_bouton_aide = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 + 20, 300, 55)
 rect_bouton_boutique = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 + 100, 300, 55)
 rect_bouton_multi = pygame.Rect(LARGEUR // 2 - 150, HAUTEUR // 2 + 180, 300, 55)
+rect_bouton_parc = pygame.Rect(LARGEUR // 2 + 170, HAUTEUR // 2 + 180, 170, 55)
 rect_bouton_retour = pygame.Rect(40, 40, 160, 50)   # en haut à gauche : ne cache plus le texte du guide
 rect_bouton_rejouer = pygame.Rect(LARGEUR // 2 - 260, HAUTEUR // 2 + 60, 240, 65)
 rect_bouton_suivant = pygame.Rect(LARGEUR // 2 + 20, HAUTEUR // 2 + 60, 240, 65)
@@ -5018,6 +5333,8 @@ def _in_contexte():
         return ""
     if etat_actuel == ETAT_JEU:
         return "ui" if (en_pause or partie_gagnee or partie_perdue) else "jeu"
+    if etat_actuel == ETAT_PARC:
+        return "jeu"
     return "ui"
 
 
@@ -7128,6 +7445,9 @@ async def main():
                     glissement_niveaux_actif = True
                     type_glissement_niveaux = event.finger_id
                     dernier_x_glissement_niveaux = clic_x
+                elif etat_actuel == ETAT_PARC and math.hypot(clic_x - JOY_CENTRE_X, clic_y - JOY_CENTRE_Y) <= JOY_RAYON_SOCLE + 40:
+                    joystick_actif, id_touch_joystick = True, event.finger_id
+                    placer_manette(clic_x, clic_y)
 
             elif event.type == pygame.TEXTINPUT and saisie_pseudo_active:
                 if len(profil["pseudo"]) < 14:
@@ -7246,6 +7566,9 @@ async def main():
                             DEF.update(scroll=0.0, drag=False, id=None)
                         elif etat_actuel == ETAT_EDITEUR:
                             ED.update(drag=False, id=None, cible=None, bouton=None, selection=None, mode="deplacer")
+                    elif _cible[0] == "parc":
+                        parc_demarrer()
+                        etat_actuel = ETAT_PARC
                     elif _cible[0] == "multi":
                         mp_chercher_salle()
                         etat_actuel = ETAT_MULTI
@@ -7291,6 +7614,8 @@ async def main():
                 lancer_transition(("etat", ETAT_BOUTIQUE))
             elif IS_WEB and rect_bouton_multi.collidepoint(clic_x, clic_y):
                 lancer_transition(("multi",))
+            elif rect_bouton_parc.collidepoint(clic_x, clic_y):
+                lancer_transition(("parc",))
             elif rect_icone_profil.collidepoint(clic_x, clic_y):
                 lancer_transition(("etat", ETAT_PROFIL))
             elif rect_icone_infos.collidepoint(clic_x, clic_y):
@@ -7624,6 +7949,7 @@ async def main():
             bouton_neon(rect_bouton_boutique, JAUNE_CYBER, "BOUTIQUE", police_bouton)
             if IS_WEB:
                 bouton_neon(rect_bouton_multi, VERT_FLUO, "MULTIJOUEUR", police_bouton)
+            bouton_neon(rect_bouton_parc, CYAN_NEON, "PARC", police_bouton)
             dessiner_pieces(LARGEUR // 2, 36)
             dessiner_avertissement()
             dessiner_marque(HAUTEUR - 84)
@@ -7919,6 +8245,9 @@ async def main():
 
         elif etat_actuel == ETAT_MULTI:
             dessiner_multi_attente()
+
+        elif etat_actuel == ETAT_PARC:
+            jouer_parc()
 
         elif etat_actuel == ETAT_PARAMS:
             dessiner_parametres()
