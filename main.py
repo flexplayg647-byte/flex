@@ -1341,6 +1341,7 @@ def _parc_decouvrir(x, y):
     if (rx, ry) in PARC["vus"] or PARC["mini"] is None:
         return
     PARC["vus"].add((rx, ry))
+    PARC["mini_ver"] = PARC.get("mini_ver", 0) + 1
     k, taille = _PC_MINI / PARC_MONDE, PARC_CH * PARC_REGION
     bio = _parc_biome(rx * PARC_REGION, ry * PARC_REGION)
     pygame.draw.rect(PARC["mini"], _PC_BIOME_COUL[bio], (int(rx * taille * k), int(ry * taille * k), int(taille * k) + 1, int(taille * k) + 1))
@@ -1441,12 +1442,14 @@ ARENE_PORTEE = 950.0               # portée d'un tir (px)
 ARENE_V_BALLE = 1050.0             # vitesse d'un tir (px par seconde : identique sur tous les téléphones)
 ARENE_CADENCE = 0.18               # secondes entre deux tirs
 ARENE_R_JOUEUR = 20                # rayon de touche d'un joueur
+ARENE_LOCK = 1200.0                # distance maximale du verrouillage automatique (bouton L)
 _AR_RBTN = 52                      # rayon des boutons L2 / R2
 ARENE = {"actif": False, "phase": "lobby", "debut": 0, "off": 0, "n0": 0, "hp": ARENE_PV, "mort": False, "rang": 0, "kills": 0,
          "balles": [], "balles_d": [], "t_tir": 0.0, "viser": False, "tir": False, "aim_actif": False, "aim_ang": 0.0,
          "aim_utilise": False, "aim_kx": 0.0, "aim_ky": 0.0, "id_aim": None, "id_viser": None, "id_tir": None, "lisse": {},
          "fx": [], "t_last": 0.0, "degat_t": -9.0, "cam_dx": 0.0, "cam_dy": 0.0, "dirx": 1.0, "diry": 0.0, "fin": "",
-         "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0)}
+         "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0),
+         "carte": False, "carte_rect": None, "k_m": False, "lock": None, "vel": {}, "carte_cache": None, "carte_ver": -1, "carte_taille": 0}
 
 
 def _arene_centre(seed):
@@ -1483,7 +1486,7 @@ def arene_demarrer():
                  t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0, aim_ky=0.0,
                  id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
                  cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={}, t_combat=0.0,
-                 centre=_arene_centre(seed))
+                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
     ARENE["voile"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["voile"].fill((0, 0, 0, 150))
     ARENE["rouge"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
@@ -1546,6 +1549,113 @@ def arene_evenement(event):
             A["id_aim"], A["aim_actif"], A["aim_kx"], A["aim_ky"] = None, False, 0.0, 0.0
 
 
+def _arene_cap(ang):
+    return ["E", "SE", "S", "SO", "O", "NO", "N", "NE"][int(round(ang / (math.pi / 4))) % 8]
+
+
+def _arene_verrouiller(cibles):
+    """Bouton L : verrouille le joueur le plus proche (et le garde tant qu'il reste à portée) ; retourne (identifiant, x, y) visés un peu devant lui."""
+    A = ARENE
+    x, y = PARC["x"], PARC["y"]
+    choisi = None
+    if A["lock"] is not None:
+        for u, px, py, o in cibles:
+            if u == A["lock"] and math.hypot(px - x, py - y) <= ARENE_LOCK * 1.25:
+                choisi = (u, px, py)
+                break
+    if choisi is None:
+        meilleur = None
+        for u, px, py, o in cibles:
+            d2 = (px - x) ** 2 + (py - y) ** 2
+            if d2 <= ARENE_LOCK ** 2 and (meilleur is None or d2 < meilleur[0]):
+                meilleur = (d2, u, px, py)
+        if meilleur is not None:
+            choisi = (meilleur[1], meilleur[2], meilleur[3])
+    A["lock"] = choisi[0] if choisi else None
+    if choisi is None:
+        return None
+    u, px, py = choisi
+    vx, vy = A["vel"].get(u, (0.0, 0.0))
+    t = min(0.8, math.hypot(px - x, py - y) / ARENE_V_BALLE)       # temps de vol du tir : on vise là où il sera
+    return u, px + vx * t, py + vy * t
+
+
+def _arene_carte_cache(t):
+    """Grande carte dessinée une seule fois (refaite seulement quand une nouvelle région est découverte)."""
+    A = ARENE
+    ver = PARC.get("mini_ver", 0)
+    if A["carte_cache"] is not None and A["carte_ver"] == ver and A["carte_taille"] == t:
+        return A["carte_cache"]
+    surf = pygame.Surface((t, t))
+    surf.fill((16, 30, 22))
+    k = t / PARC_MONDE
+    taille = PARC_CH * PARC_REGION
+    for rx, ry in PARC["vus"]:
+        bio = _parc_biome(rx * PARC_REGION, ry * PARC_REGION)
+        pygame.draw.rect(surf, _PC_BIOME_COUL[bio], (int(rx * taille * k), int(ry * taille * k), int(taille * k) + 1, int(taille * k) + 1))
+    for i in range(PARC_NAXES):                                          # allées
+        a = int((PARC_DEC + i * PARC_PAS) * k)
+        pygame.draw.line(surf, (150, 138, 110), (a, 0), (a, t), 1)
+        pygame.draw.line(surf, (150, 138, 110), (0, a), (t, a), 1)
+    for i in range(1, PARC_NAXES, 3):                                    # places avec fontaine
+        for j in range(1, PARC_NAXES, 3):
+            c = (int((PARC_DEC + i * PARC_PAS) * k), int((PARC_DEC + j * PARC_PAS) * k))
+            pygame.draw.circle(surf, _PC_SABLE, c, max(4, int(PARC_R_PLACE * k)))
+            pygame.draw.circle(surf, _PC_EAU, c, max(2, int(100 * k)))
+    cx, cy = A["centre"]                                                 # zone où les joueurs sont apparus
+    pygame.draw.circle(surf, (255, 210, 80), (int(cx * k), int(cy * k)), int(2600 * k), 2)
+    pygame.draw.rect(surf, (230, 240, 230), (0, 0, t, t), 3)
+    A["carte_cache"], A["carte_ver"], A["carte_taille"] = surf, ver, t
+    return surf
+
+
+def _arene_dessiner_carte(cibles, ang, vivants, nom_biome):
+    """Carte ouverte : position en temps réel de tous les adversaires en vie, ta direction, le plus proche, les régions..."""
+    A = ARENE
+    t = min(HAUTEUR - 80, int(LARGEUR * 0.55), 560)
+    x0, y0 = LARGEUR // 2 - t // 2, (HAUTEUR - t) // 2 + 10
+    ecran.blit(_arene_carte_cache(t), (x0, y0))
+    k = t / PARC_MONDE
+    mx, my = x0 + PARC["x"] * k, y0 + PARC["y"] * k
+    proche = None
+    for u, px, py, o in cibles:
+        ex, ey = x0 + px * k, y0 + py * k
+        col = _mp_couleur(u)
+        pygame.draw.circle(ecran, (0, 0, 0), (int(ex), int(ey)), 8)
+        pygame.draw.circle(ecran, col, (int(ex), int(ey)), 6)
+        nom = rendu_texte(police_petite, str(o.get("p", "?")), True, col)
+        ecran.blit(nom, (int(ex) - nom.get_width() // 2, int(ey) - 28))
+        d = math.hypot(px - PARC["x"], py - PARC["y"])
+        if proche is None or d < proche[0]:
+            proche = (d, ex, ey, str(o.get("p", "?")), math.atan2(py - PARC["y"], px - PARC["x"]))
+    if proche is not None:
+        pygame.draw.line(ecran, (255, 255, 255), (int(mx), int(my)), (int(proche[1]), int(proche[2])), 1)
+    pts = [(mx + math.cos(ang + da) * r_, my + math.sin(ang + da) * r_) for da, r_ in ((0.0, 12), (2.5, 8), (-2.5, 8))]
+    pygame.draw.polygon(ecran, (0, 0, 0), [(px_ + dx_, py_ + dy_) for px_, py_ in pts for dx_, dy_ in ((0, 0),)], 0)
+    pygame.draw.polygon(ecran, VERT_FLUO, pts, 0)
+    pygame.draw.polygon(ecran, (0, 0, 0), pts, 1)
+    # bandeaux d'informations
+    DRAW.rect(ecran, (8, 12, 18), (x0, y0, t, 24))
+    t1 = rendu_texte(police_petite, "CARTE   (toucher pour fermer)", True, BLANC_NEON)
+    ecran.blit(t1, (x0 + t // 2 - t1.get_width() // 2, y0 + 4))
+    DRAW.rect(ecran, (8, 12, 18), (x0, y0 + t - 74, t, 74))
+    if proche is not None:
+        txt = f"PLUS PROCHE : {proche[3]}  à {int(proche[0] / 40)} m ({_arene_cap(proche[4])})"
+    else:
+        txt = "AUCUN ADVERSAIRE EN VIE"
+    t2 = rendu_texte(police_petite, txt, True, JAUNE_CYBER)
+    ecran.blit(t2, (x0 + t // 2 - t2.get_width() // 2, y0 + t - 70))
+    t3 = rendu_texte(police_petite, f"EN VIE {vivants}   •   {nom_biome.upper()}   •   RÉGIONS {len(PARC['vus'])}/{(PARC_NC // PARC_REGION) ** 2}", True, BLANC_NEON)
+    ecran.blit(t3, (x0 + t // 2 - t3.get_width() // 2, y0 + t - 46))
+    lx = x0 + 10                                                       # légende des régions
+    for nom, coul in zip(_PC_BIOMES, _PC_BIOME_COUL):
+        DRAW.rect(ecran, coul, (lx, y0 + t - 20, 12, 12))
+        tn = rendu_texte(police_petite, nom, True, BLANC_NEON)
+        ecran.blit(tn, (lx + 16, y0 + t - 22))
+        lx += 16 + tn.get_width() + 14
+    return pygame.Rect(x0, y0, t, t)
+
+
 def _arene_echanger(j, ang):
     """Envoie notre état (position, tirs, vie), reçoit celui des autres joueurs et les coups qu'on nous a portés."""
     A = ARENE
@@ -1586,8 +1696,13 @@ def _arene_maj_autres(dt, maintenant):
         p = lisse.get(u)
         if p is None or abs(tx - p[0]) + abs(ty - p[1]) > 500:
             p = lisse[u] = [tx, ty]
+            A["vel"][u] = [0.0, 0.0]
+        ax_, ay_ = p[0], p[1]
         p[0] += (tx - p[0]) * k
         p[1] += (ty - p[1]) * k
+        v_ = A["vel"].setdefault(u, [0.0, 0.0])
+        v_[0] = v_[0] * 0.85 + (p[0] - ax_) / dt * 0.15
+        v_[1] = v_[1] * 0.85 + (p[1] - ay_) / dt * 0.15
         vivant = int(o.get("h", 100)) > 0
         if A["vivants_vu"].get(u, True) and not vivant and maintenant - A["hits"].get(u, -99.0) < 3.0:
             A["kills"] += 1                                  # il vient de mourir juste après un de nos tirs
@@ -1634,7 +1749,7 @@ def _arene_dessiner_commandes():
     kx, ky = int(aim[0] + A["aim_kx"]), int(aim[1] + A["aim_ky"])
     DRAW.circle(ecran, (170, 30, 40), (kx, ky), JOY_RAYON_MANETTE)
     DRAW.circle(ecran, (255, 120, 120), (kx, ky), max(2, JOY_RAYON_MANETTE - 4))
-    for pos, lab, col, actif in ((viser, "VISER", (0, 170, 255), A["viser"]), (tir, "TIR", ROUGE_ALERTE, A["tir"])):
+    for pos, lab, col, actif in ((viser, "AUTO" if A["lock"] is not None else "VISER", (0, 170, 255), A["viser"]), (tir, "TIR", ROUGE_ALERTE, A["tir"])):
         if actif:
             DRAW.circle(ecran, (col[0] // 2, col[1] // 2, col[2] // 2), pos, _AR_RBTN)
         DRAW.circle(ecran, col, pos, _AR_RBTN, 4)
@@ -1692,6 +1807,14 @@ def jouer_arene():
         except Exception as e:
             MP["dbg"] = repr(e)[:70]
     cibles = _arene_maj_autres(dt, t_now)
+    # ---------- bouton L : visée automatique sur le joueur le plus proche (sinon, visée manuelle au stick)
+    verrou = None
+    if A["viser"] and not A["mort"]:
+        verrou = _arene_verrouiller(cibles)
+        if verrou is not None:
+            ang = math.atan2(verrou[2] - PARC["y"], verrou[1] - PARC["x"])
+    else:
+        A["lock"] = None
     # ---------- coups reçus
     for c in coups:
         if A["phase"] == "combat" and not A["mort"] and not A["fin"]:
@@ -1751,8 +1874,11 @@ def jouer_arene():
         if A["fin"] == "victoire":
             A["rang"] = 1
     # ---------- caméra : un peu en avant quand on vise
-    cdx = math.cos(ang) * 280.0 if A["viser"] else 0.0
-    cdy = math.sin(ang) * 280.0 if A["viser"] else 0.0
+    decal = 280.0
+    if verrou is not None:
+        decal = min(280.0, math.hypot(verrou[1] - PARC["x"], verrou[2] - PARC["y"]) * 0.5)
+    cdx = math.cos(ang) * decal if A["viser"] else 0.0
+    cdy = math.sin(ang) * decal if A["viser"] else 0.0
     A["cam_dx"] += (cdx - A["cam_dx"]) * min(1.0, dt * 6.0)
     A["cam_dy"] += (cdy - A["cam_dy"]) * min(1.0, dt * 6.0)
     cam_x = int(min(max(PARC["x"] + A["cam_dx"] - LARGEUR // 2, 0), PARC_MONDE - LARGEUR))
@@ -1792,7 +1918,17 @@ def jouer_arene():
         if MP["pseudo"]:
             tag = rendu_texte(police_petite, MP["pseudo"], True, VERT_FLUO)
             ecran.blit(tag, (sx - tag.get_width() // 2, sy - 52))
-        if A["viser"]:                                       # ligne de visée (L2)
+        if verrou is not None:                               # cible verrouillée : viseur sur l'adversaire
+            for u_, px_, py_, o_ in cibles:
+                if u_ == verrou[0]:
+                    cx_, cy_ = int(px_ + ox), int(py_ + oy)
+                    DRAW.circle(ecran, (255, 60, 60), (cx_, cy_), 34, 3)
+                    DRAW.line(ecran, (255, 60, 60), (cx_ - 44, cy_), (cx_ - 22, cy_), 3)
+                    DRAW.line(ecran, (255, 60, 60), (cx_ + 22, cy_), (cx_ + 44, cy_), 3)
+                    DRAW.line(ecran, (255, 60, 60), (cx_, cy_ - 44), (cx_, cy_ - 22), 3)
+                    DRAW.line(ecran, (255, 60, 60), (cx_, cy_ + 22), (cx_, cy_ + 44), 3)
+                    DRAW.line(ecran, (255, 120, 120), (sx, sy), (cx_, cy_), 1)
+        elif A["viser"]:                                     # ligne de visée (L2, manuelle)
             lx, ly, d_ = PARC["x"], PARC["y"], 0
             while d_ < 620 and not parc_bloque(lx, ly, 2):
                 lx += math.cos(ang) * 20
@@ -1815,12 +1951,25 @@ def jouer_arene():
     A["fx"] = nouv
     if t_now - A["degat_t"] < 0.22 and A["rouge"] is not None:
         ecran.blit(A["rouge"], (0, 0))
-    # ---------- mini-carte (en haut au centre) et informations
+    # ---------- mini-carte (en haut au centre) : on la touche pour l'agrandir et voir où sont les autres joueurs
     mx0 = LARGEUR // 2 - _PC_MINI // 2
-    if PARC["mini"] is not None:
+    touche_m = pygame.key.get_pressed()[pygame.K_m]
+    if touche_m and not A["k_m"]:
+        A["carte"] = not A["carte"]
+    A["k_m"] = bool(touche_m)
+    if A["fin"] or A["mort"]:
+        A["carte"] = False
+    if clic_detecte:
+        if not A["carte"] and pygame.Rect(mx0, 12, _PC_MINI, _PC_MINI).collidepoint(clic_x, clic_y):
+            A["carte"] = True
+        elif A["carte"] and A["carte_rect"].collidepoint(clic_x, clic_y):
+            A["carte"] = False
+    if PARC["mini"] is not None and not A["carte"]:
         ecran.blit(PARC["mini"], (mx0, 12))
         k = _PC_MINI / PARC_MONDE
         pygame.draw.circle(ecran, ROUGE_ALERTE, (mx0 + int(PARC["x"] * k), 12 + int(PARC["y"] * k)), 4)
+        t_c = rendu_texte(police_petite, "CARTE", True, BLANC_NEON)
+        ecran.blit(t_c, (mx0 + _PC_MINI // 2 - t_c.get_width() // 2, 12 + _PC_MINI - 22))
     hp = max(0, A["hp"])
     DRAW.rect(ecran, (40, 10, 14), (24, 24, 230, 22))
     DRAW.rect(ecran, (60, 220, 90) if hp > 40 else ROUGE_ALERTE, (24, 24, int(230 * hp / ARENE_PV), 22))
@@ -1841,6 +1990,8 @@ def jouer_arene():
     elif t_now - A["t_combat"] < 2.0:
         t = rendu_texte(police_titre, "COMBAT !" if A["n0"] >= 2 else "ENTRAÎNEMENT", True, ROUGE_ALERTE)
         ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.30)))
+    if A["carte"]:
+        A["carte_rect"] = _arene_dessiner_carte(cibles, ang, vivants, _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))])
     if not _in_masquer_tactile():
         ecran.blit(SURF_SOCLE_JOY, (JOY_CENTRE_X - JOY_RAYON_SOCLE - 6, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 6))
         DRAW.circle(ecran, VERT_FLUO, (JOY_CENTRE_X, JOY_CENTRE_Y), JOY_RAYON_SOCLE, 4)
