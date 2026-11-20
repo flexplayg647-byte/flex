@@ -542,9 +542,9 @@ _JS_MULTI = r"""
 if(window.flexMP){return;}
 var DBURL="https://flex-cyberpunk-c49e8-default-rtdb.firebaseio.com";
 var V="10.14.1";
-var MAXJ=6, NSALLES=30;
-var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0,en:"",enHas:false,enVer:0,rest:0};
-var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="",skin="",pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9,lastF=-1,lastFA=0,enRef=null,killsRef=null,pendEn=false,pendEnT=0,isHost=false,kills=[];
+var MAXJ=6, NSALLES=30, LOBBY=25000;
+var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0,en:"",enHas:false,enVer:0,rest:0,startAt:0,offset:0};
+var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="",skin="",pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9,lastF=-1,lastFA=0,lastH=-1,hitsRef=null,hitsIn=[],enRef=null,killsRef=null,pendEn=false,pendEnT=0,isHost=false,kills=[];
 function charger(cb){
   if(window.firebase&&firebase.database){cb();return;}
   var s=document.createElement("script");
@@ -557,7 +557,7 @@ function ecouter(){
   listRef=db.ref("rooms/"+M.room+"/players");
   listRef.on("value",function(s){
     var a=[];
-    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0,f:v.f|0,fa:+v.fa||0});});
+    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0,f:v.f|0,fa:+v.fa||0,h:(v.h===undefined?100:+v.h)});});
     M.json=JSON.stringify(a);M.n=a.length;M.ver++;
   });
 }
@@ -576,11 +576,13 @@ M.join=function(level){
         if(i>NSALLES){M.status="err";M.err="pleines";return;}
         var rid="salle"+i;
         db.ref("rooms/"+rid).transaction(function(cur){
-          var me={p:pseudo,s:skin,x:0,y:0,a:0,f:0,fa:0};
+          var me={p:pseudo,s:skin,x:0,y:0,a:0,f:0,fa:0,h:100};
+          var now=Date.now()+M.offset;
           if(cur===null||typeof cur!=="object"||!cur.players){
             var pl={};pl[uid]=me;
-            return {seed:Math.floor(Math.random()*2000000000),level:level,players:pl};
+            return {seed:Math.floor(Math.random()*2000000000),level:level,startAt:now+LOBBY,players:pl};
           }
+          if(cur.startAt&&now>=cur.startAt&&!cur.players[uid]){return;}
           var n=Object.keys(cur.players).length;
           if(!cur.players[uid]&&n>=MAXJ){return;}
           cur.players[uid]=me;
@@ -589,9 +591,11 @@ M.join=function(level){
           if(err){M.status="err";M.err="reseau";return;}
           if(!committed){essayer();return;}
           var v=snap.val()||{};
-          M.room=rid;M.seed=v.seed|0;M.level=v.level|0;
+          M.room=rid;M.seed=v.seed|0;M.level=v.level|0;M.startAt=+v.startAt||0;
           myRef=db.ref("rooms/"+rid+"/players/"+uid);
           myRef.onDisconnect().remove();
+          hitsRef=db.ref("rooms/"+rid+"/hits/"+uid);
+          hitsRef.on("child_added",function(s){var v=s.val()||{};hitsIn.push({f:String(v.f||""),d:+v.d||0});try{s.ref.remove();}catch(e){}});
           ecouter();
           enRef=db.ref("rooms/"+rid+"/en");
           enRef.on("value",function(s){var v=s.val()||{};M.enHas=s.exists();M.en=String(v.d||"");M.rest=v.r|0;M.enVer++;});
@@ -602,7 +606,7 @@ M.join=function(level){
           M.status="ok";
         },false);
       };
-      essayer();
+      db.ref(".info/serverTimeOffset").once("value",function(o){M.offset=+o.val()||0;essayer();},function(){essayer();});
     }catch(e){M.status="err";M.err=String(e).slice(0,60);}
   });
 };
@@ -611,20 +615,27 @@ M.leave=function(){
   try{if(connRef){connRef.off();connRef=null;}}catch(e){}
   try{if(enRef){enRef.off();enRef=null;}}catch(e){}
   try{if(killsRef){killsRef.off();killsRef=null;}}catch(e){}
+  try{if(hitsRef){hitsRef.off();hitsRef=null;}}catch(e){}
+  hitsIn=[];lastH=-1;M.startAt=0;
   isHost=false;kills=[];M.en="";M.enHas=false;M.rest=0;pendEn=false;lastF=-1;
   try{if(myRef){myRef.onDisconnect().cancel();myRef.remove();myRef=null;}}catch(e){}
   M.status="idle";M.err="";M.room="";M.json="[]";M.n=0;M.ver++;M.rtt=0;pending=false;lastX=-1e9;lastY=-1e9;lastA=-1e9;
 };
-M.send=function(x,y,a,f,fa){
+M.hit=function(u,d){
+  if(M.status!=="ok"||!db||!M.room){return;}
+  try{db.ref("rooms/"+M.room+"/hits/"+u).push({f:uid,d:d|0});}catch(e){}
+};
+M.takeHits=function(){var a=hitsIn;hitsIn=[];return JSON.stringify(a);};
+M.send=function(x,y,a,f,fa,h){
   if(M.status!=="ok"||!myRef){return;}
   var t=Date.now();
   if(pending&&t-pendT<3000){return;}
   if(t-lastSend<80){return;}
-  x=Math.round(x);y=Math.round(y);a=Math.round(a*10)/10;f=f|0;fa=Math.round(fa*10)/10;
-  if(x===lastX&&y===lastY&&a===lastA&&f===lastF){return;}
-  lastSend=t;lastX=x;lastY=y;lastA=a;lastF=f;lastFA=fa;pending=true;pendT=t;
+  x=Math.round(x);y=Math.round(y);a=Math.round(a*10)/10;f=f|0;fa=Math.round(fa*10)/10;h=(h===undefined)?100:(h|0);
+  if(x===lastX&&y===lastY&&a===lastA&&f===lastF&&h===lastH){return;}
+  lastSend=t;lastX=x;lastY=y;lastA=a;lastF=f;lastFA=fa;lastH=h;pending=true;pendT=t;
   try{
-    myRef.update({x:x,y:y,a:a,f:f,fa:fa}).then(function(){pending=false;M.rtt=Date.now()-t;}).catch(function(){pending=false;});
+    myRef.update({x:x,y:y,a:a,f:f,fa:fa,h:h}).then(function(){pending=false;M.rtt=Date.now()-t;}).catch(function(){pending=false;});
   }catch(e){pending=false;}
 };
 M.setHost=function(h){
@@ -718,7 +729,7 @@ def _mp_tick():
             except Exception:
                 MP["seed"], MP["salle"] = 1, ""
             MP["actif"], MP["etat"] = True, "jeu"
-            lancer_transition(("niveau", MP["niveau"]))
+            lancer_transition(("arene",))
         elif st == "err":
             try:
                 code = str(j.err)
@@ -1336,9 +1347,11 @@ def _parc_decouvrir(x, y):
     _parc_mini_axes()
 
 
-def parc_demarrer():
-    PARC.update(actif=True, seed=random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0, vus=set())
+def parc_demarrer(seed=None, spawn_fn=None):
+    PARC.update(actif=True, seed=seed or random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0, vus=set())
     PARC["x"], PARC["y"] = float(PARC_DEC + 4 * PARC_PAS), float(PARC_DEC + 4 * PARC_PAS + 450)   # sous la place du milieu
+    if spawn_fn is not None:
+        PARC["x"], PARC["y"] = spawn_fn()
     cam_x, cam_y = PARC["x"] - LARGEUR // 2, PARC["y"] - HAUTEUR // 2
     for _ in range(4):                                       # quelques zones tout de suite (l'écran de chargement masque le délai)
         _parc_gerer(cam_x, cam_y)
@@ -1355,6 +1368,9 @@ def parc_liberer():
 def jouer_parc():
     """Boucle du parc (test solo) : déplacement, collisions, zones créées au fil du déplacement, affichage."""
     if not PARC["actif"]:
+        return
+    if ARENE["actif"]:
+        jouer_arene()
         return
     if (clic_detecte and rect_bouton_pause.collidepoint(clic_x, clic_y)) or pygame.key.get_pressed()[pygame.K_ESCAPE]:
         parc_liberer()
@@ -1416,6 +1432,438 @@ def jouer_parc():
     bio = _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))]
     info = rendu_texte(police_petite, f"{bio.upper()}  •  {int(clock.get_fps())} FPS  •  {len(PARC['surf'])} zones  •  {PARC['ms_gen']:.0f} ms", True, BLANC_NEON)
     ecran.blit(info, (LARGEUR // 2 - info.get_width() // 2, HAUTEUR - 36))
+
+
+# ==================== ARÈNE EN LIGNE : combat entre joueurs dans le Parc (visée manuelle L2 / R2) ====================
+ARENE_PV = 100                     # points de vie
+ARENE_DEGATS = 12                  # dégâts d'un tir qui touche
+ARENE_PORTEE = 950.0               # portée d'un tir (px)
+ARENE_V_BALLE = 1050.0             # vitesse d'un tir (px par seconde : identique sur tous les téléphones)
+ARENE_CADENCE = 0.18               # secondes entre deux tirs
+ARENE_R_JOUEUR = 20                # rayon de touche d'un joueur
+_AR_RBTN = 52                      # rayon des boutons L2 / R2
+ARENE = {"actif": False, "phase": "lobby", "debut": 0, "off": 0, "n0": 0, "hp": ARENE_PV, "mort": False, "rang": 0, "kills": 0,
+         "balles": [], "balles_d": [], "t_tir": 0.0, "viser": False, "tir": False, "aim_actif": False, "aim_ang": 0.0,
+         "aim_utilise": False, "aim_kx": 0.0, "aim_ky": 0.0, "id_aim": None, "id_viser": None, "id_tir": None, "lisse": {},
+         "fx": [], "t_last": 0.0, "degat_t": -9.0, "cam_dx": 0.0, "cam_dy": 0.0, "dirx": 1.0, "diry": 0.0, "fin": "",
+         "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0)}
+
+
+def _arene_centre(seed):
+    r = random.Random(int(seed) * 31 + 7)
+    return r.randint(5, 42) * PARC_CH + PARC_CH // 2, r.randint(5, 42) * PARC_CH + PARC_CH // 2
+
+
+def _arene_spawn(seed, uid):
+    """Point de départ d'un joueur : calculé à partir de son identifiant, donc sans aucune coordination entre téléphones."""
+    cx, cy = _arene_centre(seed)
+    r = random.Random(f"{seed}:{uid}")
+    ang, rayon = r.random() * 6.2832, r.randint(1500, 2500)
+    for _ in range(80):
+        x, y = cx + math.cos(ang) * rayon, cy + math.sin(ang) * rayon
+        if not parc_bloque(x, y, 26):
+            return float(x), float(y)
+        ang += 0.41
+        rayon += 25
+    return float(cx), float(cy)
+
+
+def arene_demarrer():
+    j = _mp_js()
+    try:
+        debut, off = int(j.startAt), int(j.offset)
+    except Exception:
+        debut, off = 0, 0
+    maintenant = int(_time.time() * 1000) + off
+    if debut <= 0:
+        debut = maintenant + 8000
+    seed = MP["seed"] or 1
+    parc_demarrer(seed=seed, spawn_fn=lambda: _arene_spawn(seed, MP["uid"]))
+    ARENE.update(actif=True, phase="lobby", debut=debut, off=off, n0=0, hp=ARENE_PV, mort=False, rang=0, kills=0, balles=[], balles_d=[],
+                 t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0, aim_ky=0.0,
+                 id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
+                 cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={}, t_combat=0.0,
+                 centre=_arene_centre(seed))
+    ARENE["voile"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
+    ARENE["voile"].fill((0, 0, 0, 150))
+    ARENE["rouge"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
+    ARENE["rouge"].fill((255, 0, 0, 60))
+    MP.update(f=0, fa=0.0, ver=-1, autres=[], n=1, rtt=0, tick=0)
+
+
+def _arene_quitter():
+    ARENE.update(actif=False, id_aim=None, id_viser=None, id_tir=None, voile=None, rouge=None)
+    mp_quitter()
+    parc_liberer()
+    lancer_transition(("etat", ETAT_MENU))
+
+
+def _arene_geo():
+    """Position des commandes tactiles : stick de visée (droite), L2 VISER au-dessus du stick gauche, R2 TIR au-dessus du stick droit."""
+    aim = (LARGEUR - 230, HAUTEUR - 190)
+    viser = (JOY_CENTRE_X + 10, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 105)
+    tir = (aim[0] + 20, aim[1] - JOY_RAYON_SOCLE - 105)
+    return aim, viser, tir
+
+
+def _arene_placer_aim(x, y):
+    A = ARENE
+    aim = _arene_geo()[0]
+    vx, vy = x - aim[0], y - aim[1]
+    dist = math.hypot(vx, vy)
+    if dist > JOY_RAYON_SOCLE:
+        vx, vy = vx / dist * JOY_RAYON_SOCLE, vy / dist * JOY_RAYON_SOCLE
+    A["aim_kx"], A["aim_ky"] = vx, vy
+    if dist > 12:
+        A["aim_ang"], A["aim_utilise"] = math.atan2(vy, vx), True
+
+
+def arene_evenement(event):
+    """Multi-toucher : stick de visée, L2 (viser) et R2 (tirer). Le stick gauche garde son code habituel."""
+    A = ARENE
+    if event.type not in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+        return
+    x, y = event.x * LARGEUR, event.y * HAUTEUR
+    fid = event.finger_id
+    aim, viser, tir = _arene_geo()
+    if event.type == pygame.FINGERDOWN:
+        if A["id_tir"] is None and math.hypot(x - tir[0], y - tir[1]) <= _AR_RBTN + 28:
+            A["id_tir"], A["tir"] = fid, True
+        elif A["id_viser"] is None and math.hypot(x - viser[0], y - viser[1]) <= _AR_RBTN + 28:
+            A["id_viser"], A["viser"] = fid, True
+        elif A["id_aim"] is None and math.hypot(x - aim[0], y - aim[1]) <= JOY_RAYON_SOCLE + 45:
+            A["id_aim"], A["aim_actif"] = fid, True
+            _arene_placer_aim(x, y)
+    elif event.type == pygame.FINGERMOTION:
+        if fid == A["id_aim"]:
+            _arene_placer_aim(x, y)
+    else:
+        if fid == A["id_tir"]:
+            A["id_tir"], A["tir"] = None, False
+        if fid == A["id_viser"]:
+            A["id_viser"], A["viser"] = None, False
+        if fid == A["id_aim"]:
+            A["id_aim"], A["aim_actif"], A["aim_kx"], A["aim_ky"] = None, False, 0.0, 0.0
+
+
+def _arene_echanger(j, ang):
+    """Envoie notre état (position, tirs, vie), reçoit celui des autres joueurs et les coups qu'on nous a portés."""
+    A = ARENE
+    j.send(float(PARC["x"]), float(PARC["y"]), float(ang), int(MP["f"]), float(MP["fa"]), int(max(0, A["hp"])))
+    v = int(j.ver)
+    if v != MP["ver"]:
+        MP["ver"] = v
+        tous = json.loads(str(j.json))
+        MP["n"] = len(tous)
+        MP["autres"] = [o for o in tous if o.get("u") != MP["uid"]]
+        for o in MP["autres"]:                               # tirs des autres joueurs (affichage seulement)
+            u, f = o.get("u"), int(o.get("f", 0))
+            vu = A["f_vu"].get(u)
+            A["f_vu"][u] = f
+            if vu is not None and f > vu and int(o.get("h", 100)) > 0:
+                a = float(o.get("fa", 0))
+                for q in range(min(f - vu, 3)):
+                    A["balles_d"].append([float(o.get("x", 0)) + math.cos(a) * (26 - 40 * q), float(o.get("y", 0)) + math.sin(a) * (26 - 40 * q),
+                                          math.cos(a) * ARENE_V_BALLE, math.sin(a) * ARENE_V_BALLE, ARENE_PORTEE / ARENE_V_BALLE, _mp_couleur(u)])
+                if len(A["balles_d"]) > 60:
+                    del A["balles_d"][:20]
+    MP["tick"] += 1
+    if MP["tick"] % 30 == 0:
+        MP["rtt"] = int(j.rtt)
+    return json.loads(str(j.takeHits()))
+
+
+def _arene_maj_autres(dt, maintenant):
+    """Lisse la position des autres joueurs et retourne ceux qui sont encore en vie."""
+    A = ARENE
+    lisse = A["lisse"]
+    k = 1.0 - math.exp(-dt * 10.0)
+    vus, cibles = set(), []
+    for o in MP["autres"]:
+        u = str(o.get("u", ""))
+        vus.add(u)
+        tx, ty = float(o.get("x", 0)), float(o.get("y", 0))
+        p = lisse.get(u)
+        if p is None or abs(tx - p[0]) + abs(ty - p[1]) > 500:
+            p = lisse[u] = [tx, ty]
+        p[0] += (tx - p[0]) * k
+        p[1] += (ty - p[1]) * k
+        vivant = int(o.get("h", 100)) > 0
+        if A["vivants_vu"].get(u, True) and not vivant and maintenant - A["hits"].get(u, -99.0) < 3.0:
+            A["kills"] += 1                                  # il vient de mourir juste après un de nos tirs
+        A["vivants_vu"][u] = vivant
+        if vivant:
+            cibles.append((u, p[0], p[1], o))
+    for u in list(lisse):
+        if u not in vus:
+            del lisse[u]
+    return cibles
+
+
+def _arene_vivants():
+    return (0 if ARENE["mort"] else 1) + sum(1 for o in MP["autres"] if int(o.get("h", 100)) > 0)
+
+
+def _arene_dessiner_joueurs(cibles, ox, oy):
+    for u, px, py, o in cibles:
+        sx, sy = int(px + ox), int(py + oy)
+        if sx < -80 or sx > LARGEUR + 80 or sy < -90 or sy > HAUTEUR + 80:
+            continue
+        col = _mp_couleur(u)
+        a = float(o.get("a", 0))
+        dessiner_halo(sx, sy, 46, col, 0.45)
+        pygame.draw.ellipse(ecran, (30, 70, 36), (sx - 18, sy + 8, 36, 14))
+        if MODE_GRAPHIQUE == "REALISTE":
+            spr = _mp_sprites(str(o.get("s", "")))
+            img = spr[0] if math.cos(a) >= 0 else spr[1]
+            ecran.blit(img, (sx - img.get_width() // 2, sy - img.get_height() // 2))
+        else:
+            DRAW.rect(ecran, col, (sx - TAILLE_PERSO // 2, sy - TAILLE_PERSO // 2, TAILLE_PERSO, TAILLE_PERSO))
+        tag = rendu_texte(police_petite, str(o.get("p", "?")), True, col)
+        ecran.blit(tag, (sx - tag.get_width() // 2, sy - 64))
+        h = max(0, min(100, int(o.get("h", 100))))
+        DRAW.rect(ecran, (40, 10, 14), (sx - 24, sy - 46, 48, 6))
+        DRAW.rect(ecran, (60, 220, 90) if h > 40 else ROUGE_ALERTE, (sx - 24, sy - 46, int(48 * h / 100), 6))
+
+
+def _arene_dessiner_commandes():
+    A = ARENE
+    aim, viser, tir = _arene_geo()
+    ecran.blit(SURF_SOCLE_JOY, (aim[0] - JOY_RAYON_SOCLE - 6, aim[1] - JOY_RAYON_SOCLE - 6))
+    DRAW.circle(ecran, ROUGE_ALERTE, aim, JOY_RAYON_SOCLE, 4)
+    kx, ky = int(aim[0] + A["aim_kx"]), int(aim[1] + A["aim_ky"])
+    DRAW.circle(ecran, (170, 30, 40), (kx, ky), JOY_RAYON_MANETTE)
+    DRAW.circle(ecran, (255, 120, 120), (kx, ky), max(2, JOY_RAYON_MANETTE - 4))
+    for pos, lab, col, actif in ((viser, "VISER", (0, 170, 255), A["viser"]), (tir, "TIR", ROUGE_ALERTE, A["tir"])):
+        if actif:
+            DRAW.circle(ecran, (col[0] // 2, col[1] // 2, col[2] // 2), pos, _AR_RBTN)
+        DRAW.circle(ecran, col, pos, _AR_RBTN, 4)
+        t = rendu_texte(police_petite, lab, True, BLANC_NEON)
+        ecran.blit(t, (pos[0] - t.get_width() // 2, pos[1] - t.get_height() // 2))
+
+
+def jouer_arene():
+    """Boucle de l'arène : départ commun, déplacement, visée manuelle, tirs, coups reçus, élimination, victoire."""
+    A = ARENE
+    t_now = _time.perf_counter()
+    dt = min(0.05, max(0.001, t_now - A["t_last"]))
+    A["t_last"] = t_now
+    if (clic_detecte and rect_bouton_pause.collidepoint(clic_x, clic_y)) or pygame.key.get_pressed()[pygame.K_ESCAPE]:
+        _arene_quitter()
+        return
+    if (A["fin"] or A["mort"]) and clic_detecte and rect_bouton_quitter_defaite.collidepoint(clic_x, clic_y):
+        _arene_quitter()
+        return
+    j = _mp_js()
+    now_srv = int(_time.time() * 1000) + A["off"]
+    if A["phase"] == "lobby" and now_srv >= A["debut"]:
+        A["phase"], A["n0"], A["t_combat"] = "combat", max(1, MP["n"]), t_now
+    # ---------- déplacement (vitesse indépendante du nombre d'images par seconde : même vitesse pour tous)
+    dx = dy = 0.0
+    vit = joueur_vitesse * dt * 60.0 * (0.6 if A["viser"] else 1.0)
+    if joystick_actif:
+        vx, vy = manette_x - JOY_CENTRE_X, manette_y - JOY_CENTRE_Y
+        dist = math.hypot(vx, vy)
+        if dist > CTRL["dz"]:
+            dx, dy = vx / dist * vit, vy / dist * vit
+    im = _in_deplacement()
+    if im is not None:
+        dx, dy = im[0] * vit, im[1] * vit
+    if A["mort"]:
+        dx = dy = 0.0
+    if dx or dy:
+        A["dirx"], A["diry"] = dx / (math.hypot(dx, dy) or 1.0), dy / (math.hypot(dx, dy) or 1.0)
+    if dx != 0 and not parc_bloque(PARC["x"] + dx, PARC["y"]):
+        PARC["x"] += dx
+    if dy != 0 and not parc_bloque(PARC["x"], PARC["y"] + dy):
+        PARC["y"] += dy
+    # ---------- visée : stick de droite (ou manette), sinon la direction du déplacement
+    if IN["src"] in ("pad", "key"):
+        vis = _in_visee()
+        if vis is not None:
+            A["aim_ang"], A["aim_utilise"] = math.atan2(vis[1], vis[0]), True
+    ang = A["aim_ang"] if A["aim_utilise"] else math.atan2(A["diry"], A["dirx"])
+    PARC["face"] = 1 if math.cos(ang) >= 0 else 0
+    # ---------- réseau
+    coups = []
+    if j is not None:
+        try:
+            coups = _arene_echanger(j, ang)
+        except Exception as e:
+            MP["dbg"] = repr(e)[:70]
+    cibles = _arene_maj_autres(dt, t_now)
+    # ---------- coups reçus
+    for c in coups:
+        if A["phase"] == "combat" and not A["mort"] and not A["fin"]:
+            A["hp"] -= min(20, max(0, int(c.get("d", 0))))
+            A["degat_t"] = t_now
+            if A["hp"] <= 0:
+                A["hp"], A["mort"], A["rang"] = 0, True, max(1, _arene_vivants())      # place = joueurs encore en vie, moi compris
+    # ---------- tirs
+    A["t_tir"] -= dt
+    veut = A["tir"] or (IN["src"] in ("pad", "key") and _in_tir())
+    if veut and A["phase"] == "combat" and not A["mort"] and not A["fin"] and A["t_tir"] <= 0:
+        A["t_tir"] = ARENE_CADENCE
+        a = ang + random.uniform(-0.012, 0.012) if A["viser"] else ang + random.uniform(-0.07, 0.07)
+        A["balles"].append([PARC["x"] + math.cos(a) * 26, PARC["y"] + math.sin(a) * 26, math.cos(a) * ARENE_V_BALLE, math.sin(a) * ARENE_V_BALLE,
+                            ARENE_PORTEE / ARENE_V_BALLE])
+        MP["f"] += 1
+        MP["fa"] = a
+        try:
+            if SON_ACTIF:
+                son_tir.play()
+        except Exception:
+            pass
+    restantes = []
+    for b in A["balles"]:
+        b[4] -= dt
+        if b[4] <= 0:
+            continue
+        n = int(ARENE_V_BALLE * dt / 14.0) + 1                # petits pas : un tir ne traverse ni obstacle ni joueur
+        sx_, sy_ = b[2] * dt / n, b[3] * dt / n
+        fini = False
+        for _ in range(n):
+            b[0] += sx_
+            b[1] += sy_
+            if parc_bloque(b[0], b[1], 2):
+                A["fx"].append([b[0], b[1], t_now, (255, 220, 120)])
+                fini = True
+                break
+            for u, px, py, o in cibles:
+                if (b[0] - px) ** 2 + (b[1] - py) ** 2 < (ARENE_R_JOUEUR + 4) ** 2:
+                    A["hits"][u] = t_now
+                    A["fx"].append([b[0], b[1], t_now, ROUGE_ALERTE])
+                    try:
+                        j.hit(u, ARENE_DEGATS)
+                    except Exception:
+                        pass
+                    fini = True
+                    break
+            if fini:
+                break
+        if not fini:
+            restantes.append(b)
+    A["balles"] = restantes
+    # ---------- fin de partie
+    vivants = _arene_vivants()
+    if A["phase"] == "combat" and A["n0"] >= 2 and vivants <= 1 and not A["fin"]:
+        A["fin"] = "defaite" if A["mort"] else "victoire"
+        if A["fin"] == "victoire":
+            A["rang"] = 1
+    # ---------- caméra : un peu en avant quand on vise
+    cdx = math.cos(ang) * 280.0 if A["viser"] else 0.0
+    cdy = math.sin(ang) * 280.0 if A["viser"] else 0.0
+    A["cam_dx"] += (cdx - A["cam_dx"]) * min(1.0, dt * 6.0)
+    A["cam_dy"] += (cdy - A["cam_dy"]) * min(1.0, dt * 6.0)
+    cam_x = int(min(max(PARC["x"] + A["cam_dx"] - LARGEUR // 2, 0), PARC_MONDE - LARGEUR))
+    cam_y = int(min(max(PARC["y"] + A["cam_dy"] - HAUTEUR // 2, 0), PARC_MONDE - HAUTEUR))
+    _parc_gerer(cam_x, cam_y)
+    _parc_decouvrir(PARC["x"], PARC["y"])
+    # ---------- affichage
+    for cx in range(max(0, cam_x // PARC_CH), min(PARC_NC - 1, (cam_x + LARGEUR) // PARC_CH) + 1):
+        for cy in range(max(0, cam_y // PARC_CH), min(PARC_NC - 1, (cam_y + HAUTEUR) // PARC_CH) + 1):
+            surf = PARC["surf"].get((cx, cy))
+            px, py = cx * PARC_CH - cam_x, cy * PARC_CH - cam_y
+            if surf is not None:
+                ecran.blit(surf, (px, py))
+            else:
+                ecran.fill(_PC_HERBE, (px, py, PARC_CH, PARC_CH))
+    ox, oy = -cam_x, -cam_y
+    restantes = []                                           # tirs des autres joueurs
+    for b in A["balles_d"]:
+        b[0] += b[2] * dt
+        b[1] += b[3] * dt
+        b[4] -= dt
+        if b[4] <= 0 or parc_bloque(b[0], b[1], 2):
+            continue
+        restantes.append(b)
+        bx, by = int(b[0] + ox), int(b[1] + oy)
+        DRAW.line(ecran, b[5], (bx, by), (int(bx - b[2] * 0.03), int(by - b[3] * 0.03)), 4)
+    A["balles_d"] = restantes
+    _arene_dessiner_joueurs(cibles, ox, oy)
+    sx, sy = int(PARC["x"] + ox), int(PARC["y"] + oy)
+    if not A["mort"]:
+        pygame.draw.ellipse(ecran, (30, 70, 36), (sx - 18, sy + 8, 36, 14))
+        if MODE_GRAPHIQUE == "REALISTE":
+            img = img_joueur_droite if PARC["face"] else img_joueur_gauche
+            ecran.blit(img, (sx - img.get_width() // 2, sy - img.get_height() // 2))
+        else:
+            pygame.draw.rect(ecran, VERT_FLUO, (sx - 16, sy - 16, 32, 32))
+        if MP["pseudo"]:
+            tag = rendu_texte(police_petite, MP["pseudo"], True, VERT_FLUO)
+            ecran.blit(tag, (sx - tag.get_width() // 2, sy - 52))
+        if A["viser"]:                                       # ligne de visée (L2)
+            lx, ly, d_ = PARC["x"], PARC["y"], 0
+            while d_ < 620 and not parc_bloque(lx, ly, 2):
+                lx += math.cos(ang) * 20
+                ly += math.sin(ang) * 20
+                d_ += 20
+            DRAW.line(ecran, (255, 70, 70), (sx, sy), (int(lx + ox), int(ly + oy)), 2)
+            DRAW.circle(ecran, (255, 70, 70), (int(lx + ox), int(ly + oy)), 5)
+        elif A["aim_actif"] or A["aim_utilise"]:
+            DRAW.line(ecran, (255, 255, 255), (int(sx + math.cos(ang) * 34), int(sy + math.sin(ang) * 34)),
+                      (int(sx + math.cos(ang) * 70), int(sy + math.sin(ang) * 70)), 2)
+    for b in A["balles"]:                                    # nos tirs
+        bx, by = int(b[0] + ox), int(b[1] + oy)
+        DRAW.line(ecran, (255, 230, 120), (bx, by), (int(bx - b[2] * 0.03), int(by - b[3] * 0.03)), 4)
+    nouv = []
+    for f in A["fx"]:
+        age = t_now - f[2]
+        if age < 0.25:
+            DRAW.circle(ecran, f[3], (int(f[0] + ox), int(f[1] + oy)), int(5 + 70 * age), 2)
+            nouv.append(f)
+    A["fx"] = nouv
+    if t_now - A["degat_t"] < 0.22 and A["rouge"] is not None:
+        ecran.blit(A["rouge"], (0, 0))
+    # ---------- mini-carte (en haut au centre) et informations
+    mx0 = LARGEUR // 2 - _PC_MINI // 2
+    if PARC["mini"] is not None:
+        ecran.blit(PARC["mini"], (mx0, 12))
+        k = _PC_MINI / PARC_MONDE
+        pygame.draw.circle(ecran, ROUGE_ALERTE, (mx0 + int(PARC["x"] * k), 12 + int(PARC["y"] * k)), 4)
+    hp = max(0, A["hp"])
+    DRAW.rect(ecran, (40, 10, 14), (24, 24, 230, 22))
+    DRAW.rect(ecran, (60, 220, 90) if hp > 40 else ROUGE_ALERTE, (24, 24, int(230 * hp / ARENE_PV), 22))
+    DRAW.rect(ecran, BLANC_NEON, (24, 24, 230, 22), 2)
+    t_pv = rendu_texte(police_petite, f"PV {hp}", True, BLANC_NEON)
+    ecran.blit(t_pv, (32, 26))
+    if A["phase"] == "combat":
+        t_info = rendu_texte(police_petite, f"EN VIE {vivants}/{max(A['n0'], vivants)}   ÉLIMINATIONS {A['kills']}", True, BLANC_NEON)
+    else:
+        t_info = rendu_texte(police_petite, f"JOUEURS {max(1, MP['n'])}/{MP_MAX}", True, BLANC_NEON)
+    ecran.blit(t_info, (24, 54))
+    if A["phase"] == "lobby":
+        reste = max(0, int(math.ceil((A["debut"] - now_srv) / 1000.0)))
+        t = rendu_texte(police_titre, f"DÉPART DANS {reste}", True, JAUNE_CYBER)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.30)))
+        t = rendu_texte(police_petite, "Cherche un endroit pour te placer : les tirs commencent au départ", True, BLANC_NEON)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.30) + 74))
+    elif t_now - A["t_combat"] < 2.0:
+        t = rendu_texte(police_titre, "COMBAT !" if A["n0"] >= 2 else "ENTRAÎNEMENT", True, ROUGE_ALERTE)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.30)))
+    if not _in_masquer_tactile():
+        ecran.blit(SURF_SOCLE_JOY, (JOY_CENTRE_X - JOY_RAYON_SOCLE - 6, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 6))
+        DRAW.circle(ecran, VERT_FLUO, (JOY_CENTRE_X, JOY_CENTRE_Y), JOY_RAYON_SOCLE, 4)
+        DRAW.circle(ecran, (0, 120, 190), (int(manette_x), int(manette_y)), JOY_RAYON_MANETTE)
+        DRAW.circle(ecran, CYAN_NEON, (int(manette_x), int(manette_y)), max(2, JOY_RAYON_MANETTE - 4))
+        _arene_dessiner_commandes()
+    bouton_neon(rect_bouton_pause, ROUGE_ALERTE, "X", police_bouton)
+    rtt = MP["rtt"]
+    if rtt > 0:
+        col_i = VERT_FLUO if rtt < 200 else (JAUNE_CYBER if rtt < 500 else ROUGE_ALERTE)
+        t = rendu_texte(police_petite, f"{rtt} ms  •  {int(clock.get_fps())} FPS", True, col_i)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR - 36))
+    if MP["dbg"]:
+        t = rendu_texte(police_petite, "ERR " + MP["dbg"], True, ROUGE_ALERTE)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR - 66))
+    # ---------- fin : éliminé ou victoire
+    if A["mort"] or A["fin"]:
+        ecran.blit(A["voile"], (0, 0))
+        gagne = A["fin"] == "victoire"
+        dessiner_titre_glitch("VICTOIRE" if gagne else "ÉLIMINÉ", police_titre, LARGEUR // 2, int(HAUTEUR * 0.24))
+        t = rendu_texte(police_jeu, f"Place n°{A['rang']}   •   {A['kills']} élimination(s)", True, BLANC_NEON)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR // 2 - 40))
+        bouton_neon(rect_bouton_quitter_defaite, VERT_FLUO if gagne else ROUGE_ALERTE, "QUITTER", police_bouton)
 
 
 def _injecter_firebase():
@@ -5555,6 +6003,8 @@ def _in_frame():
         return
     ok, bk, ps, p1, p2, hu, hd, hl, hr = ed
     if ctx == "jeu":
+        if etat_actuel == ETAT_PARC:                              # parc / arène : pas de pause ni de pouvoirs
+            return
         if ps or bk:
             basculer_pause()
         slots = POUV.get("slots") or []
@@ -7434,6 +7884,8 @@ async def main():
             if TRANS["actif"] and event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN, pygame.MOUSEMOTION,
                                                   pygame.FINGERMOTION, pygame.TEXTINPUT, pygame.KEYDOWN):
                 continue
+            if etat_actuel == ETAT_PARC and ARENE["actif"]:
+                arene_evenement(event)
             if event.type == pygame.FINGERDOWN:
                 IN["src"] = "touch"
                 IN["t_doigt"] = pygame.time.get_ticks()
@@ -7640,6 +8092,9 @@ async def main():
                             ED.update(drag=False, id=None, cible=None, bouton=None, selection=None, mode="deplacer")
                     elif _cible[0] == "parc":
                         parc_demarrer()
+                        etat_actuel = ETAT_PARC
+                    elif _cible[0] == "arene":
+                        arene_demarrer()
                         etat_actuel = ETAT_PARC
                     elif _cible[0] == "multi":
                         mp_chercher_salle()
