@@ -1446,6 +1446,10 @@ ARENE_V_BALLE = 1050.0             # vitesse d'un tir (px par seconde : identiqu
 ARENE_CADENCE = 0.18               # secondes entre deux tirs
 ARENE_R_JOUEUR = 20                # rayon de touche d'un joueur
 ARENE_LOCK = 1200.0                # distance maximale du verrouillage automatique (bouton L)
+ARENE_R0 = 3200                    # rayon de la zone au départ (contient tous les points d'apparition)
+# phases de la zone : (secondes de calme, secondes d'alerte rouge, secondes de rétrécissement, rayon visé, dégâts par seconde hors zone)
+ARENE_PHASES = [(100, 10, 60, 2200, 1.0), (70, 10, 50, 1500, 2.0), (50, 10, 45, 900, 4.0), (40, 10, 40, 450, 6.0), (30, 10, 30, 120, 9.0)]
+ARENE_DPS_FINAL = 12.0             # dégâts par seconde hors de la dernière zone
 _AR_RBTN = 48                      # rayon des boutons L2 / R2
 _AR_RADAR_R = 66                   # rayon du radar rond (coin bas gauche)
 _AR_TS = 40                        # taille (px) d'une zone sur le radar
@@ -1454,6 +1458,7 @@ ARENE = {"actif": False, "phase": "lobby", "debut": 0, "off": 0, "n0": 0, "hp": 
          "aim_utilise": False, "aim_kx": 0.0, "aim_ky": 0.0, "id_aim": None, "id_viser": None, "id_tir": None, "lisse": {},
          "fx": [], "t_last": 0.0, "degat_t": -9.0, "cam_dx": 0.0, "cam_dy": 0.0, "dirx": 1.0, "diry": 0.0, "fin": "",
          "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0),
+         "plan": [], "strips": [], "radar_zone": None, "carte_zone": None,
          "carte": False, "carte_rect": None, "k_m": False, "menu": None, "k_esc": False, "radar": None, "radar_masque": None, "carte_surf": None,
          "carte_t": 0, "decouv": set(), "thumbs": {}, "lock": None, "vel": {}, "carte_cache": None, "carte_ver": -1, "carte_taille": 0}
 
@@ -1473,7 +1478,7 @@ def _arene_spawn(seed, uid):
         if not parc_bloque(x, y, 26):
             return float(x), float(y)
         ang += 0.41
-        rayon += 25
+        rayon = 1500 + (rayon - 1500 + 25) % 1000
     return float(cx), float(cy)
 
 
@@ -1492,7 +1497,7 @@ def arene_demarrer():
                  t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0, aim_ky=0.0,
                  id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
                  cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={}, t_combat=0.0,
-                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
+                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, plan=_arene_zone_plan(seed), lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
     ARENE["voile"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["voile"].fill((0, 0, 0, 150))
     ARENE["rouge"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
@@ -1556,6 +1561,125 @@ def arene_evenement(event):
             A["id_viser"], A["viser"] = None, False
         if fid == A["id_aim"]:
             A["id_aim"], A["aim_actif"], A["aim_kx"], A["aim_ky"] = None, False, 0.0, 0.0
+
+
+def _arene_zone_plan(seed):
+    """Plan complet de la zone, calculé à partir du numéro de la partie : identique sur tous les téléphones, aucun échange réseau."""
+    cx, cy = _arene_centre(seed)
+    rng = random.Random(f"zone:{seed}")
+    plan, t = [], 0.0
+    c_prev, r_prev = (float(cx), float(cy)), float(ARENE_R0)
+    for i, (calme, alerte, retrec, r_new, dps) in enumerate(ARENE_PHASES):
+        marge = r_prev - r_new                                           # la nouvelle zone reste dans l'ancienne
+        a, d = rng.random() * 6.2832, marge * math.sqrt(rng.random()) * 0.9
+        c_new = (c_prev[0] + math.cos(a) * d, c_prev[1] + math.sin(a) * d)
+        plan.append({"i": i, "t_alerte": t + calme, "t_debut": t + calme + alerte, "t_fin": t + calme + alerte + retrec,
+                     "c0": c_prev, "r0": r_prev, "c1": c_new, "r1": float(r_new), "dps": dps})
+        t += calme + alerte + retrec
+        c_prev, r_prev = c_new, float(r_new)
+    return plan
+
+
+def _arene_zone_etat(t):
+    """Zone à l'instant t (secondes depuis le début du combat) : cercle, état (calme / alerte / retrecit / finale), dégâts, prochaine zone."""
+    plan = ARENE["plan"]
+    if not plan:
+        return {"etat": "lobby", "phase": 0, "c": (0.0, 0.0), "r": 1e9, "cible": None, "dps": 0.0, "debut_dans": 0.0, "depuis_debut": 0.0, "prochaine": 0.0}
+    if t < 0:
+        p = plan[0]
+        return {"etat": "lobby", "phase": 0, "c": p["c0"], "r": p["r0"], "cible": (p["c1"], p["r1"]), "dps": 0.0,
+                "debut_dans": 0.0, "depuis_debut": 0.0, "prochaine": p["t_alerte"]}
+    for p in plan:
+        if t < p["t_fin"]:
+            cible = (p["c1"], p["r1"])
+            if t < p["t_alerte"]:
+                return {"etat": "calme", "phase": p["i"], "c": p["c0"], "r": p["r0"], "cible": cible, "dps": p["dps"],
+                        "debut_dans": 0.0, "depuis_debut": 0.0, "prochaine": p["t_alerte"] - t}
+            if t < p["t_debut"]:
+                return {"etat": "alerte", "phase": p["i"], "c": p["c0"], "r": p["r0"], "cible": cible, "dps": p["dps"],
+                        "debut_dans": p["t_debut"] - t, "depuis_debut": 0.0, "prochaine": 0.0}
+            f = (t - p["t_debut"]) / (p["t_fin"] - p["t_debut"])
+            return {"etat": "retrecit", "phase": p["i"],
+                    "c": (p["c0"][0] + (p["c1"][0] - p["c0"][0]) * f, p["c0"][1] + (p["c1"][1] - p["c0"][1]) * f),
+                    "r": p["r0"] + (p["r1"] - p["r0"]) * f, "cible": cible, "dps": p["dps"],
+                    "debut_dans": 0.0, "depuis_debut": t - p["t_debut"], "prochaine": 0.0}
+    p = plan[-1]
+    return {"etat": "finale", "phase": len(plan), "c": p["c1"], "r": p["r1"], "cible": None, "dps": ARENE_DPS_FINAL,
+            "debut_dans": 0.0, "depuis_debut": 0.0, "prochaine": 0.0}
+
+
+def _arene_zone_sur(tint, centre, rayon, cible, zone, largeur):
+    """Dessine sur une surface transparente (radar ou grande carte) : teinte rouge hors de la zone, anneau de la zone, anneau de la prochaine zone.
+    En alerte, tout clignote en rouge."""
+    ticks = pygame.time.get_ticks()
+    alerte = zone["etat"] == "alerte"
+    flash = alerte and (ticks // 220) % 2 == 0
+    alpha = (150 if flash else 70) if alerte else (110 if zone["etat"] == "retrecit" else 90)
+    tint.fill((220, 20, 30, alpha))
+    pygame.draw.circle(tint, (0, 0, 0, 0), (int(centre[0]), int(centre[1])), max(1, int(rayon)))
+    rouge = flash or zone["etat"] == "retrecit"
+    pygame.draw.circle(tint, (255, 50, 50, 255) if rouge else (245, 245, 255, 255), (int(centre[0]), int(centre[1])), max(1, int(rayon)), largeur)
+    if cible is not None:
+        pygame.draw.circle(tint, (255, 90, 90, 255) if flash else (255, 255, 255, 255), (int(cible[0][0]), int(cible[0][1])), max(1, int(cible[1])), 1)
+
+
+def _arene_anneau_monde(c, r, ox, oy, couleur, largeur):
+    """Anneau de la zone dans le monde : seul l'arc visible à l'écran est tracé (léger pour le téléphone)."""
+    cx, cy = c[0] + ox, c[1] + oy
+    px, py = PARC["x"] + ox, PARC["y"] + oy
+    d = math.hypot(px - cx, py - cy)
+    if abs(d - r) > 900:
+        return
+    if r < 340:
+        pts = [(cx + math.cos(a * 6.2832 / 48) * r, cy + math.sin(a * 6.2832 / 48) * r) for a in range(49)]
+    else:
+        centre = math.atan2(py - cy, px - cx)
+        demi = min(3.1416, 1100.0 / r)
+        n = max(10, min(70, int(2 * demi * r / 36)))
+        pts = [(cx + math.cos(centre - demi + 2 * demi * i / n) * r, cy + math.sin(centre - demi + 2 * demi * i / n) * r) for i in range(n + 1)]
+    pygame.draw.lines(ecran, couleur, False, pts, largeur)
+
+
+def _arene_vignette(intensite):
+    for surf, pos in ARENE["strips"]:
+        surf.set_alpha(int(intensite))
+        ecran.blit(surf, pos)
+
+
+def _arene_zone_hud(zone, dehors):
+    """Alerte rouge « la zone rétrécit dans 10, 9... 0 », puis état de la zone."""
+    ticks = pygame.time.get_ticks()
+    et = zone["etat"]
+    nb = len(ARENE_PHASES)
+    y = 72
+    if et == "alerte":
+        n = int(zone["debut_dans"] + 0.5)
+        col = (255, 40, 40) if (ticks // 250) % 2 == 0 else (255, 190, 190)
+        t = rendu_texte(police_jeu, f"ALERTE : LA ZONE RÉTRÉCIT DANS {n}", True, col)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y + 6))
+        y += 44
+    elif et == "retrecit" and zone["depuis_debut"] < 4.0:
+        t = rendu_texte(police_jeu, "LA ZONE RÉTRÉCIT !", True, (255, 40, 40))
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y + 6))
+        y += 44
+    else:
+        if et == "calme":
+            m, sec = divmod(int(zone["prochaine"]) + 1, 60)
+            txt = f"ZONE {zone['phase'] + 1}/{nb}   •   PROCHAINE ALERTE DANS {m}:{sec:02d}"
+        elif et == "retrecit":
+            txt = f"ZONE {zone['phase'] + 1}/{nb}   •   EN RÉTRÉCISSEMENT"
+        elif et == "finale":
+            txt = "ZONE FINALE"
+        else:
+            txt = ""
+        if txt:
+            t = rendu_texte(police_petite, txt, True, BLANC_NEON)
+            ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y))
+            y += 30
+    if dehors:
+        col = (255, 60, 60) if (ticks // 300) % 2 == 0 else (255, 200, 200)
+        t = rendu_texte(police_petite, f"HORS ZONE !   -{zone['dps']:.0f} PV par seconde", True, col)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, y))
 
 
 def _arene_cap(ang):
@@ -1646,9 +1770,16 @@ def _arene_surfaces_init():
     for i in range(1, PARC_NAXES, 3):                                    # places avec fontaine
         for j in range(1, PARC_NAXES, 3):
             pygame.draw.circle(carte, (46, 60, 76), (int((PARC_DEC + i * PARC_PAS) * k), int((PARC_DEC + j * PARC_PAS) * k)), max(3, int(PARC_R_PLACE * k)))
-    cx, cy = A["centre"]                                                 # zone où les joueurs sont apparus
-    pygame.draw.circle(carte, (255, 210, 80), (int(cx * k), int(cy * k)), int(2600 * k), 2)
     A["radar"], A["radar_masque"], A["carte_surf"], A["carte_t"], A["decouv"], A["thumbs"] = rad, masque, carte, t, set(), {}
+    A["radar_zone"] = pygame.Surface((R * 2, R * 2), pygame.SRCALPHA)
+    A["carte_zone"] = pygame.Surface((t, t), pygame.SRCALPHA)
+    e = 36                                                               # bandes rouges sur les bords de l'écran (zone / alerte)
+    bandes = []
+    for w, h, pos in ((LARGEUR, e, (0, 0)), (LARGEUR, e, (0, HAUTEUR - e)), (e, HAUTEUR, (0, 0)), (e, HAUTEUR, (LARGEUR - e, 0))):
+        b = pygame.Surface((w, h), pygame.SRCALPHA)
+        b.fill((255, 0, 0, 255))
+        bandes.append((b, pos))
+    A["strips"] = bandes
 
 
 def _arene_carte_maj():
@@ -1675,7 +1806,7 @@ def _arene_thumb(cx, cy):
     return th
 
 
-def _arene_radar_dessiner(cibles, ang):
+def _arene_radar_dessiner(cibles, ang, zone=None):
     """Radar rond (coin bas gauche) : la vraie silhouette du lieu où tu te trouves, en temps réel. Bleu = toi, rouge = adversaires (position approximative)."""
     A = ARENE
     R = _AR_RADAR_R
@@ -1688,6 +1819,11 @@ def _arene_radar_dessiner(cibles, ang):
     for cx in range(max(0, int((px - portee) // PARC_CH)), min(PARC_NC - 1, int((px + portee) // PARC_CH)) + 1):
         for cy in range(max(0, int((py - portee) // PARC_CH)), min(PARC_NC - 1, int((py + portee) // PARC_CH)) + 1):
             rad.blit(_arene_thumb(cx, cy), (int((cx * PARC_CH - px) * k + R), int((cy * PARC_CH - py) * k + R)))
+    if zone is not None and A["radar_zone"] is not None:
+        zc = ((zone["c"][0] - px) * k + R, (zone["c"][1] - py) * k + R)
+        zt = None if zone["cible"] is None else (((zone["cible"][0][0] - px) * k + R, (zone["cible"][0][1] - py) * k + R), zone["cible"][1] * k)
+        _arene_zone_sur(A["radar_zone"], zc, zone["r"] * k, zt, zone, 2)
+        rad.blit(A["radar_zone"], (0, 0))
     rad.blit(A["radar_masque"], (0, 0))
     pcx, pcy = int(px // PARC_CH), int(py // PARC_CH)
     for cle in [c for c in A["thumbs"] if abs(c[0] - pcx) > 3 or abs(c[1] - pcy) > 3]:
@@ -1716,14 +1852,18 @@ def _arene_radar_dessiner(cibles, ang):
     DRAW.circle(ecran, (40, 140, 255), (cxs, cys), 6)
 
 
-def _arene_dessiner_carte(cibles, ang, vivants, nom_biome):
+def _arene_dessiner_carte(cibles, ang, vivants, nom_biome, zone=None):
     """Grande carte (menu pause) : ce que tu as exploré, toi en bleu, les adversaires en rouge (positions approximatives)."""
     A = ARENE
     t = A["carte_t"]
     x0, y0 = LARGEUR // 2 - t // 2, (HAUTEUR - t) // 2 + 10
     ecran.blit(A["carte_surf"], (x0, y0))
-    DRAW.rect(ecran, (230, 240, 230), (x0, y0, t, t), 3)
     k = t / PARC_MONDE
+    if zone is not None and A["carte_zone"] is not None:
+        zt = None if zone["cible"] is None else ((zone["cible"][0][0] * k, zone["cible"][0][1] * k), zone["cible"][1] * k)
+        _arene_zone_sur(A["carte_zone"], (zone["c"][0] * k, zone["c"][1] * k), zone["r"] * k, zt, zone, 3)
+        ecran.blit(A["carte_zone"], (x0, y0))
+    DRAW.rect(ecran, (230, 240, 230), (x0, y0, t, t), 3)
     mx, my = x0 + PARC["x"] * k, y0 + PARC["y"] * k
     pulse = 9 + int(3 * abs(math.sin(pygame.time.get_ticks() / 300.0)))
     proche = None
@@ -1741,7 +1881,13 @@ def _arene_dessiner_carte(cibles, ang, vivants, nom_biome):
     DRAW.circle(ecran, BLANC_NEON, (int(mx), int(my)), 9)
     DRAW.circle(ecran, (40, 140, 255), (int(mx), int(my)), 7)
     DRAW.rect(ecran, (8, 12, 18), (x0, y0, t, 26))
-    t1 = rendu_texte(police_petite, "CARTE", True, BLANC_NEON)
+    if zone is not None and zone["etat"] == "alerte":
+        t1 = rendu_texte(police_petite, f"ALERTE : LA ZONE RÉTRÉCIT DANS {int(zone['debut_dans'] + 0.5)}", True,
+                         (255, 40, 40) if (pygame.time.get_ticks() // 250) % 2 == 0 else (255, 190, 190))
+    elif zone is not None and zone["etat"] == "retrecit":
+        t1 = rendu_texte(police_petite, "LA ZONE RÉTRÉCIT", True, (255, 40, 40))
+    else:
+        t1 = rendu_texte(police_petite, "CARTE", True, BLANC_NEON)
     ecran.blit(t1, (x0 + t // 2 - t1.get_width() // 2, y0 + 3))
     DRAW.rect(ecran, (8, 12, 18), (x0, y0 + t - 78, t, 78))
     txt = f"PLUS PROCHE : à environ {int(proche[0] / 40)} m ({_arene_cap(proche[3])})" if proche is not None else "AUCUN ADVERSAIRE EN VIE"
@@ -1755,8 +1901,8 @@ def _arene_dessiner_carte(cibles, ang, vivants, nom_biome):
         tn = rendu_texte(police_petite, lab, True, BLANC_NEON)
         ecran.blit(tn, (lx + 18, ly - 12))
         lx += 18 + tn.get_width() + 20
-    DRAW.circle(ecran, (255, 210, 80), (lx + 6, ly), 6, 2)
-    tn = rendu_texte(police_petite, "ZONE DE DÉPART", True, BLANC_NEON)
+    DRAW.circle(ecran, (245, 245, 255), (lx + 6, ly), 6, 2)
+    tn = rendu_texte(police_petite, "ZONE SÛRE", True, BLANC_NEON)
     ecran.blit(tn, (lx + 18, ly - 12))
 
 
@@ -1774,7 +1920,7 @@ def _arene_menu(nom):
         A.update(tir=False, viser=False, aim_actif=False, id_tir=None, id_viser=None, id_aim=None, aim_kx=0.0, aim_ky=0.0)
 
 
-def _arene_dessiner_menu(cibles, ang, vivants):
+def _arene_dessiner_menu(cibles, ang, vivants, zone=None):
     A = ARENE
     ecran.blit(A["voile"], (0, 0))
     r = _arene_rects_menu()
@@ -1786,7 +1932,7 @@ def _arene_dessiner_menu(cibles, ang, vivants):
         bouton_neon(r["carte"], CYAN_NEON, "CARTE", police_bouton)
         bouton_neon(r["quitter"], ROUGE_ALERTE, "QUITTER", police_bouton)
     else:
-        _arene_dessiner_carte(cibles, ang, vivants, _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))])
+        _arene_dessiner_carte(cibles, ang, vivants, _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))], zone)
         bouton_neon(r["retour"], JAUNE_CYBER, "< RETOUR", police_bouton)
 
 
@@ -1928,6 +2074,8 @@ def jouer_arene():
     now_srv = int(_time.time() * 1000) + A["off"]
     if A["phase"] == "lobby" and now_srv >= A["debut"]:
         A["phase"], A["n0"], A["t_combat"] = "combat", max(1, MP["n"]), t_now
+    zone = _arene_zone_etat((now_srv - A["debut"]) / 1000.0)     # la zone ne dépend que de l'heure du serveur : identique pour tous
+    dehors = math.hypot(PARC["x"] - zone["c"][0], PARC["y"] - zone["c"][1]) > zone["r"]
     # ---------- déplacement (vitesse indépendante du nombre d'images par seconde : même vitesse pour tous)
     dx = dy = 0.0
     vit = joueur_vitesse * dt * 60.0 * (0.6 if A["viser"] else 1.0)
@@ -1977,6 +2125,11 @@ def jouer_arene():
             A["degat_t"] = t_now
             if A["hp"] <= 0:
                 A["hp"], A["mort"], A["rang"] = 0, True, max(1, _arene_vivants())      # place = joueurs encore en vie, moi compris
+    # ---------- zone : dégâts continus hors du cercle
+    if A["phase"] == "combat" and not A["mort"] and not A["fin"] and dehors and zone["dps"] > 0:
+        A["hp"] -= zone["dps"] * dt
+        if A["hp"] <= 0:
+            A["hp"], A["mort"], A["rang"] = 0, True, max(1, _arene_vivants())
     # ---------- tirs
     A["t_tir"] -= dt
     veut = (A["tir"] or (IN["src"] in ("pad", "key") and _in_tir())) and A["menu"] is None
@@ -2050,6 +2203,11 @@ def jouer_arene():
             else:
                 ecran.fill(_PC_HERBE, (px, py, PARC_CH, PARC_CH))
     ox, oy = -cam_x, -cam_y
+    ticks_ = pygame.time.get_ticks()
+    flash_ = zone["etat"] == "alerte" and (ticks_ // 220) % 2 == 0
+    _arene_anneau_monde(zone["c"], zone["r"], ox, oy, (255, 50, 50) if (flash_ or zone["etat"] == "retrecit") else (245, 245, 255), 6)
+    if zone["cible"] is not None:
+        _arene_anneau_monde(zone["cible"][0], zone["cible"][1], ox, oy, (255, 120, 120) if flash_ else (255, 255, 255), 2)
     restantes = []                                           # tirs des autres joueurs
     for b in A["balles_d"]:
         b[0] += b[2] * dt
@@ -2106,11 +2264,16 @@ def jouer_arene():
     A["fx"] = nouv
     if t_now - A["degat_t"] < 0.22 and A["rouge"] is not None:
         ecran.blit(A["rouge"], (0, 0))
+    if A["phase"] == "combat" and not A["mort"]:                  # bords rouges : hors zone (pulse) ou alerte (clignote)
+        if dehors:
+            _arene_vignette(70 + 60 * abs(math.sin(ticks_ / 220.0)))
+        elif flash_:
+            _arene_vignette(60)
     # ---------- radar rond (coin bas gauche : le toucher ne fait rien), barre de vie en haut au centre
     if A["menu"] is None:
-        _arene_radar_dessiner(cibles, ang)
+        _arene_radar_dessiner(cibles, ang, zone)
     _arene_carte_maj()
-    hp = max(0, A["hp"])
+    hp = int(max(0, A["hp"]))
     bx0 = LARGEUR // 2 - 115
     DRAW.rect(ecran, (40, 10, 14), (bx0, 14, 230, 22))
     DRAW.rect(ecran, (60, 220, 90) if hp > 40 else ROUGE_ALERTE, (bx0, 14, int(230 * hp / ARENE_PV), 22))
@@ -2122,6 +2285,8 @@ def jouer_arene():
     else:
         t_info = rendu_texte(police_petite, f"JOUEURS {max(1, MP['n'])}/{MP_MAX}", True, BLANC_NEON)
     ecran.blit(t_info, (LARGEUR // 2 - t_info.get_width() // 2, 42))
+    if A["phase"] == "combat" and not A["mort"] and not A["fin"]:
+        _arene_zone_hud(zone, dehors)
     if A["phase"] == "lobby":
         reste = max(0, int(math.ceil((A["debut"] - now_srv) / 1000.0)))
         t = rendu_texte(police_titre, f"DÉPART DANS {reste}", True, JAUNE_CYBER)
@@ -2132,7 +2297,7 @@ def jouer_arene():
         t = rendu_texte(police_titre, "COMBAT !" if A["n0"] >= 2 else "ENTRAÎNEMENT", True, ROUGE_ALERTE)
         ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.30)))
     if A["menu"] is not None:
-        _arene_dessiner_menu(cibles, ang, vivants)
+        _arene_dessiner_menu(cibles, ang, vivants, zone)
     elif not _in_masquer_tactile():
         ecran.blit(SURF_SOCLE_JOY, (JOY_CENTRE_X - JOY_RAYON_SOCLE - 6, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 6))
         DRAW.circle(ecran, VERT_FLUO, (JOY_CENTRE_X, JOY_CENTRE_Y), JOY_RAYON_SOCLE, 4)
