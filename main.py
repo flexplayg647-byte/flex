@@ -1322,6 +1322,9 @@ def _parc_gerer(cam_x, cam_y):
     for cle in [c for c in PARC["surf"] if c[0] < c0x - 1 or c[0] > c1x + 1 or c[1] < c0y - 1 or c[1] > c1y + 1]:
         del PARC["surf"][cle]
         PARC["donnees"].pop(cle, None)
+    pcx, pcy = int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH)
+    for cle in [c for c in PARC["donnees"] if abs(c[0] - pcx) > 3 or abs(c[1] - pcy) > 3]:
+        PARC["donnees"].pop(cle, None)
 
 
 _PC_MINI = 168                                               # taille de la mini-carte
@@ -1443,13 +1446,16 @@ ARENE_V_BALLE = 1050.0             # vitesse d'un tir (px par seconde : identiqu
 ARENE_CADENCE = 0.18               # secondes entre deux tirs
 ARENE_R_JOUEUR = 20                # rayon de touche d'un joueur
 ARENE_LOCK = 1200.0                # distance maximale du verrouillage automatique (bouton L)
-_AR_RBTN = 52                      # rayon des boutons L2 / R2
+_AR_RBTN = 48                      # rayon des boutons L2 / R2
+_AR_RADAR_R = 66                   # rayon du radar rond (coin bas gauche)
+_AR_TS = 40                        # taille (px) d'une zone sur le radar
 ARENE = {"actif": False, "phase": "lobby", "debut": 0, "off": 0, "n0": 0, "hp": ARENE_PV, "mort": False, "rang": 0, "kills": 0,
          "balles": [], "balles_d": [], "t_tir": 0.0, "viser": False, "tir": False, "aim_actif": False, "aim_ang": 0.0,
          "aim_utilise": False, "aim_kx": 0.0, "aim_ky": 0.0, "id_aim": None, "id_viser": None, "id_tir": None, "lisse": {},
          "fx": [], "t_last": 0.0, "degat_t": -9.0, "cam_dx": 0.0, "cam_dy": 0.0, "dirx": 1.0, "diry": 0.0, "fin": "",
          "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0),
-         "carte": False, "carte_rect": None, "k_m": False, "lock": None, "vel": {}, "carte_cache": None, "carte_ver": -1, "carte_taille": 0}
+         "carte": False, "carte_rect": None, "k_m": False, "menu": None, "k_esc": False, "radar": None, "radar_masque": None, "carte_surf": None,
+         "carte_t": 0, "decouv": set(), "thumbs": {}, "lock": None, "vel": {}, "carte_cache": None, "carte_ver": -1, "carte_taille": 0}
 
 
 def _arene_centre(seed):
@@ -1486,12 +1492,13 @@ def arene_demarrer():
                  t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0, aim_ky=0.0,
                  id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
                  cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={}, t_combat=0.0,
-                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
+                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
     ARENE["voile"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["voile"].fill((0, 0, 0, 150))
     ARENE["rouge"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["rouge"].fill((255, 0, 0, 60))
     MP.update(f=0, fa=0.0, ver=-1, autres=[], n=1, rtt=0, tick=0)
+    _arene_surfaces_init()
 
 
 def _arene_quitter():
@@ -1504,8 +1511,8 @@ def _arene_quitter():
 def _arene_geo():
     """Position des commandes tactiles : stick de visée (droite), L2 VISER au-dessus du stick gauche, R2 TIR au-dessus du stick droit."""
     aim = (LARGEUR - 230, HAUTEUR - 190)
-    viser = (JOY_CENTRE_X + 10, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 105)
-    tir = (aim[0] + 20, aim[1] - JOY_RAYON_SOCLE - 105)
+    viser = (72, 76)                                         # L : coin haut gauche
+    tir = (LARGEUR - 72, 76)                                 # R : coin haut droit
     return aim, viser, tir
 
 
@@ -1528,6 +1535,8 @@ def arene_evenement(event):
         return
     x, y = event.x * LARGEUR, event.y * HAUTEUR
     fid = event.finger_id
+    if A["menu"] is not None and event.type == pygame.FINGERDOWN:
+        return                                               # menu pause ouvert : les commandes ne réagissent pas
     aim, viser, tir = _arene_geo()
     if event.type == pygame.FINGERDOWN:
         if A["id_tir"] is None and math.hypot(x - tir[0], y - tir[1]) <= _AR_RBTN + 28:
@@ -1580,80 +1589,205 @@ def _arene_verrouiller(cibles):
     return u, px + vx * t, py + vy * t
 
 
-def _arene_carte_cache(t):
-    """Grande carte dessinée une seule fois (refaite seulement quand une nouvelle région est découverte)."""
+def _arene_silhouette(surf, cx, cy, ox, oy, k, arbres):
+    """Silhouette d'une zone (routes, bâtiments, eau, rochers, arbres) à l'échelle k, avec son coin haut gauche en (ox, oy)."""
+    d = _parc_gen(cx, cy)
+    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    dr = pygame.draw
+    route = (66, 82, 98)
+    lr = max(1, int(PARC_LARG_ALLEE * k))
+    kx = round((x0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
+    ky = round((y0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
+    if 0 <= kx < PARC_NAXES:
+        ax = PARC_DEC + kx * PARC_PAS
+        if x0 - 80 < ax < x0 + PARC_CH + 80:
+            dr.rect(surf, route, (ox + (ax - x0) * k - lr / 2, oy, lr, PARC_CH * k))
+    if 0 <= ky < PARC_NAXES:
+        ay = PARC_DEC + ky * PARC_PAS
+        if y0 - 80 < ay < y0 + PARC_CH + 80:
+            dr.rect(surf, route, (ox, oy + (ay - y0) * k - lr / 2, PARC_CH * k, lr))
+    pl = _parc_place_proche(x0 + PARC_CH // 2, y0 + PARC_CH // 2)
+    if pl is not None:
+        dr.circle(surf, route, (int(ox + (pl[0] - x0) * k), int(oy + (pl[1] - y0) * k)), max(2, int(PARC_R_PLACE * k)))
+    for ex, ey, rx, ry in d["etangs"]:
+        dr.ellipse(surf, (30, 84, 150), (ox + (ex - x0 - rx) * k, oy + (ey - y0 - ry) * k, max(2, rx * 2 * k), max(2, ry * 2 * k)))
+    for x, y, r in d["rochers"]:
+        dr.circle(surf, (110, 110, 124), (int(ox + (x - x0) * k), int(oy + (y - y0) * k)), max(1, int(r * k)))
+    if arbres:
+        for x, y, r in d["arbres"]:
+            dr.circle(surf, (28, 82, 54), (int(ox + (x - x0) * k), int(oy + (y - y0) * k)), max(1, int(r * k * 0.8)))
+    for bx, by, bw, bh, _c in d["batiments"]:
+        rect = (ox + (bx - x0) * k, oy + (by - y0) * k, max(2, bw * k), max(2, bh * k))
+        dr.rect(surf, (120, 140, 162), rect)
+        if bw * k >= 6:
+            dr.rect(surf, (205, 222, 238), rect, 1)
+    if d["fontaine"]:
+        fx, fy, fr = d["fontaine"]
+        dr.circle(surf, (40, 100, 170), (int(ox + (fx - x0) * k), int(oy + (fy - y0) * k)), max(2, int(fr * k)))
+
+
+def _arene_surfaces_init():
+    """Surfaces de l'arène : radar rond (avec son masque), grande carte (qui se remplit au fil de l'exploration)."""
     A = ARENE
-    ver = PARC.get("mini_ver", 0)
-    if A["carte_cache"] is not None and A["carte_ver"] == ver and A["carte_taille"] == t:
-        return A["carte_cache"]
-    surf = pygame.Surface((t, t))
-    surf.fill((16, 30, 22))
+    R = _AR_RADAR_R
+    rad = pygame.Surface((R * 2, R * 2))
+    rad.set_colorkey((255, 0, 255))
+    masque = pygame.Surface((R * 2, R * 2), pygame.SRCALPHA)
+    masque.fill((255, 0, 255, 255))
+    pygame.draw.circle(masque, (0, 0, 0, 0), (R, R), R)
+    t = min(HAUTEUR - 80, int(LARGEUR * 0.55), 560)
+    carte = pygame.Surface((t, t))
+    carte.fill((10, 16, 22))
     k = t / PARC_MONDE
-    taille = PARC_CH * PARC_REGION
-    for rx, ry in PARC["vus"]:
-        bio = _parc_biome(rx * PARC_REGION, ry * PARC_REGION)
-        pygame.draw.rect(surf, _PC_BIOME_COUL[bio], (int(rx * taille * k), int(ry * taille * k), int(taille * k) + 1, int(taille * k) + 1))
-    for i in range(PARC_NAXES):                                          # allées
+    for i in range(PARC_NAXES):                                          # grille des allées (repères discrets)
         a = int((PARC_DEC + i * PARC_PAS) * k)
-        pygame.draw.line(surf, (150, 138, 110), (a, 0), (a, t), 1)
-        pygame.draw.line(surf, (150, 138, 110), (0, a), (t, a), 1)
+        pygame.draw.line(carte, (30, 40, 52), (a, 0), (a, t), 1)
+        pygame.draw.line(carte, (30, 40, 52), (0, a), (t, a), 1)
     for i in range(1, PARC_NAXES, 3):                                    # places avec fontaine
         for j in range(1, PARC_NAXES, 3):
-            c = (int((PARC_DEC + i * PARC_PAS) * k), int((PARC_DEC + j * PARC_PAS) * k))
-            pygame.draw.circle(surf, _PC_SABLE, c, max(4, int(PARC_R_PLACE * k)))
-            pygame.draw.circle(surf, _PC_EAU, c, max(2, int(100 * k)))
+            pygame.draw.circle(carte, (46, 60, 76), (int((PARC_DEC + i * PARC_PAS) * k), int((PARC_DEC + j * PARC_PAS) * k)), max(3, int(PARC_R_PLACE * k)))
     cx, cy = A["centre"]                                                 # zone où les joueurs sont apparus
-    pygame.draw.circle(surf, (255, 210, 80), (int(cx * k), int(cy * k)), int(2600 * k), 2)
-    pygame.draw.rect(surf, (230, 240, 230), (0, 0, t, t), 3)
-    A["carte_cache"], A["carte_ver"], A["carte_taille"] = surf, ver, t
-    return surf
+    pygame.draw.circle(carte, (255, 210, 80), (int(cx * k), int(cy * k)), int(2600 * k), 2)
+    A["radar"], A["radar_masque"], A["carte_surf"], A["carte_t"], A["decouv"], A["thumbs"] = rad, masque, carte, t, set(), {}
+
+
+def _arene_carte_maj():
+    """Dessine sur la grande carte la silhouette des zones que tu viens de découvrir (une zone par image)."""
+    A = ARENE
+    if A["carte_surf"] is None:
+        return
+    for cle in PARC["surf"]:
+        if cle not in A["decouv"]:
+            k = A["carte_t"] / PARC_MONDE
+            _arene_silhouette(A["carte_surf"], cle[0], cle[1], cle[0] * PARC_CH * k, cle[1] * PARC_CH * k, k, False)
+            A["decouv"].add(cle)
+            return
+
+
+def _arene_thumb(cx, cy):
+    A = ARENE
+    th = A["thumbs"].get((cx, cy))
+    if th is None:
+        th = pygame.Surface((_AR_TS, _AR_TS))
+        th.fill((12, 22, 30))
+        _arene_silhouette(th, cx, cy, 0, 0, _AR_TS / PARC_CH, True)
+        A["thumbs"][(cx, cy)] = th
+    return th
+
+
+def _arene_radar_dessiner(cibles, ang):
+    """Radar rond (coin bas gauche) : la vraie silhouette du lieu où tu te trouves, en temps réel. Bleu = toi, rouge = adversaires (position approximative)."""
+    A = ARENE
+    R = _AR_RADAR_R
+    cxs, cys = R + 16, HAUTEUR - R - 14
+    px, py = PARC["x"], PARC["y"]
+    k = _AR_TS / PARC_CH
+    rad = A["radar"]
+    rad.fill((12, 22, 30))
+    portee = R / k
+    for cx in range(max(0, int((px - portee) // PARC_CH)), min(PARC_NC - 1, int((px + portee) // PARC_CH)) + 1):
+        for cy in range(max(0, int((py - portee) // PARC_CH)), min(PARC_NC - 1, int((py + portee) // PARC_CH)) + 1):
+            rad.blit(_arene_thumb(cx, cy), (int((cx * PARC_CH - px) * k + R), int((cy * PARC_CH - py) * k + R)))
+    rad.blit(A["radar_masque"], (0, 0))
+    pcx, pcy = int(px // PARC_CH), int(py // PARC_CH)
+    for cle in [c for c in A["thumbs"] if abs(c[0] - pcx) > 3 or abs(c[1] - pcy) > 3]:
+        del A["thumbs"][cle]
+    ecran.blit(rad, (cxs - R, cys - R))
+    DRAW.circle(ecran, (0, 70, 95), (cxs, cys), R // 2, 1)
+    a_b = pygame.time.get_ticks() / 900.0
+    DRAW.line(ecran, (0, 150, 110), (cxs, cys), (int(cxs + math.cos(a_b) * (R - 3)), int(cys + math.sin(a_b) * (R - 3))), 2)
+    DRAW.circle(ecran, BLEU_CYBER, (cxs, cys), R, 3)
+    pulse = 8 + int(3 * abs(math.sin(pygame.time.get_ticks() / 300.0)))
+    for u, ex, ey, o in cibles:
+        ex, ey = round(ex / 100.0) * 100.0, round(ey / 100.0) * 100.0                # position approximative
+        dx_, dy_ = (ex - px) * k, (ey - py) * k
+        d_ = math.hypot(dx_, dy_)
+        if d_ <= R - 8:
+            pos = (int(cxs + dx_), int(cys + dy_))
+            DRAW.circle(ecran, (255, 130, 130), pos, pulse, 1)
+            DRAW.circle(ecran, (0, 0, 0), pos, 7)
+            DRAW.circle(ecran, (235, 40, 50), pos, 5)
+        else:                                                                       # hors du radar : flèche rouge sur le bord
+            ux, uy = dx_ / d_, dy_ / d_
+            bx, by = cxs + ux * (R - 13), cys + uy * (R - 13)
+            pygame.draw.polygon(ecran, (235, 40, 50), [(cxs + ux * (R - 2), cys + uy * (R - 2)), (bx - uy * 6, by + ux * 6), (bx + uy * 6, by - ux * 6)])
+    DRAW.line(ecran, BLANC_NEON, (cxs, cys), (int(cxs + math.cos(ang) * 15), int(cys + math.sin(ang) * 15)), 2)
+    DRAW.circle(ecran, BLANC_NEON, (cxs, cys), 8)
+    DRAW.circle(ecran, (40, 140, 255), (cxs, cys), 6)
 
 
 def _arene_dessiner_carte(cibles, ang, vivants, nom_biome):
-    """Carte ouverte : position en temps réel de tous les adversaires en vie, ta direction, le plus proche, les régions..."""
+    """Grande carte (menu pause) : ce que tu as exploré, toi en bleu, les adversaires en rouge (positions approximatives)."""
     A = ARENE
-    t = min(HAUTEUR - 80, int(LARGEUR * 0.55), 560)
+    t = A["carte_t"]
     x0, y0 = LARGEUR // 2 - t // 2, (HAUTEUR - t) // 2 + 10
-    ecran.blit(_arene_carte_cache(t), (x0, y0))
+    ecran.blit(A["carte_surf"], (x0, y0))
+    DRAW.rect(ecran, (230, 240, 230), (x0, y0, t, t), 3)
     k = t / PARC_MONDE
     mx, my = x0 + PARC["x"] * k, y0 + PARC["y"] * k
+    pulse = 9 + int(3 * abs(math.sin(pygame.time.get_ticks() / 300.0)))
     proche = None
     for u, px, py, o in cibles:
-        ex, ey = x0 + px * k, y0 + py * k
-        col = _mp_couleur(u)
-        pygame.draw.circle(ecran, (0, 0, 0), (int(ex), int(ey)), 8)
-        pygame.draw.circle(ecran, col, (int(ex), int(ey)), 6)
-        nom = rendu_texte(police_petite, str(o.get("p", "?")), True, col)
-        ecran.blit(nom, (int(ex) - nom.get_width() // 2, int(ey) - 28))
+        ex, ey = x0 + round(px / 100.0) * 100.0 * k, y0 + round(py / 100.0) * 100.0 * k
+        DRAW.circle(ecran, (255, 130, 130), (int(ex), int(ey)), pulse, 1)
+        DRAW.circle(ecran, (0, 0, 0), (int(ex), int(ey)), 8)
+        DRAW.circle(ecran, (235, 40, 50), (int(ex), int(ey)), 6)
         d = math.hypot(px - PARC["x"], py - PARC["y"])
         if proche is None or d < proche[0]:
-            proche = (d, ex, ey, str(o.get("p", "?")), math.atan2(py - PARC["y"], px - PARC["x"]))
+            proche = (d, ex, ey, math.atan2(py - PARC["y"], px - PARC["x"]))
     if proche is not None:
-        pygame.draw.line(ecran, (255, 255, 255), (int(mx), int(my)), (int(proche[1]), int(proche[2])), 1)
-    pts = [(mx + math.cos(ang + da) * r_, my + math.sin(ang + da) * r_) for da, r_ in ((0.0, 12), (2.5, 8), (-2.5, 8))]
-    pygame.draw.polygon(ecran, (0, 0, 0), [(px_ + dx_, py_ + dy_) for px_, py_ in pts for dx_, dy_ in ((0, 0),)], 0)
-    pygame.draw.polygon(ecran, VERT_FLUO, pts, 0)
-    pygame.draw.polygon(ecran, (0, 0, 0), pts, 1)
-    # bandeaux d'informations
-    DRAW.rect(ecran, (8, 12, 18), (x0, y0, t, 24))
-    t1 = rendu_texte(police_petite, "CARTE   (toucher pour fermer)", True, BLANC_NEON)
-    ecran.blit(t1, (x0 + t // 2 - t1.get_width() // 2, y0 + 4))
-    DRAW.rect(ecran, (8, 12, 18), (x0, y0 + t - 74, t, 74))
-    if proche is not None:
-        txt = f"PLUS PROCHE : {proche[3]}  à {int(proche[0] / 40)} m ({_arene_cap(proche[4])})"
-    else:
-        txt = "AUCUN ADVERSAIRE EN VIE"
+        DRAW.line(ecran, (255, 255, 255), (int(mx), int(my)), (int(proche[1]), int(proche[2])), 1)
+    DRAW.line(ecran, BLANC_NEON, (int(mx), int(my)), (int(mx + math.cos(ang) * 16), int(my + math.sin(ang) * 16)), 2)
+    DRAW.circle(ecran, BLANC_NEON, (int(mx), int(my)), 9)
+    DRAW.circle(ecran, (40, 140, 255), (int(mx), int(my)), 7)
+    DRAW.rect(ecran, (8, 12, 18), (x0, y0, t, 26))
+    t1 = rendu_texte(police_petite, "CARTE", True, BLANC_NEON)
+    ecran.blit(t1, (x0 + t // 2 - t1.get_width() // 2, y0 + 3))
+    DRAW.rect(ecran, (8, 12, 18), (x0, y0 + t - 78, t, 78))
+    txt = f"PLUS PROCHE : à environ {int(proche[0] / 40)} m ({_arene_cap(proche[3])})" if proche is not None else "AUCUN ADVERSAIRE EN VIE"
     t2 = rendu_texte(police_petite, txt, True, JAUNE_CYBER)
-    ecran.blit(t2, (x0 + t // 2 - t2.get_width() // 2, y0 + t - 70))
-    t3 = rendu_texte(police_petite, f"EN VIE {vivants}   •   {nom_biome.upper()}   •   RÉGIONS {len(PARC['vus'])}/{(PARC_NC // PARC_REGION) ** 2}", True, BLANC_NEON)
-    ecran.blit(t3, (x0 + t // 2 - t3.get_width() // 2, y0 + t - 46))
-    lx = x0 + 10                                                       # légende des régions
-    for nom, coul in zip(_PC_BIOMES, _PC_BIOME_COUL):
-        DRAW.rect(ecran, coul, (lx, y0 + t - 20, 12, 12))
-        tn = rendu_texte(police_petite, nom, True, BLANC_NEON)
-        ecran.blit(tn, (lx + 16, y0 + t - 22))
-        lx += 16 + tn.get_width() + 14
-    return pygame.Rect(x0, y0, t, t)
+    ecran.blit(t2, (x0 + t // 2 - t2.get_width() // 2, y0 + t - 74))
+    t3 = rendu_texte(police_petite, f"EN VIE {vivants}   •   {nom_biome.upper()}   •   ZONES EXPLORÉES {len(A['decouv'])}", True, BLANC_NEON)
+    ecran.blit(t3, (x0 + t // 2 - t3.get_width() // 2, y0 + t - 50))
+    lx, ly = x0 + 12, y0 + t - 18
+    for coul, lab in (((40, 140, 255), "TOI"), ((235, 40, 50), "ADVERSAIRES (approx.)")):
+        DRAW.circle(ecran, coul, (lx + 6, ly), 6)
+        tn = rendu_texte(police_petite, lab, True, BLANC_NEON)
+        ecran.blit(tn, (lx + 18, ly - 12))
+        lx += 18 + tn.get_width() + 20
+    DRAW.circle(ecran, (255, 210, 80), (lx + 6, ly), 6, 2)
+    tn = rendu_texte(police_petite, "ZONE DE DÉPART", True, BLANC_NEON)
+    ecran.blit(tn, (lx + 18, ly - 12))
+
+
+def _arene_rects_menu():
+    cx, y = LARGEUR // 2, int(HAUTEUR * 0.36)
+    return {"reprendre": pygame.Rect(cx - 150, y, 300, 56), "carte": pygame.Rect(cx - 150, y + 72, 300, 56),
+            "quitter": pygame.Rect(cx - 150, y + 144, 300, 56), "retour": pygame.Rect(24, 24, 190, 56)}
+
+
+def _arene_menu(nom):
+    """Ouvre / ferme le menu pause (la partie continue pour les autres) ; les commandes tactiles sont relâchées."""
+    A = ARENE
+    A["menu"] = nom
+    if nom is not None:
+        A.update(tir=False, viser=False, aim_actif=False, id_tir=None, id_viser=None, id_aim=None, aim_kx=0.0, aim_ky=0.0)
+
+
+def _arene_dessiner_menu(cibles, ang, vivants):
+    A = ARENE
+    ecran.blit(A["voile"], (0, 0))
+    r = _arene_rects_menu()
+    if A["menu"] == "pause":
+        dessiner_titre_glitch("PAUSE", police_titre, LARGEUR // 2, int(HAUTEUR * 0.18))
+        t = rendu_texte(police_petite, "La partie continue pour les autres joueurs", True, JAUNE_CYBER)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.18) + 56))
+        bouton_neon(r["reprendre"], VERT_FLUO, "REPRENDRE", police_bouton)
+        bouton_neon(r["carte"], CYAN_NEON, "CARTE", police_bouton)
+        bouton_neon(r["quitter"], ROUGE_ALERTE, "QUITTER", police_bouton)
+    else:
+        _arene_dessiner_carte(cibles, ang, vivants, _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))])
+        bouton_neon(r["retour"], JAUNE_CYBER, "< RETOUR", police_bouton)
 
 
 def _arene_echanger(j, ang):
@@ -1763,10 +1897,31 @@ def jouer_arene():
     t_now = _time.perf_counter()
     dt = min(0.05, max(0.001, t_now - A["t_last"]))
     A["t_last"] = t_now
-    if (clic_detecte and rect_bouton_pause.collidepoint(clic_x, clic_y)) or pygame.key.get_pressed()[pygame.K_ESCAPE]:
-        _arene_quitter()
-        return
-    if (A["fin"] or A["mort"]) and clic_detecte and rect_bouton_quitter_defaite.collidepoint(clic_x, clic_y):
+    quitter = False
+    esc = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
+    if A["fin"] or A["mort"]:
+        A["menu"] = None
+        if clic_detecte and (rect_bouton_quitter_defaite.collidepoint(clic_x, clic_y) or rect_bouton_pause.collidepoint(clic_x, clic_y)):
+            quitter = True
+    else:
+        r_m = _arene_rects_menu()
+        if esc and not A["k_esc"]:
+            _arene_menu(None if A["menu"] == "pause" else "pause")
+        elif clic_detecte:
+            if A["menu"] is None:
+                if rect_bouton_pause.collidepoint(clic_x, clic_y):
+                    _arene_menu("pause")                         # la carte ne s'ouvre que depuis ce menu : aucune ouverture accidentelle
+            elif A["menu"] == "pause":
+                if rect_bouton_pause.collidepoint(clic_x, clic_y) or r_m["reprendre"].collidepoint(clic_x, clic_y):
+                    _arene_menu(None)
+                elif r_m["carte"].collidepoint(clic_x, clic_y):
+                    _arene_menu("carte")
+                elif r_m["quitter"].collidepoint(clic_x, clic_y):
+                    quitter = True
+            elif r_m["retour"].collidepoint(clic_x, clic_y):
+                _arene_menu("pause")
+    A["k_esc"] = esc
+    if quitter:
         _arene_quitter()
         return
     j = _mp_js()
@@ -1784,7 +1939,7 @@ def jouer_arene():
     im = _in_deplacement()
     if im is not None:
         dx, dy = im[0] * vit, im[1] * vit
-    if A["mort"]:
+    if A["mort"] or A["menu"] is not None:
         dx = dy = 0.0
     if dx or dy:
         A["dirx"], A["diry"] = dx / (math.hypot(dx, dy) or 1.0), dy / (math.hypot(dx, dy) or 1.0)
@@ -1824,7 +1979,7 @@ def jouer_arene():
                 A["hp"], A["mort"], A["rang"] = 0, True, max(1, _arene_vivants())      # place = joueurs encore en vie, moi compris
     # ---------- tirs
     A["t_tir"] -= dt
-    veut = A["tir"] or (IN["src"] in ("pad", "key") and _in_tir())
+    veut = (A["tir"] or (IN["src"] in ("pad", "key") and _in_tir())) and A["menu"] is None
     if veut and A["phase"] == "combat" and not A["mort"] and not A["fin"] and A["t_tir"] <= 0:
         A["t_tir"] = ARENE_CADENCE
         a = ang + random.uniform(-0.012, 0.012) if A["viser"] else ang + random.uniform(-0.07, 0.07)
@@ -1951,36 +2106,22 @@ def jouer_arene():
     A["fx"] = nouv
     if t_now - A["degat_t"] < 0.22 and A["rouge"] is not None:
         ecran.blit(A["rouge"], (0, 0))
-    # ---------- mini-carte (en haut au centre) : on la touche pour l'agrandir et voir où sont les autres joueurs
-    mx0 = LARGEUR // 2 - _PC_MINI // 2
-    touche_m = pygame.key.get_pressed()[pygame.K_m]
-    if touche_m and not A["k_m"]:
-        A["carte"] = not A["carte"]
-    A["k_m"] = bool(touche_m)
-    if A["fin"] or A["mort"]:
-        A["carte"] = False
-    if clic_detecte:
-        if not A["carte"] and pygame.Rect(mx0, 12, _PC_MINI, _PC_MINI).collidepoint(clic_x, clic_y):
-            A["carte"] = True
-        elif A["carte"] and A["carte_rect"].collidepoint(clic_x, clic_y):
-            A["carte"] = False
-    if PARC["mini"] is not None and not A["carte"]:
-        ecran.blit(PARC["mini"], (mx0, 12))
-        k = _PC_MINI / PARC_MONDE
-        pygame.draw.circle(ecran, ROUGE_ALERTE, (mx0 + int(PARC["x"] * k), 12 + int(PARC["y"] * k)), 4)
-        t_c = rendu_texte(police_petite, "CARTE", True, BLANC_NEON)
-        ecran.blit(t_c, (mx0 + _PC_MINI // 2 - t_c.get_width() // 2, 12 + _PC_MINI - 22))
+    # ---------- radar rond (coin bas gauche : le toucher ne fait rien), barre de vie en haut au centre
+    if A["menu"] is None:
+        _arene_radar_dessiner(cibles, ang)
+    _arene_carte_maj()
     hp = max(0, A["hp"])
-    DRAW.rect(ecran, (40, 10, 14), (24, 24, 230, 22))
-    DRAW.rect(ecran, (60, 220, 90) if hp > 40 else ROUGE_ALERTE, (24, 24, int(230 * hp / ARENE_PV), 22))
-    DRAW.rect(ecran, BLANC_NEON, (24, 24, 230, 22), 2)
+    bx0 = LARGEUR // 2 - 115
+    DRAW.rect(ecran, (40, 10, 14), (bx0, 14, 230, 22))
+    DRAW.rect(ecran, (60, 220, 90) if hp > 40 else ROUGE_ALERTE, (bx0, 14, int(230 * hp / ARENE_PV), 22))
+    DRAW.rect(ecran, BLANC_NEON, (bx0, 14, 230, 22), 2)
     t_pv = rendu_texte(police_petite, f"PV {hp}", True, BLANC_NEON)
-    ecran.blit(t_pv, (32, 26))
+    ecran.blit(t_pv, (bx0 + 8, 16))
     if A["phase"] == "combat":
         t_info = rendu_texte(police_petite, f"EN VIE {vivants}/{max(A['n0'], vivants)}   ÉLIMINATIONS {A['kills']}", True, BLANC_NEON)
     else:
         t_info = rendu_texte(police_petite, f"JOUEURS {max(1, MP['n'])}/{MP_MAX}", True, BLANC_NEON)
-    ecran.blit(t_info, (24, 54))
+    ecran.blit(t_info, (LARGEUR // 2 - t_info.get_width() // 2, 42))
     if A["phase"] == "lobby":
         reste = max(0, int(math.ceil((A["debut"] - now_srv) / 1000.0)))
         t = rendu_texte(police_titre, f"DÉPART DANS {reste}", True, JAUNE_CYBER)
@@ -1990,15 +2131,18 @@ def jouer_arene():
     elif t_now - A["t_combat"] < 2.0:
         t = rendu_texte(police_titre, "COMBAT !" if A["n0"] >= 2 else "ENTRAÎNEMENT", True, ROUGE_ALERTE)
         ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, int(HAUTEUR * 0.30)))
-    if A["carte"]:
-        A["carte_rect"] = _arene_dessiner_carte(cibles, ang, vivants, _PC_BIOMES[_parc_biome(int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH))])
-    if not _in_masquer_tactile():
+    if A["menu"] is not None:
+        _arene_dessiner_menu(cibles, ang, vivants)
+    elif not _in_masquer_tactile():
         ecran.blit(SURF_SOCLE_JOY, (JOY_CENTRE_X - JOY_RAYON_SOCLE - 6, JOY_CENTRE_Y - JOY_RAYON_SOCLE - 6))
         DRAW.circle(ecran, VERT_FLUO, (JOY_CENTRE_X, JOY_CENTRE_Y), JOY_RAYON_SOCLE, 4)
         DRAW.circle(ecran, (0, 120, 190), (int(manette_x), int(manette_y)), JOY_RAYON_MANETTE)
         DRAW.circle(ecran, CYAN_NEON, (int(manette_x), int(manette_y)), max(2, JOY_RAYON_MANETTE - 4))
         _arene_dessiner_commandes()
-    bouton_neon(rect_bouton_pause, ROUGE_ALERTE, "X", police_bouton)
+    DRAW.circle(ecran, (10, 10, 20), (BTN_PAUSE_X, BTN_PAUSE_Y), BTN_PAUSE_RAYON)             # bouton pause (même dessin qu'en solo)
+    DRAW.circle(ecran, BLEU_CYBER, (BTN_PAUSE_X, BTN_PAUSE_Y), BTN_PAUSE_RAYON, 3)
+    DRAW.rect(ecran, BLEU_CYBER, (BTN_PAUSE_X - 9, BTN_PAUSE_Y - 10, 6, 20))
+    DRAW.rect(ecran, BLEU_CYBER, (BTN_PAUSE_X + 3, BTN_PAUSE_Y - 10, 6, 20))
     rtt = MP["rtt"]
     if rtt > 0:
         col_i = VERT_FLUO if rtt < 200 else (JAUNE_CYBER if rtt < 500 else ROUGE_ALERTE)
