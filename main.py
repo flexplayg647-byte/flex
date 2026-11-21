@@ -1446,10 +1446,12 @@ ARENE_V_BALLE = 1050.0             # vitesse d'un tir (px par seconde : identiqu
 ARENE_CADENCE = 0.18               # secondes entre deux tirs
 ARENE_R_JOUEUR = 20                # rayon de touche d'un joueur
 ARENE_LOCK = 1200.0                # distance maximale du verrouillage automatique (bouton L)
-ARENE_R0 = 3200                    # rayon de la zone au départ (contient tous les points d'apparition)
+ARENE_R0 = 21800                   # rayon de la zone au départ : le cercle contient TOUTE la carte, coins compris (demi-diagonale = 21 720 px)
 # phases de la zone : (secondes de calme, secondes d'alerte rouge, secondes de rétrécissement, rayon visé, dégâts par seconde hors zone)
-ARENE_PHASES = [(100, 10, 60, 2200, 1.0), (70, 10, 50, 1500, 2.0), (50, 10, 45, 900, 4.0), (40, 10, 40, 450, 6.0), (30, 10, 30, 120, 9.0)]
-ARENE_DPS_FINAL = 12.0             # dégâts par seconde hors de la dernière zone
+# la zone se referme sur toute l'étendue de la carte, par étapes, en restant toujours plus lente qu'un joueur qui court (environ 390 px/s)
+ARENE_PHASES = [(90, 10, 80, 13500, 1.0), (60, 10, 70, 8500, 2.0), (50, 10, 60, 5000, 3.0), (40, 10, 50, 2800, 5.0),
+                (35, 10, 45, 1400, 7.0), (30, 10, 40, 700, 9.0), (25, 10, 35, 300, 11.0), (20, 10, 30, 120, 13.0)]
+ARENE_DPS_FINAL = 15.0             # dégâts par seconde hors de la dernière zone
 _AR_RBTN = 48                      # rayon des boutons L2 / R2
 _AR_RADAR_R = 66                   # rayon du radar rond (coin bas gauche)
 _AR_TS = 40                        # taille (px) d'une zone sur le radar
@@ -1469,17 +1471,13 @@ def _arene_centre(seed):
 
 
 def _arene_spawn(seed, uid):
-    """Point de départ d'un joueur : calculé à partir de son identifiant, donc sans aucune coordination entre téléphones."""
-    cx, cy = _arene_centre(seed)
+    """Point de départ d'un joueur : tiré au hasard sur TOUTE la carte à partir de son identifiant (aucune coordination entre téléphones)."""
     r = random.Random(f"{seed}:{uid}")
-    ang, rayon = r.random() * 6.2832, r.randint(1500, 2500)
     for _ in range(80):
-        x, y = cx + math.cos(ang) * rayon, cy + math.sin(ang) * rayon
+        x, y = r.randint(2000, PARC_MONDE - 2000), r.randint(2000, PARC_MONDE - 2000)
         if not parc_bloque(x, y, 26):
             return float(x), float(y)
-        ang += 0.41
-        rayon = 1500 + (rayon - 1500 + 25) % 1000
-    return float(cx), float(cy)
+    return float(PARC_MONDE // 2), float(PARC_MONDE // 2 + 450)
 
 
 def arene_demarrer():
@@ -1565,14 +1563,14 @@ def arene_evenement(event):
 
 def _arene_zone_plan(seed):
     """Plan complet de la zone, calculé à partir du numéro de la partie : identique sur tous les téléphones, aucun échange réseau."""
-    cx, cy = _arene_centre(seed)
     rng = random.Random(f"zone:{seed}")
     plan, t = [], 0.0
-    c_prev, r_prev = (float(cx), float(cy)), float(ARENE_R0)
+    c_prev, r_prev = (PARC_MONDE / 2.0, PARC_MONDE / 2.0), float(ARENE_R0)   # on part du milieu de la carte
+    lo, hi = 4000.0, PARC_MONDE - 4000.0                                     # les centres restent loin des bords : la zone finale est toujours sur la carte
     for i, (calme, alerte, retrec, r_new, dps) in enumerate(ARENE_PHASES):
         marge = r_prev - r_new                                           # la nouvelle zone reste dans l'ancienne
         a, d = rng.random() * 6.2832, marge * math.sqrt(rng.random()) * 0.9
-        c_new = (c_prev[0] + math.cos(a) * d, c_prev[1] + math.sin(a) * d)
+        c_new = (min(max(c_prev[0] + math.cos(a) * d, lo), hi), min(max(c_prev[1] + math.sin(a) * d, lo), hi))
         plan.append({"i": i, "t_alerte": t + calme, "t_debut": t + calme + alerte, "t_fin": t + calme + alerte + retrec,
                      "c0": c_prev, "r0": r_prev, "c1": c_new, "r1": float(r_new), "dps": dps})
         t += calme + alerte + retrec
