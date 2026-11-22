@@ -542,9 +542,10 @@ _JS_MULTI = r"""
 if(window.flexMP){return;}
 var DBURL="https://flex-cyberpunk-c49e8-default-rtdb.firebaseio.com";
 var V="10.14.1";
-var MAXJ=6, NSALLES=30, LOBBY=25000;
-var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0,en:"",enHas:false,enVer:0,rest:0,startAt:0,offset:0};
-var db=null,myRef=null,listRef=null,connRef=null,lastSend=0,uid="",pseudo="",skin="",pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9,lastF=-1,lastFA=0,lastH=-1,hitsRef=null,hitsIn=[],enRef=null,killsRef=null,pendEn=false,pendEnT=0,isHost=false,kills=[];
+var LOBBY=25000, MAXMS=960000, RESULT=20000, ROOM="main";
+var M=window.flexMP={status:"idle",err:"",room:"",seed:0,level:0,json:"[]",ver:0,n:0,rtt:0,startAt:0,endAt:0,round:0,roundVer:0,offset:0,en:"",enHas:false,enVer:0,rest:0};
+var db=null,myRef=null,listRef=null,connRef=null,roundRef=null,hitsRef=null,uid="",pseudo="",skin="",entered=false,
+    lastSend=0,pending=false,pendT=0,lastX=-1e9,lastY=-1e9,lastA=-1e9,lastF=-1,lastFA=0,lastH=-1,hitsIn=[];
 function charger(cb){
   if(window.firebase&&firebase.database){cb();return;}
   var s=document.createElement("script");
@@ -553,81 +554,90 @@ function charger(cb){
   s.onerror=function(){M.status="err";M.err="script";};
   document.head.appendChild(s);
 }
-function ecouter(){
-  listRef=db.ref("rooms/"+M.room+"/players");
-  listRef.on("value",function(s){
-    var a=[];
-    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0,f:v.f|0,fa:+v.fa||0,h:(v.h===undefined?100:+v.h)});});
-    M.json=JSON.stringify(a);M.n=a.length;M.ver++;
-  });
-}
+function nowSrv(){return Date.now()+M.offset;}
+function nouvelle(id){return {id:id,seed:Math.floor(Math.random()*2000000000),startAt:nowSrv()+LOBBY,endAt:0};}
+function appliquer(v){v=v||{};M.round=v.id|0;M.seed=v.seed|0;M.startAt=+v.startAt||0;M.endAt=+v.endAt||0;M.roundVer++;}
 M.join=function(level){
   if(M.status==="joining"||M.status==="ok"){return;}
   var A=window.flexAuth;
   if(!A||!A.uid||!A.pseudo){M.status="err";M.err="login";return;}
   uid=A.uid;pseudo=A.pseudo;skin=String(A.skinActif||"").slice(0,40);
-  M.status="joining";M.err="";M.json="[]";M.n=0;
+  M.status="joining";M.err="";M.json="[]";M.n=0;M.level=level|0;
   charger(function(){
     try{
       db=firebase.app().database(DBURL);
-      var i=0;
-      var essayer=function(){
-        i++;
-        if(i>NSALLES){M.status="err";M.err="pleines";return;}
-        var rid="salle"+i;
-        db.ref("rooms/"+rid).transaction(function(cur){
-          var me={p:pseudo,s:skin,x:0,y:0,a:0,f:0,fa:0,h:100};
-          var now=Date.now()+M.offset;
-          if(cur===null||typeof cur!=="object"||!cur.players){
-            var pl={};pl[uid]=me;
-            return {seed:Math.floor(Math.random()*2000000000),level:level,startAt:now+LOBBY,players:pl};
-          }
-          if(cur.startAt&&now>=cur.startAt&&!cur.players[uid]){return;}
-          var n=Object.keys(cur.players).length;
-          if(!cur.players[uid]&&n>=MAXJ){return;}
-          cur.players[uid]=me;
+      db.ref(".info/serverTimeOffset").once("value",function(o){
+        M.offset=+o.val()||0;
+        roundRef=db.ref("rooms/"+ROOM+"/round");
+        roundRef.transaction(function(cur){
+          var now=nowSrv();
+          if(cur===null||typeof cur!=="object"||!cur.id){return nouvelle(1);}
+          if((cur.endAt&&now>=cur.endAt)||now>=cur.startAt+MAXMS){return nouvelle((cur.id|0)+1);}
           return cur;
         },function(err,committed,snap){
           if(err){M.status="err";M.err="reseau";return;}
-          if(!committed){essayer();return;}
-          var v=snap.val()||{};
-          M.room=rid;M.seed=v.seed|0;M.level=v.level|0;M.startAt=+v.startAt||0;
-          myRef=db.ref("rooms/"+rid+"/players/"+uid);
-          myRef.onDisconnect().remove();
-          hitsRef=db.ref("rooms/"+rid+"/hits/"+uid);
-          hitsRef.on("child_added",function(s){var v=s.val()||{};hitsIn.push({f:String(v.f||""),d:+v.d||0});try{s.ref.remove();}catch(e){}});
-          ecouter();
-          enRef=db.ref("rooms/"+rid+"/en");
-          enRef.on("value",function(s){var v=s.val()||{};M.enHas=s.exists();M.en=String(v.d||"");M.rest=v.r|0;M.enVer++;});
-          connRef=db.ref(".info/connected");
-          connRef.on("value",function(s){
-            if(s.val()===true&&M.status==="ok"&&myRef){myRef.onDisconnect().remove();myRef.update({p:pseudo,s:skin});}
-          });
-          M.status="ok";
+          appliquer(snap.val());
+          roundRef.on("value",function(s){appliquer(s.val());});
+          M.room=ROOM;M.status="ok";
         },false);
-      };
-      db.ref(".info/serverTimeOffset").once("value",function(o){M.offset=+o.val()||0;essayer();},function(){essayer();});
+      },function(){M.status="err";M.err="reseau";});
     }catch(e){M.status="err";M.err=String(e).slice(0,60);}
   });
 };
-M.leave=function(){
+M.enter=function(){
+  if(M.status!=="ok"||entered){return;}
+  entered=true;
+  var rid=M.round;
+  myRef=db.ref("rooms/"+ROOM+"/players/"+uid);
+  myRef.set({p:pseudo,s:skin,x:0,y:0,a:0,f:0,fa:0,h:100,r:rid});
+  myRef.onDisconnect().remove();
+  db.ref("rooms/"+ROOM+"/hits/"+uid).remove();
+  hitsRef=db.ref("rooms/"+ROOM+"/hits/"+uid);
+  hitsRef.on("child_added",function(s){var v=s.val()||{};if((v.r|0)===M.round){hitsIn.push({f:String(v.f||""),d:+v.d||0});}try{s.ref.remove();}catch(e){}});
+  listRef=db.ref("rooms/"+ROOM+"/players");
+  listRef.on("value",function(s){
+    var a=[];
+    s.forEach(function(c){var v=c.val()||{};a.push({u:c.key,p:String(v.p||"?").slice(0,16),s:String(v.s||"").slice(0,40),x:+v.x||0,y:+v.y||0,a:+v.a||0,f:v.f|0,fa:+v.fa||0,h:(v.h===undefined?100:+v.h),r:v.r|0});});
+    M.json=JSON.stringify(a);M.n=a.length;M.ver++;
+  });
+  connRef=db.ref(".info/connected");
+  connRef.on("value",function(s){if(s.val()===true&&entered&&myRef){myRef.onDisconnect().remove();myRef.update({p:pseudo,s:skin,r:rid});}});
+};
+M.exit=function(){
+  entered=false;
   try{if(listRef){listRef.off();listRef=null;}}catch(e){}
-  try{if(connRef){connRef.off();connRef=null;}}catch(e){}
-  try{if(enRef){enRef.off();enRef=null;}}catch(e){}
-  try{if(killsRef){killsRef.off();killsRef=null;}}catch(e){}
   try{if(hitsRef){hitsRef.off();hitsRef=null;}}catch(e){}
-  hitsIn=[];lastH=-1;M.startAt=0;
-  isHost=false;kills=[];M.en="";M.enHas=false;M.rest=0;pendEn=false;lastF=-1;
+  try{if(connRef){connRef.off();connRef=null;}}catch(e){}
   try{if(myRef){myRef.onDisconnect().cancel();myRef.remove();myRef=null;}}catch(e){}
-  M.status="idle";M.err="";M.room="";M.json="[]";M.n=0;M.ver++;M.rtt=0;pending=false;lastX=-1e9;lastY=-1e9;lastA=-1e9;
+  hitsIn=[];M.json="[]";M.n=0;M.ver++;M.rtt=0;pending=false;lastX=-1e9;lastY=-1e9;lastA=-1e9;lastF=-1;lastH=-1;
+};
+M.leave=function(){
+  M.exit();
+  try{if(roundRef){roundRef.off();roundRef=null;}}catch(e){}
+  M.status="idle";M.err="";M.room="";M.round=0;M.startAt=0;M.endAt=0;
+};
+M.endRound=function(id){
+  if(M.status!=="ok"||!roundRef){return;}
+  roundRef.transaction(function(cur){
+    if(cur&&(cur.id|0)===(id|0)&&!cur.endAt){cur.endAt=nowSrv()+RESULT;}
+    return cur;
+  });
+};
+M.nextRound=function(id){
+  if(M.status!=="ok"||!roundRef){return;}
+  roundRef.transaction(function(cur){
+    var now=nowSrv();
+    if(cur&&(cur.id|0)===(id|0)&&((cur.endAt&&now>=cur.endAt)||now>=cur.startAt+MAXMS)){return nouvelle((cur.id|0)+1);}
+    return cur;
+  });
 };
 M.hit=function(u,d){
-  if(M.status!=="ok"||!db||!M.room){return;}
-  try{db.ref("rooms/"+M.room+"/hits/"+u).push({f:uid,d:d|0});}catch(e){}
+  if(M.status!=="ok"||!db||!entered){return;}
+  try{db.ref("rooms/"+ROOM+"/hits/"+u).push({f:uid,d:d|0,r:M.round});}catch(e){}
 };
 M.takeHits=function(){var a=hitsIn;hitsIn=[];return JSON.stringify(a);};
 M.send=function(x,y,a,f,fa,h){
-  if(M.status!=="ok"||!myRef){return;}
+  if(M.status!=="ok"||!myRef||!entered){return;}
   var t=Date.now();
   if(pending&&t-pendT<3000){return;}
   if(t-lastSend<80){return;}
@@ -638,28 +648,10 @@ M.send=function(x,y,a,f,fa,h){
     myRef.update({x:x,y:y,a:a,f:f,fa:fa,h:h}).then(function(){pending=false;M.rtt=Date.now()-t;}).catch(function(){pending=false;});
   }catch(e){pending=false;}
 };
-M.setHost=function(h){
-  h=!!h;if(h===isHost){return;}
-  isHost=h;
-  if(h&&db&&M.room){
-    killsRef=db.ref("rooms/"+M.room+"/kills");
-    killsRef.on("child_added",function(s){kills.push(+s.key);try{s.ref.remove();}catch(e){}});
-  }else if(killsRef){try{killsRef.off();}catch(e){}killsRef=null;}
-};
-M.takeKills=function(){var a=kills;kills=[];return JSON.stringify(a);};
-M.kill=function(id){
-  if(M.status!=="ok"||!db||!M.room){return;}
-  try{db.ref("rooms/"+M.room+"/kills/"+(id|0)).set(Date.now());}catch(e){}
-};
-M.sendDrones=function(d,r){
-  if(M.status!=="ok"||!db||!M.room){return;}
-  var t=Date.now();
-  if(pendEn&&t-pendEnT<3000){return;}
-  pendEn=true;pendEnT=t;
-  try{
-    db.ref("rooms/"+M.room+"/en").set({d:d,r:r|0}).then(function(){pendEn=false;}).catch(function(){pendEn=false;});
-  }catch(e){pendEn=false;}
-};
+M.setHost=function(){};
+M.takeKills=function(){return "[]";};
+M.kill=function(){};
+M.sendDrones=function(){};
 })();
 """
 
@@ -1462,6 +1454,7 @@ ARENE = {"actif": False, "phase": "lobby", "debut": 0, "off": 0, "n0": 0, "hp": 
          "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0),
          "plan": [], "strips": [], "radar_zone": None, "carte_zone": None,
          "bots": [], "bots_idx": {}, "balles_bot": [], "pvel": [0.0, 0.0], "xp_fait": False, "skill_base": 0.12, "t_ajust": 0.0,
+         "manche": 0, "endAt": 0, "spectateur": False, "bots_ok": False, "t_fin0": 0.0, "fin_envoye": False, "t_next": 0.0,
          "carte": False, "carte_rect": None, "k_m": False, "menu": None, "k_esc": False, "radar": None, "radar_masque": None, "carte_surf": None,
          "carte_t": 0, "decouv": set(), "thumbs": {}, "lock": None, "vel": {}, "carte_cache": None, "carte_ver": -1, "carte_taille": 0}
 
@@ -1471,38 +1464,147 @@ def _arene_centre(seed):
     return r.randint(5, 42) * PARC_CH + PARC_CH // 2, r.randint(5, 42) * PARC_CH + PARC_CH // 2
 
 
-def _arene_spawn(seed, uid):
-    """Point de départ d'un joueur : tiré au hasard sur TOUTE la carte à partir de son identifiant (aucune coordination entre téléphones)."""
+def _arene_spawn(seed, uid, zone=None):
+    """Point de départ d'un joueur : tiré au hasard sur TOUTE la carte (ou dans la zone encore ouverte si on arrive en cours de manche)."""
     r = random.Random(f"{seed}:{uid}")
-    for _ in range(80):
+    for _ in range(200):
         x, y = r.randint(2000, PARC_MONDE - 2000), r.randint(2000, PARC_MONDE - 2000)
+        if zone is not None and math.hypot(x - zone["c"][0], y - zone["c"][1]) > zone["r"] * 0.9:
+            continue
         if not parc_bloque(x, y, 26):
             return float(x), float(y)
+    if zone is not None:
+        return float(min(max(zone["c"][0], 2000), PARC_MONDE - 2000)), float(min(max(zone["c"][1], 2000), PARC_MONDE - 2000))
     return float(PARC_MONDE // 2), float(PARC_MONDE // 2 + 450)
 
 
 def arene_demarrer():
+    """Entrée dans la manche en cours de la salle unique : au départ, ou en cours de manche tant que la zone est grande ; sinon on attend la suivante."""
     j = _mp_js()
     try:
-        debut, off = int(j.startAt), int(j.offset)
+        rid, seed, debut, fin_at, off = int(j.round), int(j.seed), int(j.startAt), int(j.endAt), int(j.offset)
     except Exception:
-        debut, off = 0, 0
+        rid, seed, debut, fin_at, off = 0, MP["seed"] or 1, 0, 0, 0
     maintenant = int(_time.time() * 1000) + off
     if debut <= 0:
         debut = maintenant + 8000
-    seed = MP["seed"] or 1
-    parc_demarrer(seed=seed, spawn_fn=lambda: _arene_spawn(seed, MP["uid"]))
-    ARENE.update(actif=True, phase="lobby", debut=debut, off=off, n0=0, hp=ARENE_PV, mort=False, rang=0, kills=0, balles=[], balles_d=[],
-                 t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0, aim_ky=0.0,
-                 id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
-                 cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={}, t_combat=0.0,
-                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, plan=_arene_zone_plan(seed), bots=[], bots_idx={}, balles_bot=[], pvel=[0.0, 0.0], xp_fait=False, t_ajust=0.0, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
+    seed = seed or 1
+    MP["seed"] = seed
+    try:
+        if j is not None:
+            j.exit()                                                   # on quitte la manche précédente avant de rejoindre la nouvelle
+    except Exception:
+        pass
+    plan = _arene_zone_plan(seed)
+    ARENE["plan"] = plan
+    t = (maintenant - debut) / 1000.0
+    attente = fin_at > 0 or t > plan[2]["t_fin"]                      # manche déjà finie, ou zone trop petite pour arriver maintenant
+    zone = _arene_zone_etat(t)
+    if attente:
+        spawn = lambda: (float(zone["c"][0]), float(zone["c"][1]))
+    else:
+        spawn = lambda: _arene_spawn(seed, MP["uid"], zone if t >= 0 else None)
+    parc_demarrer(seed=seed, spawn_fn=spawn)
+    ARENE.update(actif=True, phase="lobby" if t < 0 else "combat", debut=debut, off=off, n0=0, hp=ARENE_PV, mort=False, rang=0, kills=0,
+                 balles=[], balles_d=[], t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0,
+                 aim_ky=0.0, id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
+                 cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={},
+                 t_combat=_time.perf_counter() if t >= 0 else 0.0, centre=_arene_centre(seed), carte=False,
+                 carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, plan=plan, bots=[], bots_idx={}, balles_bot=[],
+                 pvel=[0.0, 0.0], xp_fait=False, t_ajust=0.0, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0,
+                 manche=rid, endAt=fin_at, spectateur=attente, bots_ok=False, t_fin0=0.0, fin_envoye=False, t_next=0.0)
     ARENE["voile"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["voile"].fill((0, 0, 0, 150))
     ARENE["rouge"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["rouge"].fill((255, 0, 0, 60))
     MP.update(f=0, fa=0.0, ver=-1, autres=[], n=1, rtt=0, tick=0)
     _arene_surfaces_init()
+    if not attente:
+        try:
+            if j is not None:
+                j.enter()
+        except Exception:
+            pass
+
+
+def _arene_suivi_manche(j, now_srv, t_now):
+    """Suit la manche partagée : nouvelle manche détectée, fin annoncée, et manche suivante lancée quand le compte à rebours est terminé."""
+    A = ARENE
+    if j is None:
+        return
+    try:
+        rid, fin_at = int(j.round), int(j.endAt)
+    except Exception:
+        return
+    A["endAt"] = fin_at
+    if rid > 0 and rid != A["manche"]:
+        if not TRANS["actif"]:
+            lancer_transition(("arene",))                              # nouvelle manche : nouvelle carte pour tout le monde
+        return
+    if fin_at > 0 and now_srv >= fin_at and t_now - A["t_next"] > 1.0:
+        A["t_next"] = t_now
+        try:
+            j.nextRound(A["manche"])
+        except Exception:
+            pass
+
+
+def _arene_fin_manche(j, now_srv, t_now):
+    """Annonce la fin de la manche : dernier joueur en vie, joueur seul éliminé ou vainqueur de ses bots, ou durée maximale."""
+    A = ARENE
+    if A["phase"] != "combat" or j is None or A["fin_envoye"] or A["endAt"] > 0 or not A["bots_ok"]:
+        return
+    participants = max(1, MP["n"])
+    vivants_h = (0 if A["mort"] else 1) + sum(1 for o in MP["autres"] if int(o.get("h", 100)) > 0)
+    t = (now_srv - A["debut"]) / 1000.0
+    fini = (participants >= 2 and vivants_h <= 1) or (participants == 1 and (A["mort"] or A["fin"] == "victoire")) or t > A["plan"][-1]["t_fin"] + 60
+    if not fini:
+        A["t_fin0"] = 0.0
+        return
+    if A["t_fin0"] == 0.0:
+        A["t_fin0"] = t_now
+    elif t_now - A["t_fin0"] > 3.0:
+        A["fin_envoye"] = True
+        try:
+            j.endRound(A["manche"])
+        except Exception:
+            pass
+
+
+def _arene_spectateur(t_now):
+    """Manche déjà trop avancée : on attend la suivante, qu'on rejoint automatiquement (le drone pour regarder viendra ensuite)."""
+    A = ARENE
+    j = _mp_js()
+    now_srv = int(_time.time() * 1000) + A["off"]
+    esc = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
+    if (clic_detecte and (rect_bouton_quitter_defaite.collidepoint(clic_x, clic_y) or rect_bouton_pause.collidepoint(clic_x, clic_y))) or (esc and not A["k_esc"]):
+        A["k_esc"] = esc
+        _arene_quitter()
+        return
+    A["k_esc"] = esc
+    _arene_suivi_manche(j, now_srv, t_now)
+    zone = _arene_zone_etat((now_srv - A["debut"]) / 1000.0)
+    PARC["x"], PARC["y"] = float(zone["c"][0]), float(zone["c"][1])
+    cam_x = int(min(max(PARC["x"] - LARGEUR // 2, 0), PARC_MONDE - LARGEUR))
+    cam_y = int(min(max(PARC["y"] - HAUTEUR // 2, 0), PARC_MONDE - HAUTEUR))
+    _parc_gerer(cam_x, cam_y)
+    for cx in range(max(0, cam_x // PARC_CH), min(PARC_NC - 1, (cam_x + LARGEUR) // PARC_CH) + 1):
+        for cy in range(max(0, cam_y // PARC_CH), min(PARC_NC - 1, (cam_y + HAUTEUR) // PARC_CH) + 1):
+            surf = PARC["surf"].get((cx, cy))
+            px, py = cx * PARC_CH - cam_x, cy * PARC_CH - cam_y
+            if surf is not None:
+                ecran.blit(surf, (px, py))
+            else:
+                ecran.fill(_PC_HERBE, (px, py, PARC_CH, PARC_CH))
+    ecran.blit(A["voile"], (0, 0))
+    dessiner_titre_glitch("MANCHE EN COURS", police_titre, LARGEUR // 2, int(HAUTEUR * 0.24))
+    if A["endAt"] > 0:
+        txt = f"PROCHAINE MANCHE DANS {max(0, int(math.ceil((A['endAt'] - now_srv) / 1000.0)))}"
+    else:
+        txt = "Tu rejoindras automatiquement la prochaine manche" + "." * (1 + (pygame.time.get_ticks() // 500) % 3)
+    t = rendu_texte(police_jeu, txt, True, JAUNE_CYBER)
+    ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR // 2 - 40))
+    bouton_neon(rect_bouton_quitter_defaite, ROUGE_ALERTE, "QUITTER", police_bouton)
 
 
 def _arene_quitter():
@@ -2373,7 +2475,7 @@ def _arene_echanger(j, ang):
     v = int(j.ver)
     if v != MP["ver"]:
         MP["ver"] = v
-        tous = json.loads(str(j.json))
+        tous = [o for o in json.loads(str(j.json)) if int(o.get("r", 0)) == A["manche"]]
         MP["n"] = len(tous)
         MP["autres"] = [o for o in tous if o.get("u") != MP["uid"]]
         for o in MP["autres"]:                               # tirs des autres joueurs (affichage seulement)
@@ -2473,6 +2575,9 @@ def jouer_arene():
     t_now = _time.perf_counter()
     dt = min(0.05, max(0.001, t_now - A["t_last"]))
     A["t_last"] = t_now
+    if A["spectateur"]:
+        _arene_spectateur(t_now)
+        return
     quitter = False
     esc = bool(pygame.key.get_pressed()[pygame.K_ESCAPE])
     if A["fin"] or A["mort"]:
@@ -2502,10 +2607,13 @@ def jouer_arene():
         return
     j = _mp_js()
     now_srv = int(_time.time() * 1000) + A["off"]
+    _arene_suivi_manche(j, now_srv, t_now)
     if A["phase"] == "lobby" and now_srv >= A["debut"]:
-        A["phase"], A["n0"], A["t_combat"] = "combat", max(1, MP["n"]), t_now
-        _bots_creer()                                                  # seul : 13 bots ; moins à mesure que des joueurs sont là
-        A["n0"] += len(A["bots"])
+        A["phase"], A["t_combat"] = "combat", t_now
+    if A["phase"] == "combat" and not A["bots_ok"] and MP["ver"] >= 0:    # une fois la liste des joueurs connue : bots (13 seul, moins avec d'autres joueurs)
+        _bots_creer()
+        A["n0"] = max(1, MP["n"]) + len(A["bots"])
+        A["bots_ok"] = True
     zone = _arene_zone_etat((now_srv - A["debut"]) / 1000.0)     # la zone ne dépend que de l'heure du serveur : identique pour tous
     dehors = math.hypot(PARC["x"] - zone["c"][0], PARC["y"] - zone["c"][1]) > zone["r"]
     # ---------- déplacement (vitesse indépendante du nombre d'images par seconde : même vitesse pour tous)
@@ -2617,13 +2725,16 @@ def jouer_arene():
     A["balles"] = restantes
     # ---------- fin de partie
     vivants = _arene_vivants()
-    if A["phase"] == "combat" and A["n0"] >= 2 and vivants <= 1 and not A["fin"]:
+    h_viv = (0 if A["mort"] else 1) + sum(1 for o in MP["autres"] if int(o.get("h", 100)) > 0)
+    vivants_fin = vivants if MP["n"] <= 1 else h_viv                  # seul : les bots comptent ; à plusieurs : seuls les joueurs décident de la fin
+    if A["phase"] == "combat" and A["bots_ok"] and A["n0"] >= 2 and vivants_fin <= 1 and not A["fin"]:
         A["fin"] = "defaite" if A["mort"] else "victoire"
         if A["fin"] == "victoire":
             A["rang"] = 1
     if (A["mort"] or A["fin"]) and not A["xp_fait"]:                 # l'expérience du joueur (donc la difficulté des bots) est mise à jour
         A["xp_fait"] = True
         _arene_xp_enregistrer(A["rang"], A["n0"], A["kills"], A["fin"] == "victoire")
+    _arene_fin_manche(j, now_srv, t_now)
     # ---------- caméra : un peu en avant quand on vise
     decal = 280.0
     if verrou is not None:
@@ -2767,6 +2878,14 @@ def jouer_arene():
         dessiner_titre_glitch("VICTOIRE" if gagne else "ÉLIMINÉ", police_titre, LARGEUR // 2, int(HAUTEUR * 0.24))
         t = rendu_texte(police_jeu, f"Place n°{A['rang']}   •   {A['kills']} élimination(s)", True, BLANC_NEON)
         ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR // 2 - 40))
+        if A["endAt"] > 0:
+            info_m = f"PROCHAINE MANCHE DANS {max(0, int(math.ceil((A['endAt'] - now_srv) / 1000.0)))}"
+        elif A["fin"] or MP["n"] <= 1:
+            info_m = "La manche se termine..."
+        else:
+            info_m = "La manche continue pour les autres joueurs"
+        t = rendu_texte(police_petite, info_m, True, JAUNE_CYBER)
+        ecran.blit(t, (LARGEUR // 2 - t.get_width() // 2, HAUTEUR // 2 + 8))
         bouton_neon(rect_bouton_quitter_defaite, VERT_FLUO if gagne else ROUGE_ALERTE, "QUITTER", police_bouton)
 
 
