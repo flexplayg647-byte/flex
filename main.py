@@ -1461,6 +1461,7 @@ ARENE = {"actif": False, "phase": "lobby", "debut": 0, "off": 0, "n0": 0, "hp": 
          "fx": [], "t_last": 0.0, "degat_t": -9.0, "cam_dx": 0.0, "cam_dy": 0.0, "dirx": 1.0, "diry": 0.0, "fin": "",
          "hits": {}, "vivants_vu": {}, "f_vu": {}, "voile": None, "rouge": None, "t_combat": 0.0, "centre": (0, 0),
          "plan": [], "strips": [], "radar_zone": None, "carte_zone": None,
+         "bots": [], "bots_idx": {}, "balles_bot": [], "pvel": [0.0, 0.0], "xp_fait": False, "skill_base": 0.12, "t_ajust": 0.0,
          "carte": False, "carte_rect": None, "k_m": False, "menu": None, "k_esc": False, "radar": None, "radar_masque": None, "carte_surf": None,
          "carte_t": 0, "decouv": set(), "thumbs": {}, "lock": None, "vel": {}, "carte_cache": None, "carte_ver": -1, "carte_taille": 0}
 
@@ -1495,7 +1496,7 @@ def arene_demarrer():
                  t_tir=0.0, viser=False, tir=False, aim_actif=False, aim_ang=0.0, aim_utilise=False, aim_kx=0.0, aim_ky=0.0,
                  id_aim=None, id_viser=None, id_tir=None, lisse={}, fx=[], t_last=_time.perf_counter(), degat_t=-9.0,
                  cam_dx=0.0, cam_dy=0.0, dirx=1.0, diry=0.0, fin="", hits={}, vivants_vu={}, f_vu={}, t_combat=0.0,
-                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, plan=_arene_zone_plan(seed), lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
+                 centre=_arene_centre(seed), carte=False, carte_rect=pygame.Rect(0, 0, 0, 0), k_m=False, menu=None, k_esc=False, plan=_arene_zone_plan(seed), bots=[], bots_idx={}, balles_bot=[], pvel=[0.0, 0.0], xp_fait=False, t_ajust=0.0, lock=None, vel={}, carte_cache=None, carte_ver=-1, carte_taille=0)
     ARENE["voile"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
     ARENE["voile"].fill((0, 0, 0, 150))
     ARENE["rouge"] = pygame.Surface((LARGEUR, HAUTEUR), pygame.SRCALPHA)
@@ -1559,6 +1560,437 @@ def arene_evenement(event):
             A["id_viser"], A["viser"] = None, False
         if fid == A["id_aim"]:
             A["id_aim"], A["aim_actif"], A["aim_kx"], A["aim_ky"] = None, False, 0.0, 0.0
+
+
+# ==================== BOTS : adversaires simulés sur ton téléphone (personne d'autre ne les voit) ====================
+BOTS_PROCHE = 1800.0               # moins de 1 800 px du joueur : simulation détaillée ; plus loin : simulation très légère
+BOT_VIT = 390.0                    # vitesse de référence (px par seconde) = celle du joueur
+_BOT_NOMS = ["Kira77", "ShadowK", "NeoWolf", "Zed_X", "Lyra", "Vortex", "Mako", "Blaze22", "Nyx", "HexOne", "Ronin", "Sparky", "Echo9",
+             "Drako", "Jinx", "Kaito", "Toxic", "Raven", "Pixel", "Onyx", "Rex_99", "Vega", "Cobra", "Falco", "Storm", "Ghost47", "Titan",
+             "Viper", "Luna", "Axel", "Nova", "Ryker", "Zeno", "Bolt", "Mira", "Orion", "Kobra", "Dash", "Frost", "Wraith"]
+_XP_MEM = {}
+
+
+def _xp_lire():
+    """Expérience du joueur en Arène (gardée sur l'appareil)."""
+    d = {"parties": 0, "kills": 0, "victoires": 0, "top3": 0, "recents": []}
+    try:
+        if IS_WEB:
+            txt = _pfs.window.localStorage.getItem("flex_arene_xp")
+            if txt:
+                d.update(json.loads(str(txt)))
+        else:
+            d.update(_XP_MEM)
+    except Exception:
+        pass
+    return d
+
+
+def _xp_ecrire(d):
+    try:
+        if IS_WEB:
+            _pfs.window.localStorage.setItem("flex_arene_xp", json.dumps(d))
+        else:
+            _XP_MEM.update(d)
+    except Exception:
+        pass
+
+
+def _arene_skill_base():
+    """Niveau des bots (0 = très faibles, 1 = redoutables) : monte avec l'expérience du joueur, s'ajuste selon ses derniers résultats."""
+    d = _xp_lire()
+    xp = d["parties"] * 10 + d["kills"] * 4 + d["victoires"] * 50 + d["top3"] * 15
+    try:
+        xp += min(250, 8 * int(niveau_max_atteint))                      # l'avancée dans le mode Solo compte aussi
+    except Exception:
+        pass
+    base = 0.12 + 0.83 * (1.0 - math.exp(-xp / 900.0))
+    r = d["recents"][-6:]
+    if r:
+        base += (0.5 - sum(r) / len(r)) * 0.3                           # il gagne souvent : un peu plus dur ; il perd tôt : un peu plus facile
+    return min(0.9, max(0.08, base))
+
+
+def _arene_xp_enregistrer(rang, n0, kills, victoire):
+    if n0 < 2:
+        return
+    d = _xp_lire()
+    d["parties"] += 1
+    d["kills"] += int(kills)
+    d["victoires"] += 1 if victoire else 0
+    d["top3"] += 1 if rang <= 3 else 0
+    d["recents"] = (d["recents"] + [(rang - 1) / max(1, n0 - 1)])[-8:]
+    _xp_ecrire(d)
+
+
+def _bot_nouveau(i, rng, skill, x, y):
+    return {"id": f"bot:{i}", "p": rng.choice(_BOT_NOMS) + (str(rng.randint(2, 99)) if rng.random() < 0.4 else ""), "s": rng.choice(SKIN_IDS),
+            "x": float(x), "y": float(y), "a": rng.random() * 6.2832, "hp": 100.0, "vivant": True, "skill": skill, "wp": None, "t_wp": 0.0,
+            "cible": None, "los": False, "react": 0.0, "t_tir": rng.random() * 0.5, "t_perc": rng.random() * 0.25, "t_esq": 0.0,
+            "t_dodge": 0.0, "dodge": (0.0, 0.0), "strafe": 1.0, "t_strafe": 1.0, "stuck": 0.0, "t_ia": 0.0, "fuite_wp": None,
+            "side": rng.choice((1.0, -1.0)), "t_detour": 0.0, "detour_a": 0.0, "t_prog": 0.0, "pos_prog": (float(x), float(y)), "t_steer": 0.0, "steer_off": 0.0}
+
+
+def _bots_creer():
+    """Au départ du combat : seul, 13 bots ; ils disparaissent à mesure que des joueurs sont connectés (aucun à partir de 6 joueurs)."""
+    A = ARENE
+    n = max(0, 16 - 3 * max(1, MP["n"]))
+    base = _arene_skill_base()
+    A["skill_base"], A["bots"], A["balles_bot"] = base, [], []
+    rng = random.Random(f"{MP['seed']}:{MP['uid']}:bots:{pygame.time.get_ticks()}")
+    for i in range(n):
+        x = y = PARC_MONDE // 2
+        for _ in range(60):
+            x, y = rng.randint(2000, PARC_MONDE - 2000), rng.randint(2000, PARC_MONDE - 2000)
+            if math.hypot(x - PARC["x"], y - PARC["y"]) >= 2500 and not parc_bloque(x, y, 26):
+                break
+        A["bots"].append(_bot_nouveau(i, rng, min(0.98, max(0.05, base + rng.uniform(-0.15, 0.15))), x, y))
+    A["bots_idx"] = {b["id"]: b for b in A["bots"]}
+
+
+def _bots_cibles():
+    return [(b["id"], b["x"], b["y"], {"p": b["p"], "s": b["s"], "a": b["a"], "h": int(b["hp"])}) for b in ARENE["bots"] if b["vivant"]]
+
+
+def _bot_toucher(bid, degats):
+    """Un tir du joueur touche un bot."""
+    A = ARENE
+    b = A["bots_idx"].get(bid)
+    if b is None or not b["vivant"]:
+        return
+    b["hp"] -= degats
+    if b["cible"] is None:
+        b["cible"], b["react"] = "j", 0.25 + 0.5 * (1.0 - b["skill"])      # touché : il riposte
+    if b["hp"] <= 0:
+        b["vivant"] = False
+        A["kills"] += 1
+        A["fx"].append([b["x"], b["y"], pygame.time.get_ticks() / 1000.0, (255, 180, 60)])
+
+
+def _bot_los(x0, y0, x1, y1):
+    d = math.hypot(x1 - x0, y1 - y0)
+    for i in range(1, int(d // 60) + 1):
+        t = i * 60.0 / d
+        if parc_bloque(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 3):
+            return False
+    return True
+
+
+def _bot_deplacer(b, dx, dy):
+    ok = False
+    if not parc_bloque(b["x"] + dx, b["y"], 16):
+        b["x"] += dx
+        ok = True
+    if not parc_bloque(b["x"], b["y"] + dy, 16):
+        b["y"] += dy
+        ok = True
+    return ok
+
+
+def _bot_liberer(b):
+    """Un bot qui se retrouve dans un obstacle en est sorti."""
+    for r in (30, 60, 90, 130):
+        for k in range(8):
+            x, y = b["x"] + math.cos(k * 0.785) * r, b["y"] + math.sin(k * 0.785) * r
+            if not parc_bloque(x, y, 16):
+                b["x"], b["y"] = x, y
+                return
+
+
+def _bot_nouveau_wp(b, zone):
+    """Destination suivante : dans la zone (ou la prochaine zone) ; 35 % du temps vers le joueur, pour qu'il y ait de l'action."""
+    px, py = PARC["x"], PARC["y"]
+    for _ in range(6):
+        if random.random() < 0.35:
+            a, d = random.random() * 6.2832, 3000.0 * math.sqrt(random.random())
+            x, y = px + math.cos(a) * d, py + math.sin(a) * d
+        else:
+            if zone["cible"] is not None and random.random() < 0.5:
+                (cx, cy), r = zone["cible"][0], zone["cible"][1] * 0.85
+            else:
+                (cx, cy), r = zone["c"], zone["r"] * 0.85
+            a, d = random.random() * 6.2832, r * math.sqrt(random.random())
+            x, y = cx + math.cos(a) * d, cy + math.sin(a) * d
+        x, y = min(max(x, 800.0), PARC_MONDE - 800.0), min(max(y, 800.0), PARC_MONDE - 800.0)
+        if math.hypot(x - zone["c"][0], y - zone["c"][1]) < zone["r"] * 0.95:
+            break
+    b["wp"], b["t_wp"] = (x, y), 0.0
+
+
+def _bot_hors_zone(b, zone):
+    """Vrai si le bot doit rejoindre la zone : dehors, ou trop près du bord quand elle se referme."""
+    if math.hypot(b["x"] - zone["c"][0], b["y"] - zone["c"][1]) > zone["r"] - 250:
+        return True
+    if zone["etat"] in ("alerte", "retrecit") and zone["cible"] is not None:
+        return math.hypot(b["x"] - zone["cible"][0][0], b["y"] - zone["cible"][0][1]) > zone["cible"][1] - 250
+    return False
+
+
+def _bot_ia_loin(b, dt, zone):
+    """Bot loin du joueur : un pas léger 4 fois par seconde (une seule vérification d'obstacle), aucune balle."""
+    b["t_ia"] += dt
+    if b["t_ia"] < 0.25:
+        return
+    pas, b["t_ia"] = b["t_ia"], 0.0
+    if _bot_hors_zone(b, zone):
+        if b["fuite_wp"] is None:
+            cx, cy = zone["cible"][0] if zone["cible"] is not None else zone["c"]
+            r = (zone["cible"][1] if zone["cible"] is not None else zone["r"]) * 0.5
+            a, d = random.random() * 6.2832, r * math.sqrt(random.random())
+            b["fuite_wp"] = (cx + math.cos(a) * d, cy + math.sin(a) * d)
+        wp = b["fuite_wp"]
+    else:
+        b["fuite_wp"] = None
+        if b["wp"] is None or math.hypot(b["wp"][0] - b["x"], b["wp"][1] - b["y"]) < 200:
+            _bot_nouveau_wp(b, zone)
+        wp = b["wp"]
+    dx, dy = wp[0] - b["x"], wp[1] - b["y"]
+    d = math.hypot(dx, dy) or 1.0
+    v = BOT_VIT * (0.70 + 0.25 * b["skill"]) * pas
+    nx, ny = b["x"] + dx / d * v, b["y"] + dy / d * v
+    b["a"] = math.atan2(dy, dx)
+    if not parc_bloque(nx, ny, 16):
+        b["x"], b["y"] = nx, ny
+    else:
+        b["fuite_wp"] = None
+        _bot_nouveau_wp(b, zone)                                         # bloqué : on change de destination
+
+
+def _bot_ia_proche(b, dt, t_now, zone, bots_vivants):
+    """Bot proche du joueur : perception, combat (déplacement latéral), esquive, tir, fuite de la zone."""
+    A = ARENE
+    sk = b["skill"]
+    px, py = PARC["x"], PARC["y"]
+    joueur_vivant = not A["mort"] and not A["fin"]
+    # ---- perception (4 fois par seconde)
+    b["t_perc"] -= dt
+    if b["t_perc"] <= 0:
+        b["t_perc"] = 0.25
+        vue = (800.0 + 100.0 * sk) ** 2
+        meilleur = None
+        if joueur_vivant:
+            d2 = ((px - b["x"]) ** 2 + (py - b["y"]) ** 2) * 0.64          # il préfère le joueur
+            if d2 < vue:
+                meilleur = (d2, "j", px, py)
+        for o in bots_vivants:
+            if o is not b:
+                d2 = (o["x"] - b["x"]) ** 2 + (o["y"] - b["y"]) ** 2
+                if d2 < vue and (meilleur is None or d2 < meilleur[0]):
+                    meilleur = (d2, o["id"], o["x"], o["y"])
+        if meilleur is not None and _bot_los(b["x"], b["y"], meilleur[2], meilleur[3]):
+            if b["cible"] != meilleur[1]:
+                b["react"] = 0.95 - 0.7 * sk                              # temps de réaction : bien plus court pour un bot fort
+            b["cible"], b["los"] = meilleur[1], True
+        else:
+            b["cible"], b["los"] = None, False
+    cible_pos = None
+    if b["cible"] == "j" and joueur_vivant:
+        cible_pos = (px, py, A["pvel"][0], A["pvel"][1])
+    elif b["cible"] not in (None, "j"):
+        o = A["bots_idx"].get(b["cible"])
+        if o is not None and o["vivant"]:
+            vv = A["vel"].get(o["id"], (0.0, 0.0))
+            cible_pos = (o["x"], o["y"], vv[0], vv[1])
+    if cible_pos is None:
+        b["cible"], b["los"] = None, False
+    # ---- esquive : un tir qui arrive sur lui
+    b["t_esq"] -= dt
+    b["t_dodge"] -= dt
+    if b["t_esq"] <= 0:
+        b["t_esq"] = 0.12
+        if random.random() < 0.15 + 0.8 * sk:
+            menaces = A["balles"] + A["balles_bot"]
+            for bl in menaces:
+                rx, ry = b["x"] - bl[0], b["y"] - bl[1]
+                if rx * rx + ry * ry > 320 ** 2 or (len(bl) > 5 and bl[5] == b["id"]):
+                    continue
+                v2 = bl[2] * bl[2] + bl[3] * bl[3]
+                t_star = (rx * bl[2] + ry * bl[3]) / v2 if v2 else -1.0
+                if 0.0 < t_star < 0.5 and math.hypot(rx - bl[2] * t_star, ry - bl[3] * t_star) < 50:
+                    nxp, nyp = -bl[3], bl[2]
+                    if nxp * rx + nyp * ry < 0:
+                        nxp, nyp = -nxp, -nyp
+                    nn = math.hypot(nxp, nyp) or 1.0
+                    b["dodge"], b["t_dodge"] = (nxp / nn, nyp / nn), 0.3
+                    break
+    # ---- direction
+    vit = BOT_VIT * (0.70 + 0.25 * sk) * dt
+    dx = dy = 0.0
+    if b["t_dodge"] > 0:
+        dx, dy = b["dodge"][0] * 1.25, b["dodge"][1] * 1.25
+    elif _bot_hors_zone(b, zone):
+        if b["fuite_wp"] is None:
+            cx, cy = zone["cible"][0] if zone["cible"] is not None else zone["c"]
+            r = (zone["cible"][1] if zone["cible"] is not None else zone["r"]) * 0.5
+            a, d = random.random() * 6.2832, r * math.sqrt(random.random())
+            b["fuite_wp"] = (cx + math.cos(a) * d, cy + math.sin(a) * d)
+        dx, dy = b["fuite_wp"][0] - b["x"], b["fuite_wp"][1] - b["y"]
+    elif cible_pos is not None and b["los"]:
+        b["fuite_wp"] = None
+        vx, vy = cible_pos[0] - b["x"], cible_pos[1] - b["y"]
+        d = math.hypot(vx, vy) or 1.0
+        ux, uy = vx / d, vy / d
+        b["t_strafe"] -= dt
+        if b["t_strafe"] <= 0:
+            b["strafe"], b["t_strafe"] = -b["strafe"], 1.0 + random.random() * 1.4
+        sx_, sy_ = -uy * b["strafe"], ux * b["strafe"]
+        if d > 560:
+            dx, dy = ux * 0.7 + sx_ * 0.5, uy * 0.7 + sy_ * 0.5
+        elif d < 260:
+            dx, dy = -ux * 0.7 + sx_ * 0.5, -uy * 0.7 + sy_ * 0.5
+        else:
+            dx, dy = sx_, sy_
+    else:
+        b["fuite_wp"] = None
+        b["t_wp"] += dt
+        if b["wp"] is None or b["t_wp"] > 14.0 or math.hypot(b["wp"][0] - b["x"], b["wp"][1] - b["y"]) < 200:
+            _bot_nouveau_wp(b, zone)
+        dx, dy = b["wp"][0] - b["x"], b["wp"][1] - b["y"]
+    b["t_detour"] -= dt
+    if b["t_detour"] > 0:                                                # bloqué à l'instant : il part dans une autre direction un moment
+        dx, dy = math.cos(b["detour_a"]), math.sin(b["detour_a"])
+    n = math.hypot(dx, dy)
+    if n > 1e-6:
+        a0 = math.atan2(dy, dx)
+        b["t_steer"] -= dt
+        if b["t_steer"] <= 0:                                            # 5 fois par seconde : il cherche la direction la plus dégagée vers sa destination
+            b["t_steer"] = 0.2
+            meilleur = None
+            for k_ in (0, b["side"], -b["side"], 2 * b["side"], -2 * b["side"], 3 * b["side"], -3 * b["side"], 4 * b["side"], -4 * b["side"],
+                       5 * b["side"], -5 * b["side"], 6 * b["side"], -6 * b["side"], 8 * b["side"], -8 * b["side"]):
+                a1 = a0 + k_ * 0.39
+                clair = 0
+                for d_ in (45, 90, 140):
+                    if parc_bloque(b["x"] + math.cos(a1) * d_, b["y"] + math.sin(a1) * d_, 16):
+                        break
+                    clair = d_
+                score = clair - abs(k_) * 18
+                if meilleur is None or score > meilleur[0]:
+                    meilleur = (score, a1 - a0)
+            b["steer_off"] = meilleur[1]
+        a1 = a0 + b["steer_off"]
+        dx, dy = math.cos(a1) * vit, math.sin(a1) * vit
+        av = (b["x"], b["y"])
+        if parc_bloque(b["x"], b["y"], 16):
+            _bot_liberer(b)
+        if _bot_deplacer(b, dx, dy):
+            b["stuck"] = max(0.0, b["stuck"] - dt)
+            A["vel"][b["id"]] = [(b["x"] - av[0]) / dt, (b["y"] - av[1]) / dt]
+        else:
+            b["stuck"] += dt
+            A["vel"][b["id"]] = [0.0, 0.0]
+            if b["stuck"] > 0.5:
+                b["stuck"], b["strafe"], b["side"], b["fuite_wp"] = 0.0, -b["strafe"], -b["side"], None
+                b["t_detour"], b["detour_a"] = 0.9, random.random() * 6.2832
+                _bot_nouveau_wp(b, zone)
+        if cible_pos is None or not b["los"]:
+            b["a"] = math.atan2(dy, dx)
+        b["t_prog"] += dt
+        if b["t_prog"] >= 0.5:
+            fait = math.hypot(b["x"] - b["pos_prog"][0], b["y"] - b["pos_prog"][1])
+            b["t_prog"], b["pos_prog"] = 0.0, (b["x"], b["y"])
+            if fait < 0.3 * vit / dt * 0.5 and b["t_detour"] <= 0:
+                b["side"], b["fuite_wp"] = -b["side"], None
+                b["t_detour"], b["detour_a"] = 0.9, random.random() * 6.2832
+    # ---- tir
+    b["t_tir"] -= dt
+    b["react"] -= dt
+    if cible_pos is not None and b["los"] and b["react"] <= 0 and b["t_tir"] <= 0 and A["phase"] == "combat":
+        d = math.hypot(cible_pos[0] - b["x"], cible_pos[1] - b["y"])
+        if d <= 700.0 + 150.0 * sk:
+            b["t_tir"] = ARENE_CADENCE * (1.6 - 0.6 * sk)
+            t_vol = d / ARENE_V_BALLE
+            lead = min(1.0, sk * 1.2)
+            ax = cible_pos[0] + cible_pos[2] * t_vol * lead
+            ay = cible_pos[1] + cible_pos[3] * t_vol * lead
+            ang = math.atan2(ay - b["y"], ax - b["x"]) + random.gauss(0.0, (0.28 - 0.25 * sk) * min(2.0, d / 500.0))
+            b["a"] = ang
+            A["balles_bot"].append([b["x"] + math.cos(ang) * 26, b["y"] + math.sin(ang) * 26, math.cos(ang) * ARENE_V_BALLE,
+                                    math.sin(ang) * ARENE_V_BALLE, ARENE_PORTEE / ARENE_V_BALLE, b["id"]])
+
+
+def _bots_maj(dt, t_now, zone):
+    """Fait vivre tous les bots : détaillé près du joueur, léger au loin ; combats lointains résolus par calcul ; dégâts de zone ; tirs."""
+    A = ARENE
+    px, py = PARC["x"], PARC["y"]
+    bots = [b for b in A["bots"] if b["vivant"]]
+    # nombre de bots selon les joueurs connectés (aucun à partir de 6 joueurs)
+    A["t_ajust"] -= dt
+    if A["t_ajust"] <= 0:
+        A["t_ajust"] = 1.0
+        cible_n = max(0, 16 - 3 * max(1, MP["n"]))
+        if len(bots) > cible_n:
+            bots.sort(key=lambda b: -((b["x"] - px) ** 2 + (b["y"] - py) ** 2))
+            for b in bots[:len(bots) - cible_n]:
+                b["vivant"] = False                                      # les plus éloignés quittent la partie
+            bots = [b for b in bots if b["vivant"]]
+    proches = [b for b in bots if (b["x"] - px) ** 2 + (b["y"] - py) ** 2 < BOTS_PROCHE ** 2]
+    loin = [b for b in bots if b not in proches]
+    for b in proches:
+        _bot_ia_proche(b, dt, t_now, zone, proches)
+    for b in loin:
+        _bot_ia_loin(b, dt, zone)
+    # combats entre bots éloignés du joueur : résolus par un calcul (aucune balle)
+    for i in range(len(loin)):
+        for j_ in range(i + 1, len(loin)):
+            a_, b_ = loin[i], loin[j_]
+            if (a_["x"] - b_["x"]) ** 2 + (a_["y"] - b_["y"]) ** 2 < 500 ** 2:
+                a_["hp"] -= 5.0 * (0.5 + b_["skill"]) * dt
+                b_["hp"] -= 5.0 * (0.5 + a_["skill"]) * dt
+    # zone : mêmes dégâts que pour un joueur
+    if zone["dps"] > 0:
+        for b in bots:
+            if math.hypot(b["x"] - zone["c"][0], b["y"] - zone["c"][1]) > zone["r"]:
+                b["hp"] -= zone["dps"] * dt
+    for b in bots:
+        if b["hp"] <= 0:
+            b["vivant"] = False
+    # tirs des bots
+    nouvelles = []
+    for bl in A["balles_bot"]:
+        bl[4] -= dt
+        if bl[4] <= 0:
+            continue
+        n = int(ARENE_V_BALLE * dt / 14.0) + 1
+        sx_, sy_ = bl[2] * dt / n, bl[3] * dt / n
+        fini = False
+        for _ in range(n):
+            bl[0] += sx_
+            bl[1] += sy_
+            if parc_bloque(bl[0], bl[1], 2):
+                fini = True
+                break
+            if not A["mort"] and not A["fin"] and A["phase"] == "combat" and (bl[0] - px) ** 2 + (bl[1] - py) ** 2 < (ARENE_R_JOUEUR + 4) ** 2:
+                A["hp"] -= ARENE_DEGATS
+                A["degat_t"] = t_now
+                A["fx"].append([bl[0], bl[1], t_now, ROUGE_ALERTE])
+                if A["hp"] <= 0:
+                    A["hp"], A["mort"], A["rang"] = 0, True, max(1, _arene_vivants())
+                fini = True
+                break
+            for o in proches:
+                if o["vivant"] and o["id"] != bl[5] and (bl[0] - o["x"]) ** 2 + (bl[1] - o["y"]) ** 2 < (ARENE_R_JOUEUR + 4) ** 2:
+                    o["hp"] -= ARENE_DEGATS
+                    A["fx"].append([bl[0], bl[1], t_now, (255, 180, 60)])
+                    if o["hp"] <= 0:
+                        o["vivant"] = False
+                    fini = True
+                    break
+            if fini:
+                break
+        if not fini:
+            nouvelles.append(bl)
+    A["balles_bot"] = nouvelles
+    if len(A["bots"]) != len(bots) or any(not b["vivant"] for b in A["bots"]):
+        A["bots"] = [b for b in A["bots"] if b["vivant"]]
+        A["bots_idx"] = {b["id"]: b for b in A["bots"]}
+
+
+def _bots_dessiner_balles(ox, oy):
+    for bl in ARENE["balles_bot"]:
+        bx, by = int(bl[0] + ox), int(bl[1] + oy)
+        if -50 < bx < LARGEUR + 50 and -50 < by < HAUTEUR + 50:
+            DRAW.line(ecran, (255, 170, 60), (bx, by), (int(bx - bl[2] * 0.03), int(by - bl[3] * 0.03)), 4)
 
 
 def _arene_zone_plan(seed):
@@ -1994,7 +2426,7 @@ def _arene_maj_autres(dt, maintenant):
 
 
 def _arene_vivants():
-    return (0 if ARENE["mort"] else 1) + sum(1 for o in MP["autres"] if int(o.get("h", 100)) > 0)
+    return (0 if ARENE["mort"] else 1) + sum(1 for o in MP["autres"] if int(o.get("h", 100)) > 0) + sum(1 for b in ARENE["bots"] if b["vivant"])
 
 
 def _arene_dessiner_joueurs(cibles, ox, oy):
@@ -2072,6 +2504,8 @@ def jouer_arene():
     now_srv = int(_time.time() * 1000) + A["off"]
     if A["phase"] == "lobby" and now_srv >= A["debut"]:
         A["phase"], A["n0"], A["t_combat"] = "combat", max(1, MP["n"]), t_now
+        _bots_creer()                                                  # seul : 13 bots ; moins à mesure que des joueurs sont là
+        A["n0"] += len(A["bots"])
     zone = _arene_zone_etat((now_srv - A["debut"]) / 1000.0)     # la zone ne dépend que de l'heure du serveur : identique pour tous
     dehors = math.hypot(PARC["x"] - zone["c"][0], PARC["y"] - zone["c"][1]) > zone["r"]
     # ---------- déplacement (vitesse indépendante du nombre d'images par seconde : même vitesse pour tous)
@@ -2089,10 +2523,12 @@ def jouer_arene():
         dx = dy = 0.0
     if dx or dy:
         A["dirx"], A["diry"] = dx / (math.hypot(dx, dy) or 1.0), dy / (math.hypot(dx, dy) or 1.0)
+    x_av, y_av = PARC["x"], PARC["y"]
     if dx != 0 and not parc_bloque(PARC["x"] + dx, PARC["y"]):
         PARC["x"] += dx
     if dy != 0 and not parc_bloque(PARC["x"], PARC["y"] + dy):
         PARC["y"] += dy
+    A["pvel"] = [(PARC["x"] - x_av) / dt, (PARC["y"] - y_av) / dt]        # vitesse du joueur (les bots visent un peu devant lui)
     # ---------- visée : stick de droite (ou manette), sinon la direction du déplacement
     if IN["src"] in ("pad", "key"):
         vis = _in_visee()
@@ -2108,6 +2544,9 @@ def jouer_arene():
         except Exception as e:
             MP["dbg"] = repr(e)[:70]
     cibles = _arene_maj_autres(dt, t_now)
+    if A["phase"] == "combat" and not A["mort"] and not A["fin"]:
+        _bots_maj(dt, t_now, zone)
+    cibles = cibles + _bots_cibles()
     # ---------- bouton L : visée automatique sur le joueur le plus proche (sinon, visée manuelle au stick)
     verrou = None
     if A["viser"] and not A["mort"]:
@@ -2160,12 +2599,15 @@ def jouer_arene():
                 break
             for u, px, py, o in cibles:
                 if (b[0] - px) ** 2 + (b[1] - py) ** 2 < (ARENE_R_JOUEUR + 4) ** 2:
-                    A["hits"][u] = t_now
                     A["fx"].append([b[0], b[1], t_now, ROUGE_ALERTE])
-                    try:
-                        j.hit(u, ARENE_DEGATS)
-                    except Exception:
-                        pass
+                    if str(u).startswith("bot:"):
+                        _bot_toucher(u, ARENE_DEGATS)
+                    else:
+                        A["hits"][u] = t_now
+                        try:
+                            j.hit(u, ARENE_DEGATS)
+                        except Exception:
+                            pass
                     fini = True
                     break
             if fini:
@@ -2179,6 +2621,9 @@ def jouer_arene():
         A["fin"] = "defaite" if A["mort"] else "victoire"
         if A["fin"] == "victoire":
             A["rang"] = 1
+    if (A["mort"] or A["fin"]) and not A["xp_fait"]:                 # l'expérience du joueur (donc la difficulté des bots) est mise à jour
+        A["xp_fait"] = True
+        _arene_xp_enregistrer(A["rang"], A["n0"], A["kills"], A["fin"] == "victoire")
     # ---------- caméra : un peu en avant quand on vise
     decal = 280.0
     if verrou is not None:
@@ -2217,6 +2662,7 @@ def jouer_arene():
         bx, by = int(b[0] + ox), int(b[1] + oy)
         DRAW.line(ecran, b[5], (bx, by), (int(bx - b[2] * 0.03), int(by - b[3] * 0.03)), 4)
     A["balles_d"] = restantes
+    _bots_dessiner_balles(ox, oy)
     _arene_dessiner_joueurs(cibles, ox, oy)
     sx, sy = int(PARC["x"] + ox), int(PARC["y"] + oy)
     if not A["mort"]:
