@@ -10,7 +10,6 @@
   var N = { ok: 0, bk: 0, ps: 0, p1: 0, p2: 0, u: 0, d: 0, l: 0, r: 0 };   /* compteurs d'appuis lus par le jeu */
   var S = { src: "", act: 0, pad: 0, pmx: 0, pmy: 0, pax: 0, pay: 0, pfire: 0, sx: 0, sy: 0 };
   var DZ_MOVE = 0.25, DZ_AIM = 0.35;
-  var padNom = "";
   var repTouche = {}, repPad = {};
   var prevB = [];
   var prevStick = { u: false, d: false, l: false, r: false };
@@ -108,6 +107,7 @@
     return !!(t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA") && !t.readOnly);
   }
   function touche(e, bas) {
+    if (!bas) { K[e.code] = false; return; }       /* un relachement est toujours pris en compte (sinon la touche reste "coincee" si Ctrl/Alt etait enfonce) */
     if (saisie(e) || e.ctrlKey || e.metaKey || e.altKey) { return; }
     var c = e.code;
     if (bas) {
@@ -122,8 +122,6 @@
       else if (c === "KeyP") { emettre("ps"); }
       else if (c === "KeyE" || c === "Digit1" || c === "Numpad1") { emettre("p1"); }
       else if (c === "KeyR" || c === "Digit2" || c === "Numpad2") { emettre("p2"); }
-    } else {
-      K[c] = false;
     }
   }
   window.addEventListener("keydown", function (e) { touche(e, true); }, true);
@@ -194,7 +192,6 @@
     setTimeout(function () { if (m.parentNode) { m.parentNode.removeChild(m); } }, 6500);
   }
   window.addEventListener("gamepadconnected", function (e) {
-    padNom = String((e.gamepad && e.gamepad.id) || "manette").replace(/\(.*$/, "").slice(0, 40);
     act("pad");
     message("&#127918; <b>Manette connect&eacute;e</b><br>Stick : bouger &middot; <b>R2</b> : tirer &middot; <b>L2</b> / <b>L1</b> : pouvoirs &middot; <b>Croix (A)</b> : choisir &middot; <b>Rond (B)</b> : retour &middot; <b>Start</b> : pause");
   });

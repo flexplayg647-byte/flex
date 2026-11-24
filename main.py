@@ -8514,6 +8514,7 @@ def _v3_controle(im):
         VUE["cam_off"] *= 0.94                                  # en avançant, la caméra revient derrière le soldat
     VUE["lean"] += (sx * 20.0 - VUE["lean"]) * 0.25
     VUE["mv"] += ((1.0 if abs(sy) > 0.12 else 0.0) - VUE["mv"]) * 0.2
+    VUE["marche_av"] = VUE["marche"]
     if abs(sy) > 0.12:
         VUE["marche"] += 0.22 * (-sy)
     if sx > 0.25:
@@ -8529,6 +8530,21 @@ def _v3_controle(im):
     if f < -0.12:
         return c * f * v * 0.6, s * f * v * 0.6, c, s
     return 0, 0, c, s
+
+
+def _v3_apres_deplacement(x0, y0, dx, dy):
+    """Appelée juste après le déplacement réel : les jambes ne marchent plus sur place contre un mur,
+    et ralentissent quand le soldat glisse le long d'un mur (la marche suit le vrai déplacement)."""
+    voulu = math.hypot(dx, dy)
+    if voulu <= 0.0:
+        return
+    reel = math.hypot(joueur_x - x0, joueur_y - y0)
+    k = min(1.0, reel / voulu)
+    if k >= 0.98:
+        return
+    av = VUE.get("marche_av", VUE["marche"])
+    VUE["marche"] = av + (VUE["marche"] - av) * k
+    VUE["mv"] *= 0.4 + 0.6 * k
 
 
 def _v3_viser():
@@ -9567,12 +9583,15 @@ async def main():
                         elif _im[0] > 0.2:
                             img_joueur_actuel = img_joueur_droite
 
+                _v3_x0, _v3_y0 = joueur_x, joueur_y
                 if _v3_actif():
                     dx, dy, angle_visée_x, angle_visée_y = _v3_controle(_im)
                 if dx != 0 and not check_collision_murs(joueur_x + dx, joueur_y):
                     joueur_x += dx
                 if dy != 0 and not check_collision_murs(joueur_x, joueur_y + dy):
                     joueur_y += dy
+                if _v3_actif():
+                    _v3_apres_deplacement(_v3_x0, _v3_y0, dx, dy)
                 if (dx != 0 or dy != 0) and QUALITE["niveau"] >= 1:
                     creer_propulsion(joueur_x, joueur_y, dx, dy, BLEU_CYBER)
 
