@@ -1049,17 +1049,17 @@ PARC_LARG_ALLEE = 150
 PARC_R_PLACE = 330                 # rayon des places (fontaine), placées à certains croisements
 PARC_REGION = 4                    # une région = 4x4 zones
 PARC = {"actif": False, "seed": 1, "x": 0.0, "y": 0.0, "face": 1, "donnees": {}, "surf": {}, "mini": None,
-        "ms_gen": 0.0, "vus": set()}
-_PC_HERBE, _PC_HERBE_CL, _PC_HERBE_FO = (72, 142, 74), (84, 156, 84), (62, 126, 66)
+        "ms_gen": 0.0, "vus": set(), "wip": {}}
+_PC_HERBE, _PC_HERBE_CL, _PC_HERBE_FO = (16, 22, 40), (84, 156, 84), (62, 126, 66)     # _PC_HERBE : couleur d'une zone pas encore prête
 _PC_SABLE, _PC_SABLE_BORD = (208, 192, 152), (172, 154, 114)
 _PC_EAU, _PC_EAU_CL = (52, 122, 198), (110, 170, 226)
 _PC_TOITS = [((170, 84, 62), (130, 60, 44)), ((96, 108, 128), (66, 76, 94)), ((196, 168, 108), (150, 124, 74)),
              ((120, 140, 120), (84, 102, 86)), ((176, 120, 150), (132, 84, 108))]
 _PC_FLEURS = [(250, 250, 250), (250, 220, 70), (240, 120, 170), (170, 130, 240), (250, 150, 70)]
-_PC_BIOMES = ["Prairie", "Forêt", "Ville", "Lac", "Rocailles"]
-_PC_BIOME_COUL = [(96, 170, 90), (36, 104, 58), (150, 150, 164), (70, 130, 210), (140, 128, 108)]
+_PC_BIOMES = ["Parc", "Bois", "Centre néon", "Canal", "Zone industrielle"]
+_PC_BIOME_COUL = [(30, 120, 108), (20, 84, 76), (130, 70, 210), (30, 100, 220), (220, 130, 40)]
 # paramètres par biome : essais d'arbres, proba de bâtiment, proba d'étang, essais de rochers, de buissons, de fleurs
-_PC_BIOME_P = {0: (30, 0.28, 0.05, 4, 24, 22), 1: (70, 0.05, 0.04, 5, 36, 10), 2: (14, 0.95, 0.0, 1, 10, 8),
+_PC_BIOME_P = {0: (30, 0.28, 0.05, 4, 24, 22), 1: (70, 0.05, 0.04, 5, 36, 10), 2: (7, 0.95, 0.0, 1, 10, 8),
                3: (24, 0.08, 0.55, 4, 20, 14), 4: (16, 0.05, 0.05, 26, 12, 6)}
 
 
@@ -1131,8 +1131,20 @@ def _parc_gen(cx, cy):
         d["obs_c"].append((pl[0], pl[1], 88))
     # bâtiments (vus du dessus : simples toits)
     n_bat = (1 + (1 if rng.random() < 0.5 else 0) + (1 if rng.random() < 0.2 else 0)) if rng.random() < p_bat else 0
-    if bio == 2 and n_bat:
-        n_bat += 1 + (1 if rng.random() < 0.5 else 0)             # les régions « Ville » sont bien plus construites
+    if bio == 2:                                                     # centre-ville : 2 x 2 parcelles séparées par des ruelles de 56 px
+        n_bat = 0
+        lot = (PARC_CH - 2 * M - 56) // 2
+        for li in range(2):
+            for lj in range(2):
+                if rng.random() > 0.9:
+                    continue
+                bw_, bh_ = rng.randint(190, lot), rng.randint(180, lot)
+                bx_ = x0 + M + li * (lot + 56) + rng.randint(0, lot - bw_)
+                by_ = y0 + M + lj * (lot + 56) + rng.randint(0, lot - bh_)
+                if _parc_rect_sur_allee(bx_, by_, bw_, bh_, 34):
+                    continue
+                d["batiments"].append((bx_, by_, bw_, bh_, rng.randint(0, len(_PC_TOITS) - 1)))
+                d["obs_r"].append((bx_, by_, bw_, bh_))
     for _ in range(n_bat):
         for _essai in range(20):
             w, h = (rng.randint(140, 260), rng.randint(120, 220)) if bio == 2 else (rng.randint(180, 330), rng.randint(150, 270))
@@ -1168,8 +1180,8 @@ def _parc_gen(cx, cy):
                 return False
         return True
 
-    for _ in range(n_arb):                                   # arbres
-        r = rng.randint(26, 48)
+    for _ in range(n_arb):                                   # arbres (plus petits, en bac, dans les quartiers urbains)
+        r = rng.randint(18, 30) if bio in (2, 3, 4) else rng.randint(26, 48)
         x, y = x0 + rng.randint(M + r, PARC_CH - M - r), y0 + rng.randint(M + r, PARC_CH - M - r)
         if not libre(x, y, r, int(r * 0.5) + 6):
             continue
@@ -1218,89 +1230,344 @@ def parc_bloque(x, y, r=16):
     return False
 
 
-def _parc_peindre(cx, cy):
-    """Dessine une zone une seule fois dans une image : ensuite, l'afficher ne coûte qu'un seul blit."""
-    d = _parc_gen(cx, cy)
+# ---------- style « quartier néon » : décor de nuit dessiné une seule fois par zone, en 3 étapes pour ne jamais faire saccader le jeu ----------
+_NEON = [(0, 230, 255), (255, 40, 200), (150, 90, 255), (255, 175, 50), (255, 60, 90)]
+_PX_ROUTE, _PX_TROTT, _PX_BORD = (13, 17, 33), (34, 42, 70), (52, 64, 104)
+_PX_TOITS = [((30, 38, 68), (60, 74, 120)), ((42, 34, 70), (86, 68, 132)), ((26, 50, 66), (52, 98, 126)),
+             ((52, 36, 56), (112, 72, 114)), ((34, 44, 54), (74, 94, 110))]
+_PX_FEN = [(255, 190, 70), (0, 220, 255), (255, 60, 200), (28, 36, 62), (28, 36, 62), (28, 36, 62), (28, 36, 62)]
+_PX_CARROSS = [(100, 30, 78), (28, 74, 108), (70, 72, 90), (116, 64, 30), (40, 40, 60)]
+_GLOW = {}
+_TEX = {}
+
+
+def _glow(couleur, rayon):
+    """Tache de lumière (fondu radial) à ajouter sur le décor ; fabriquée une seule fois."""
+    cle = (couleur, rayon)
+    g = _GLOW.get(cle)
+    if g is None:
+        g = pygame.Surface((rayon * 2, rayon * 2))
+        g.fill((0, 0, 0))
+        n = 12
+        for i in range(n):
+            k = (((i + 1) / n) ** 2.2) * 0.7
+            pygame.draw.circle(g, (int(couleur[0] * k), int(couleur[1] * k), int(couleur[2] * k)), (rayon, rayon), max(1, int(rayon * (1.0 - i / n))))
+        _GLOW[cle] = g
+    return g
+
+
+def _px_halo(surf, x, y, couleur, rayon):
+    surf.blit(_glow(couleur, rayon), (int(x - rayon), int(y - rayon)), special_flags=pygame.BLEND_RGB_ADD)
+
+
+def _parc_texture(nom):
+    t = _TEX.get(nom)
+    if t is None:
+        t = pygame.Surface((128, 128))
+        rng = random.Random(nom)
+        if nom == "pave":
+            base, p1, p2, ligne = (19, 25, 43), (25, 33, 55), (14, 19, 34), (27, 35, 60)
+        else:
+            base, p1, p2, ligne = (13, 38, 40), (18, 52, 50), (9, 28, 32), None
+        t.fill(base)
+        for _ in range(70):
+            pygame.draw.rect(t, p1 if rng.random() < 0.5 else p2, (rng.randint(0, 124), rng.randint(0, 124), rng.randint(2, 7), rng.randint(2, 7)))
+        if ligne:
+            pygame.draw.line(t, ligne, (0, 0), (127, 0), 1)
+            pygame.draw.line(t, ligne, (0, 0), (0, 127), 1)
+            pygame.draw.line(t, ligne, (0, 64), (127, 64), 1)
+            pygame.draw.line(t, ligne, (64, 0), (64, 127), 1)
+        _TEX[nom] = t
+    return t
+
+
+def _pe_terrain(cx, cy, d, w):
+    """Étape 1 : sol, rues, trottoirs, places, eau, puis les pools de lumière posés sur le sol."""
+    q = QUALITE["niveau"]
     surf = pygame.Surface((PARC_CH, PARC_CH))
-    surf.fill(_PC_HERBE)
-    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    w["surf"] = surf
     dr = pygame.draw
+    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    bio = d["biome"]
+    ville = bio in (2, 3, 4)
+    tex = _parc_texture("pave" if ville else "parc")
+    for tx in range(0, PARC_CH, 128):
+        for ty in range(0, PARC_CH, 128):
+            surf.blit(tex, (tx, ty))
     for x, y, rx, ry, c in d["taches"]:
-        dr.ellipse(surf, (_PC_HERBE_CL, _PC_HERBE_FO)[c], (x - x0 - rx, y - y0 - ry, rx * 2, ry * 2))
-    demi = PARC_LARG_ALLEE // 2
+        col = ((23, 31, 53), (16, 22, 38))[c] if ville else ((19, 60, 56), (9, 32, 36))[c]
+        dr.ellipse(surf, col, (x - x0 - rx, y - y0 - ry, rx * 2, ry * 2))
+    lum = w["lum"]
+    if ville:                                                            # rues de quartier le long des bords de la zone
+        for r_ in ((0, 0, PARC_CH, 30), (0, PARC_CH - 30, PARC_CH, 30), (0, 0, 30, PARC_CH), (PARC_CH - 30, 0, 30, PARC_CH)):
+            dr.rect(surf, _PX_ROUTE, r_)
+        dr.line(surf, _PX_BORD, (0, 30), (PARC_CH, 30), 2)
+        dr.line(surf, _PX_BORD, (0, PARC_CH - 31), (PARC_CH, PARC_CH - 31), 2)
+        dr.line(surf, _PX_BORD, (30, 0), (30, PARC_CH), 2)
+        dr.line(surf, _PX_BORD, (PARC_CH - 31, 0), (PARC_CH - 31, PARC_CH), 2)
+        for t in range(10, PARC_CH, 56):
+            dr.line(surf, (150, 128, 52), (t, 1), (t + 26, 1), 2)
+            dr.line(surf, (150, 128, 52), (1, t), (1, t + 26), 2)
+        if q >= 1:
+            for (lx, ly), nc in zip(((15, 15), (PARC_CH - 15, 15), (15, PARC_CH - 15), (PARC_CH - 15, PARC_CH - 15)), (_NEON[(cx + cy) % 5], _NEON[(cx + cy + 2) % 5], _NEON[(cx + cy + 3) % 5], _NEON[(cx + cy + 1) % 5])):
+                lum.append((lx, ly, nc, 70))
     kx = round((x0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
     ky = round((y0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
     ax = PARC_DEC + kx * PARC_PAS if 0 <= kx < PARC_NAXES and x0 - 80 < PARC_DEC + kx * PARC_PAS < x0 + PARC_CH + 80 else None
     ay = PARC_DEC + ky * PARC_PAS if 0 <= ky < PARC_NAXES and y0 - 80 < PARC_DEC + ky * PARC_PAS < y0 + PARC_CH + 80 else None
-    if ax is not None:                                       # allées : bordure d'abord, puis le sable (les croisements restent propres)
-        dr.rect(surf, _PC_SABLE_BORD, (ax - demi - 4 - x0, 0, PARC_LARG_ALLEE + 8, PARC_CH))
-    if ay is not None:
-        dr.rect(surf, _PC_SABLE_BORD, (0, ay - demi - 4 - y0, PARC_CH, PARC_LARG_ALLEE + 8))
-    if ax is not None:
-        dr.rect(surf, _PC_SABLE, (ax - demi - x0, 0, PARC_LARG_ALLEE, PARC_CH))
-    if ay is not None:
-        dr.rect(surf, _PC_SABLE, (0, ay - demi - y0, PARC_CH, PARC_LARG_ALLEE))
+    w["avenues"] = (ax, ay)
+    if ax is not None:                                                   # avenue verticale : trottoirs, chaussée, ligne jaune, lampadaires néon
+        xc = ax - x0
+        dr.rect(surf, _PX_TROTT, (xc - 75, 0, 150, PARC_CH))
+        dr.rect(surf, _PX_ROUTE, (xc - 61, 0, 122, PARC_CH))
+        dr.line(surf, (200, 160, 50), (xc - 2, 0), (xc - 2, PARC_CH), 2)
+        dr.line(surf, (200, 160, 50), (xc + 2, 0), (xc + 2, PARC_CH), 2)
+        dr.line(surf, (44, 56, 92), (xc - 58, 0), (xc - 58, PARC_CH), 1)
+        dr.line(surf, (44, 56, 92), (xc + 58, 0), (xc + 58, PARC_CH), 1)
+        if q >= 1:
+            for gy in range((y0 // 220 + 1) * 220, y0 + PARC_CH, 220):
+                lum.append((xc - 42, gy - y0, _NEON[0], 78))
+                lum.append((xc + 42, gy - y0 + 110, _NEON[1], 78))
+                w["lampes"].append((xc - 68, gy - y0, _NEON[0]))
+                w["lampes"].append((xc + 68, gy - y0 + 110, _NEON[1]))
+    if ay is not None:                                                   # avenue horizontale
+        yc = ay - y0
+        dr.rect(surf, _PX_TROTT, (0, yc - 75, PARC_CH, 150))
+        dr.rect(surf, _PX_ROUTE, (0, yc - 61, PARC_CH, 122))
+        dr.line(surf, (200, 160, 50), (0, yc - 2), (PARC_CH, yc - 2), 2)
+        dr.line(surf, (200, 160, 50), (0, yc + 2), (PARC_CH, yc + 2), 2)
+        dr.line(surf, (44, 56, 92), (0, yc - 58), (PARC_CH, yc - 58), 1)
+        dr.line(surf, (44, 56, 92), (0, yc + 58), (PARC_CH, yc + 58), 1)
+        if q >= 1:
+            for gx in range((x0 // 220 + 1) * 220, x0 + PARC_CH, 220):
+                lum.append((gx - x0, yc - 42, _NEON[0], 78))
+                lum.append((gx - x0 + 110, yc + 42, _NEON[1], 78))
+                w["lampes"].append((gx - x0, yc - 68, _NEON[0]))
+                w["lampes"].append((gx - x0 + 110, yc + 68, _NEON[1]))
+    if ax is not None and ay is not None:                                # carrefour : on efface les lignes du milieu et on trace les passages piétons
+        xc, yc = ax - x0, ay - y0
+        dr.rect(surf, _PX_ROUTE, (xc - 75, yc - 75, 150, 150))
+        for i in range(10):
+            dr.rect(surf, (140, 152, 186), (xc - 55 + i * 11, yc - 112, 7, 26))
+            dr.rect(surf, (140, 152, 186), (xc - 55 + i * 11, yc + 86, 7, 26))
+            dr.rect(surf, (140, 152, 186), (xc - 112, yc - 55 + i * 11, 26, 7))
+            dr.rect(surf, (140, 152, 186), (xc + 86, yc - 55 + i * 11, 26, 7))
     pl = _parc_place_proche(x0 + PARC_CH // 2, y0 + PARC_CH // 2)
-    if pl is not None:
+    if pl is not None:                                                   # place centrale : dalles sombres et anneaux néon
         nx, ny = min(max(pl[0], x0), x0 + PARC_CH), min(max(pl[1], y0), y0 + PARC_CH)
-        if (nx - pl[0]) ** 2 + (ny - pl[1]) ** 2 < (PARC_R_PLACE + 6) ** 2:      # place
-            dr.circle(surf, _PC_SABLE_BORD, (pl[0] - x0, pl[1] - y0), PARC_R_PLACE + 5)
-            dr.circle(surf, _PC_SABLE, (pl[0] - x0, pl[1] - y0), PARC_R_PLACE)
+        if (nx - pl[0]) ** 2 + (ny - pl[1]) ** 2 < (PARC_R_PLACE + 6) ** 2:
+            c = (int(pl[0] - x0), int(pl[1] - y0))
+            dr.circle(surf, _PX_BORD, c, PARC_R_PLACE + 5)
+            dr.circle(surf, (22, 28, 50), c, PARC_R_PLACE)
+            for rr, col in ((PARC_R_PLACE - 22, (0, 140, 180)), (PARC_R_PLACE - 60, (140, 36, 140)), (PARC_R_PLACE - 98, (0, 110, 150))):
+                dr.circle(surf, col, c, rr, 3)
     if d["fontaine"]:
         fx, fy, fr = d["fontaine"]
-        c = (fx - x0, fy - y0)
-        dr.circle(surf, (150, 150, 158), c, fr + 14)
-        dr.circle(surf, (190, 190, 198), c, fr + 8)
-        dr.circle(surf, _PC_EAU, c, fr)
-        dr.circle(surf, _PC_EAU_CL, c, int(fr * 0.62))
-        dr.circle(surf, (230, 245, 255), c, 14)
-    for ex, ey, rx, ry in d["etangs"]:
-        dr.ellipse(surf, _PC_SABLE_BORD, (ex - x0 - rx - 10, ey - y0 - ry - 10, rx * 2 + 20, ry * 2 + 20))
-        dr.ellipse(surf, _PC_EAU, (ex - x0 - rx, ey - y0 - ry, rx * 2, ry * 2))
-        dr.ellipse(surf, _PC_EAU_CL, (ex - x0 - rx * 0.6, ey - y0 - ry * 0.55, rx * 1.0, ry * 0.7))
-    for bx, by, bw, bh in d["bancs"]:
-        dr.rect(surf, (120, 82, 52), (bx - x0, by - y0, bw, bh))
-        dr.rect(surf, (82, 54, 34), (bx - x0, by - y0, bw, bh), 2)
+        c = (int(fx - x0), int(fy - y0))
+        dr.circle(surf, (60, 70, 112), c, fr + 14)
+        dr.circle(surf, (0, 150, 200), c, fr + 6)
+        dr.circle(surf, (6, 30, 70), c, fr)
+        dr.circle(surf, (10, 60, 120), c, int(fr * 0.62))
+        dr.circle(surf, (210, 250, 255), c, 14)
+        if q >= 1:
+            lum.append((c[0], c[1], _NEON[0], 150))
+    for ex, ey, rx, ry in d["etangs"]:                                   # canal / bassin : eau noire, bord néon, reflets
+        e0, e1 = ex - x0, ey - y0
+        dr.ellipse(surf, (0, 150, 200), (e0 - rx - 7, e1 - ry - 7, rx * 2 + 14, ry * 2 + 14))
+        dr.ellipse(surf, (5, 22, 58), (e0 - rx, e1 - ry, rx * 2, ry * 2))
+        dr.ellipse(surf, (9, 42, 96), (e0 - rx * 0.62, e1 - ry * 0.55, rx * 1.1, ry * 0.8))
+        for k_, col in enumerate(((120, 30, 120), (0, 120, 150), (120, 30, 120))):
+            dr.line(surf, col, (e0 - rx * 0.5 + k_ * rx * 0.4, e1 - ry * 0.3 + k_ * ry * 0.25), (e0 - rx * 0.2 + k_ * rx * 0.4, e1 - ry * 0.3 + k_ * ry * 0.25), 2)
+        if q >= 1:
+            lum.append((e0, e1, _NEON[(cx + cy) % 3], int(max(rx, ry) * 1.3)))
+    # halos des enseignes des bâtiments (posés sur le sol : les toits viendront par-dessus)
+    w["neon_b"] = []
+    for i, (bx, by, bw, bh, ci) in enumerate(d["batiments"]):
+        nc = _NEON[(bx // 7 + by // 5) % len(_NEON)] if ((bx * 31 + by * 17) % 100) < 70 else None
+        w["neon_b"].append(nc)
+        if nc is not None and q >= 1:
+            lum.append((bx - x0 + bw / 2, by - y0 + bh / 2, nc, int(min(200, max(bw, bh) * 0.8 + 40))))
+    if q >= 1:
+        for lx, ly, nc, rr in lum:
+            _px_halo(surf, lx, ly, nc, rr)
+
+
+def _pe_batiment(surf, b, x0, y0, nc, q):
+    bx, by, bw, bh, ci = b
+    dr = pygame.draw
+    rx, ry = bx - x0, by - y0
+    rng = random.Random(bx * 31 + by * 17)
+    mur = max(14, min(28, bh // 6))                                      # façade visible (mur sud) à l'intérieur de l'emprise : la collision ne change pas
+    th = bh - mur
+    c_toit, c_bord = _PX_TOITS[ci]
+    dr.rect(surf, _PX_TROTT, (rx - 7, ry - 7, bw + 14, bh + 14))        # trottoir
+    dr.rect(surf, (6, 8, 16), (rx + 9, ry + 13, bw, bh))                 # ombre portée
+    dr.rect(surf, (11, 14, 28), (rx, ry + th, bw, mur))                  # façade
+    dr.line(surf, (24, 30, 54), (rx, ry + th), (rx + bw, ry + th), 2)
+    if q >= 1:
+        wy = ry + th + mur // 2 - 3
+        for wx in range(rx + 10, rx + bw - 12, 16):
+            dr.rect(surf, rng.choice(_PX_FEN), (wx, wy, 8, 6))
+    dr.rect(surf, c_bord, (rx, ry, bw, th))                              # toit
+    dr.rect(surf, c_toit, (rx + 4, ry + 4, bw - 8, th - 8))
+    dr.line(surf, c_bord, (rx + 8, ry + th // 2), (rx + bw - 8, ry + th // 2), 2)
+    if q >= 1:
+        for _ in range(rng.randint(2, 4)):                               # climatiseurs
+            ux, uy = rx + rng.randint(12, max(13, bw - 44)), ry + rng.randint(10, max(11, th - 34))
+            dr.rect(surf, (20, 24, 44), (ux + 3, uy + 4, 30, 20))
+            dr.rect(surf, (70, 84, 124), (ux, uy, 30, 20))
+            dr.rect(surf, (36, 44, 76), (ux + 4, uy + 4, 22, 12))
+            for g_ in range(3):
+                dr.line(surf, (90, 106, 150), (ux + 6, uy + 7 + g_ * 4), (ux + 24, uy + 7 + g_ * 4), 1)
+        if bw >= 170 and th >= 110:                                      # local technique en relief (ombre, face, voyant rouge)
+            ux, uy = rx + rng.randint(14, max(15, bw - 70)), ry + rng.randint(12, max(13, th - 50))
+            dr.rect(surf, (14, 18, 34), (ux + 6, uy + 8, 52, 34))
+            dr.rect(surf, c_bord, (ux, uy, 52, 34))
+            dr.rect(surf, (c_toit[0] + 18, c_toit[1] + 18, c_toit[2] + 26), (ux + 3, uy + 3, 46, 28))
+            dr.circle(surf, (255, 60, 90), (ux + 44, uy + 8), 3)
+        for _ in range(rng.randint(1, 3)):                               # aérations rondes
+            vx, vy = rx + rng.randint(14, max(15, bw - 14)), ry + rng.randint(12, max(13, th - 12))
+            dr.circle(surf, (24, 30, 52), (vx + 2, vy + 3), 9)
+            dr.circle(surf, (78, 92, 134), (vx, vy), 9)
+            dr.circle(surf, (28, 34, 60), (vx, vy), 5)
+        if bw >= 210 and th >= 120 and rng.random() < 0.6:               # panneaux solaires
+            sx, sy = rx + bw - 96, ry + th - 62
+            dr.rect(surf, (14, 30, 76), (sx, sy, 80, 44))
+            for k_ in range(1, 4):
+                dr.line(surf, (40, 74, 150), (sx + k_ * 20, sy), (sx + k_ * 20, sy + 44), 1)
+            dr.line(surf, (40, 74, 150), (sx, sy + 22), (sx + 80, sy + 22), 1)
+        if bw >= 270 and th >= 190 and rng.random() < 0.5:               # héliport
+            hx, hy = rx + bw // 2, ry + th // 2
+            dr.circle(surf, (50, 60, 98), (hx, hy), 42)
+            dr.circle(surf, (0, 190, 230), (hx, hy), 42, 3)
+            dr.line(surf, (0, 190, 230), (hx - 12, hy - 16), (hx - 12, hy + 16), 4)
+            dr.line(surf, (0, 190, 230), (hx + 12, hy - 16), (hx + 12, hy + 16), 4)
+            dr.line(surf, (0, 190, 230), (hx - 12, hy), (hx + 12, hy), 4)
+    if nc is not None:                                                   # enseigne néon sur l'arête du toit
+        dr.rect(surf, nc, (rx + 1, ry + 1, bw - 2, th - 2), 2)
+        dr.line(surf, nc, (rx + 10, ry + th + 3), (rx + bw - 10, ry + th + 3), 3)
+
+
+def _pe_objets(cx, cy, d, w):
+    """Étape 2 : mobilier, rochers/caisses, bâtiments, arbres, voitures, lampadaires."""
+    q = QUALITE["niveau"]
+    surf, dr = w["surf"], pygame.draw
+    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    bio = d["biome"]
+    ville = bio in (2, 3, 4)
+    rng = random.Random(cx * 1009 + cy * 9176)
+    for bx, by, bw, bh in d["bancs"]:                                    # bancs lumineux
+        dr.rect(surf, (54, 64, 104), (bx - x0, by - y0, bw, bh))
+        dr.rect(surf, (0, 200, 230), (bx - x0 + 1, by - y0 + 1, max(2, bw - 2), max(2, bh - 2)), 1)
     for x, y, c in d["fleurs"]:
-        dr.circle(surf, _PC_FLEURS[c], (x - x0, y - y0), 3)
+        dr.circle(surf, _NEON[c % len(_NEON)], (x - x0, y - y0), 3)
     for x, y, r in d["buissons"]:
-        dr.circle(surf, (34, 104, 54), (x - x0 + 3, y - y0 + 4), r)
-        dr.circle(surf, (44, 124, 62), (x - x0, y - y0), r)
-        dr.circle(surf, (70, 152, 84), (x - x0 - r // 3, y - y0 - r // 3), max(3, r // 3))
-    for x, y, r in d["rochers"]:
-        dr.circle(surf, (96, 96, 104), (x - x0 + 4, y - y0 + 5), r)
-        dr.circle(surf, (132, 132, 140), (x - x0, y - y0), r)
-        dr.circle(surf, (168, 168, 176), (x - x0 - r // 3, y - y0 - r // 3), max(3, r // 3))
-    for bx, by, bw, bh, ci in d["batiments"]:                # bâtiments : ombre, toit, arête, petits équipements
-        clair, fonce = _PC_TOITS[ci]
-        rx_, ry_ = bx - x0, by - y0
-        dr.rect(surf, (40, 84, 48), (rx_ + 14, ry_ + 16, bw, bh))
-        dr.rect(surf, fonce, (rx_, ry_, bw, bh))
-        dr.rect(surf, clair, (rx_ + 8, ry_ + 8, bw - 16, bh - 16))
-        if bw >= bh:
-            dr.line(surf, fonce, (rx_ + 8, ry_ + bh // 2), (rx_ + bw - 8, ry_ + bh // 2), 4)
+        if ville:                                                        # grille d'aération lumineuse
+            dr.circle(surf, (22, 28, 48), (x - x0, y - y0), r)
+            dr.circle(surf, (0, 120, 160), (x - x0, y - y0), r, 2)
+            dr.line(surf, (0, 120, 160), (x - x0 - r + 3, y - y0), (x - x0 + r - 3, y - y0), 1)
         else:
-            dr.line(surf, fonce, (rx_ + bw // 2, ry_ + 8), (rx_ + bw // 2, ry_ + bh - 8), 4)
-        dr.rect(surf, (96, 96, 104), (rx_ + bw - 46, ry_ + 18, 24, 24))
-        dr.rect(surf, (150, 150, 158), (rx_ + bw - 42, ry_ + 22, 16, 16))
-    for x, y, r in sorted(d["arbres"], key=lambda t: t[1]):  # arbres : ombre, feuillage, reflets
-        dr.circle(surf, (46, 100, 52), (x - x0 + 8, y - y0 + 10), r)
-        dr.circle(surf, (32, 108, 50), (x - x0, y - y0), r)
-        dr.circle(surf, (50, 138, 64), (x - x0 - r // 6, y - y0 - r // 6), int(r * 0.72))
-        dr.circle(surf, (88, 176, 92), (x - x0 - r // 3, y - y0 - r // 3), max(4, int(r * 0.3)))
-    bord = (20, 48, 28)                                      # bord du monde : bande sombre (le joueur ne peut pas la franchir)
-    if cx == 0:
-        dr.rect(surf, bord, (0, 0, 60, PARC_CH))
-    if cx == PARC_NC - 1:
-        dr.rect(surf, bord, (PARC_CH - 60, 0, 60, PARC_CH))
-    if cy == 0:
-        dr.rect(surf, bord, (0, 0, PARC_CH, 60))
-    if cy == PARC_NC - 1:
-        dr.rect(surf, bord, (0, PARC_CH - 60, PARC_CH, 60))
-    return surf.convert()                                    # même format que l'écran : affichage plus rapide
+            dr.circle(surf, (6, 28, 32), (x - x0 + 3, y - y0 + 4), r)
+            dr.circle(surf, (12, 54, 56), (x - x0, y - y0), r)
+            dr.circle(surf, (26, 96, 92), (x - x0 - r // 3, y - y0 - r // 3), max(3, r // 3))
+    for x, y, r in d["rochers"]:
+        px_, py_ = x - x0, y - y0
+        if bio == 4 and r >= 22:                                         # conteneur
+            col = _PX_CARROSS[(x + y) % 4]
+            dr.rect(surf, (6, 8, 16), (px_ - r * 1.1 + 6, py_ - r * 0.6 + 8, r * 2.2, r * 1.2))
+            dr.rect(surf, col, (px_ - r * 1.1, py_ - r * 0.6, r * 2.2, r * 1.2))
+            for k_ in range(1, 5):
+                dr.line(surf, (min(255, col[0] + 50), min(255, col[1] + 50), min(255, col[2] + 50)), (px_ - r * 1.1 + k_ * r * 0.44, py_ - r * 0.6), (px_ - r * 1.1 + k_ * r * 0.44, py_ + r * 0.6), 1)
+            dr.rect(surf, (200, 210, 230), (px_ - r * 1.1, py_ - r * 0.6, r * 2.2, r * 1.2), 1)
+        elif bio == 4:                                                   # baril
+            dr.circle(surf, (6, 8, 16), (px_ + 4, py_ + 5), r)
+            dr.circle(surf, (200, 100, 30) if (x + y) % 2 else (0, 140, 170), (px_, py_), r)
+            dr.circle(surf, (250, 190, 100), (px_, py_), max(3, r - 6), 2)
+        else:                                                            # bloc de béton avec marque lumineuse
+            dr.rect(surf, (6, 8, 16), (px_ - r + 5, py_ - r + 6, r * 2, r * 2))
+            dr.rect(surf, (62, 72, 108), (px_ - r, py_ - r, r * 2, r * 2))
+            dr.rect(surf, (88, 102, 148), (px_ - r + 3, py_ - r + 3, r * 2 - 6, r * 2 - 6), 2)
+            dr.circle(surf, _NEON[(x + y) % 5], (px_ - r + 7, py_ - r + 7), 3)
+    for i, b in enumerate(d["batiments"]):
+        _pe_batiment(surf, b, x0, y0, w["neon_b"][i], q)
+    for x, y, r in sorted(d["arbres"], key=lambda t: t[1]):
+        px_, py_ = x - x0, y - y0
+        if ville:
+            dr.circle(surf, _PX_TROTT, (px_, py_), int(r * 0.55) + 6)    # bac
+        dr.circle(surf, (4, 18, 24), (px_ + 8, py_ + 10), r)
+        dr.circle(surf, (12, 58, 64), (px_, py_), r)
+        dr.circle(surf, (20, 90, 96), (px_ - r // 6, py_ - r // 6), int(r * 0.72))
+        dr.circle(surf, (56, 168, 158), (px_ - r // 3, py_ - r // 3), max(4, int(r * 0.3)))
+        if (x * 13 + y * 7) % 100 < 24:                                  # arbres luminescents
+            nc = _NEON[(x + y) % 3]
+            for k_ in range(3):
+                a = k_ * 2.1 + (x % 7)
+                dr.circle(surf, nc, (int(px_ + math.cos(a) * r * 0.7), int(py_ + math.sin(a) * r * 0.7)), 2)
+    if w["avenues"][0] is not None and w["avenues"][1] is None:          # voitures garées le long de l'avenue verticale
+        xc = w["avenues"][0] - x0
+        for _ in range(rng.randint(0, 2)):
+            cy_, side = rng.randint(80, PARC_CH - 80), rng.choice((-1, 1))
+            col = _PX_CARROSS[rng.randint(0, 4)]
+            px_ = xc + side * 40
+            dr.rect(surf, (6, 8, 16), (px_ - 11, cy_ - 26, 26, 54))
+            dr.rect(surf, col, (px_ - 13, cy_ - 28, 26, 56))
+            dr.rect(surf, (60, 100, 136), (px_ - 9, cy_ - 12, 18, 14))
+            dr.rect(surf, (255, 240, 170), (px_ - 11, cy_ - 28, 6, 3))
+            dr.rect(surf, (255, 240, 170), (px_ + 5, cy_ - 28, 6, 3))
+            dr.rect(surf, (255, 50, 70), (px_ - 11, cy_ + 25, 6, 3))
+            dr.rect(surf, (255, 50, 70), (px_ + 5, cy_ + 25, 6, 3))
+    elif w["avenues"][1] is not None and w["avenues"][0] is None:        # ... et le long de l'avenue horizontale
+        yc = w["avenues"][1] - y0
+        for _ in range(rng.randint(0, 2)):
+            cx_, side = rng.randint(80, PARC_CH - 80), rng.choice((-1, 1))
+            col = _PX_CARROSS[rng.randint(0, 4)]
+            py_ = yc + side * 40
+            dr.rect(surf, (6, 8, 16), (cx_ - 26, py_ - 11, 54, 26))
+            dr.rect(surf, col, (cx_ - 28, py_ - 13, 56, 26))
+            dr.rect(surf, (60, 100, 136), (cx_ - 12, py_ - 9, 14, 18))
+            dr.rect(surf, (255, 240, 170), (cx_ + 25, py_ - 11, 3, 6))
+            dr.rect(surf, (255, 240, 170), (cx_ + 25, py_ + 5, 3, 6))
+            dr.rect(surf, (255, 50, 70), (cx_ - 28, py_ - 11, 3, 6))
+            dr.rect(surf, (255, 50, 70), (cx_ - 28, py_ + 5, 3, 6))
+    for lx, ly, nc in w["lampes"]:                                       # lampadaires
+        dr.circle(surf, (70, 82, 120), (lx, ly), 5)
+        dr.circle(surf, nc, (lx, ly), 3)
 
 
-def _parc_gerer(cam_x, cam_y):
+def _pe_accents(cx, cy, d, w):
+    """Étape 3 : petites lueurs néon sur les toits et les antennes, puis la zone est prête."""
+    q = QUALITE["niveau"]
+    surf = w["surf"]
+    x0, y0 = cx * PARC_CH, cy * PARC_CH
+    if q >= 1:
+        for i, (bx, by, bw, bh, ci) in enumerate(d["batiments"]):
+            nc = w["neon_b"][i]
+            if nc is not None:
+                _px_halo(surf, bx - x0 + bw / 2, by - y0 + 6, nc, 34)
+                _px_halo(surf, bx - x0 + bw / 2, by - y0 + bh - 6, nc, 30)
+
+
+def _parc_peindre_etape(cx, cy, w):
+    """Fait avancer d'une étape la fabrication d'une zone (w : son état de fabrication)."""
+    d = _parc_gen(cx, cy)
+    if w["etape"] == 0:
+        _pe_terrain(cx, cy, d, w)
+    elif w["etape"] == 1:
+        _pe_objets(cx, cy, d, w)
+    else:
+        _pe_accents(cx, cy, d, w)
+    w["etape"] += 1
+
+
+def _parc_peindre(cx, cy):
+    """Fabrique une zone complète d'un coup (départ du jeu)."""
+    w = {"etape": 0, "surf": None, "lum": [], "lampes": [], "avenues": (None, None), "neon_b": []}
+    while w["etape"] < 3:
+        _parc_peindre_etape(cx, cy, w)
+    return w["surf"].convert()
+
+
+def _parc_gerer(cam_x, cam_y, complet=False):
     """Crée au plus une zone par image (la plus proche du joueur) et décharge les zones lointaines."""
     t0 = _time.perf_counter()
     c0x, c1x = max(0, int((cam_x - 320) // PARC_CH)), min(PARC_NC - 1, int((cam_x + LARGEUR + 320) // PARC_CH))
@@ -1309,11 +1576,23 @@ def _parc_gerer(cam_x, cam_y):
     if manquantes:
         px, py = PARC["x"] / PARC_CH, PARC["y"] / PARC_CH
         manquantes.sort(key=lambda c: (c[0] + 0.5 - px) ** 2 + (c[1] + 0.5 - py) ** 2)
-        PARC["surf"][manquantes[0]] = _parc_peindre(*manquantes[0])
+        cle = manquantes[0]
+        w = PARC["wip"].get(cle)
+        if w is None:
+            w = PARC["wip"][cle] = {"etape": 0, "surf": None, "lum": [], "lampes": [], "avenues": (None, None), "neon_b": []}
+        while True:                                                       # une étape par image (toutes d'un coup au départ du jeu)
+            _parc_peindre_etape(cle[0], cle[1], w)
+            if w["etape"] >= 3 or not complet:
+                break
+        if w["etape"] >= 3:
+            PARC["surf"][cle] = w["surf"].convert()
+            del PARC["wip"][cle]
         PARC["ms_gen"] = (_time.perf_counter() - t0) * 1000.0
     for cle in [c for c in PARC["surf"] if c[0] < c0x - 1 or c[0] > c1x + 1 or c[1] < c0y - 1 or c[1] > c1y + 1]:
         del PARC["surf"][cle]
         PARC["donnees"].pop(cle, None)
+    for cle in [c for c in PARC["wip"] if c[0] < c0x - 1 or c[0] > c1x + 1 or c[1] < c0y - 1 or c[1] > c1y + 1]:
+        del PARC["wip"][cle]
     pcx, pcy = int(PARC["x"] // PARC_CH), int(PARC["y"] // PARC_CH)
     for cle in [c for c in PARC["donnees"] if abs(c[0] - pcx) > 3 or abs(c[1] - pcy) > 3]:
         PARC["donnees"].pop(cle, None)
@@ -1344,13 +1623,13 @@ def _parc_decouvrir(x, y):
 
 
 def parc_demarrer(seed=None, spawn_fn=None):
-    PARC.update(actif=True, seed=seed or random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0, vus=set())
+    PARC.update(actif=True, seed=seed or random.randint(1, 999999), face=1, donnees={}, surf={}, ms_gen=0.0, vus=set(), wip={})
     PARC["x"], PARC["y"] = float(PARC_DEC + 4 * PARC_PAS), float(PARC_DEC + 4 * PARC_PAS + 450)   # sous la place du milieu
     if spawn_fn is not None:
         PARC["x"], PARC["y"] = spawn_fn()
     cam_x, cam_y = PARC["x"] - LARGEUR // 2, PARC["y"] - HAUTEUR // 2
     for _ in range(4):                                       # quelques zones tout de suite (l'écran de chargement masque le délai)
-        _parc_gerer(cam_x, cam_y)
+        _parc_gerer(cam_x, cam_y, True)
     PARC["mini"] = pygame.Surface((_PC_MINI, _PC_MINI))
     PARC["mini"].fill((16, 30, 22))
     _parc_mini_axes()
@@ -1358,7 +1637,7 @@ def parc_demarrer(seed=None, spawn_fn=None):
 
 
 def parc_liberer():
-    PARC.update(actif=False, donnees={}, surf={}, mini=None, vus=set())
+    PARC.update(actif=False, donnees={}, surf={}, mini=None, vus=set(), wip={})
 
 
 def jouer_parc():
@@ -1407,7 +1686,7 @@ def jouer_parc():
             else:
                 ecran.fill(_PC_HERBE, (px, py, PARC_CH, PARC_CH))        # zone pas encore prête : herbe unie
     sx, sy = int(PARC["x"] - cam_x), int(PARC["y"] - cam_y)
-    pygame.draw.ellipse(ecran, (30, 70, 36), (sx - 18, sy + 8, 36, 14))
+    pygame.draw.ellipse(ecran, (2, 4, 12), (sx - 18, sy + 8, 36, 14))
     if MODE_GRAPHIQUE == "REALISTE":
         img = img_joueur_droite if PARC["face"] else img_joueur_gauche
         ecran.blit(img, (sx - img.get_width() // 2, sy - img.get_height() // 2))
@@ -2250,7 +2529,7 @@ def _arene_silhouette(surf, cx, cy, ox, oy, k, arbres):
     d = _parc_gen(cx, cy)
     x0, y0 = cx * PARC_CH, cy * PARC_CH
     dr = pygame.draw
-    route = (66, 82, 98)
+    route = (46, 58, 98)
     lr = max(1, int(PARC_LARG_ALLEE * k))
     kx = round((x0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
     ky = round((y0 + PARC_CH // 2 - PARC_DEC) / PARC_PAS)
@@ -2268,15 +2547,15 @@ def _arene_silhouette(surf, cx, cy, ox, oy, k, arbres):
     for ex, ey, rx, ry in d["etangs"]:
         dr.ellipse(surf, (30, 84, 150), (ox + (ex - x0 - rx) * k, oy + (ey - y0 - ry) * k, max(2, rx * 2 * k), max(2, ry * 2 * k)))
     for x, y, r in d["rochers"]:
-        dr.circle(surf, (110, 110, 124), (int(ox + (x - x0) * k), int(oy + (y - y0) * k)), max(1, int(r * k)))
+        dr.circle(surf, (120, 90, 190), (int(ox + (x - x0) * k), int(oy + (y - y0) * k)), max(1, int(r * k)))
     if arbres:
         for x, y, r in d["arbres"]:
-            dr.circle(surf, (28, 82, 54), (int(ox + (x - x0) * k), int(oy + (y - y0) * k)), max(1, int(r * k * 0.8)))
+            dr.circle(surf, (22, 92, 86), (int(ox + (x - x0) * k), int(oy + (y - y0) * k)), max(1, int(r * k * 0.8)))
     for bx, by, bw, bh, _c in d["batiments"]:
         rect = (ox + (bx - x0) * k, oy + (by - y0) * k, max(2, bw * k), max(2, bh * k))
-        dr.rect(surf, (120, 140, 162), rect)
+        dr.rect(surf, (96, 78, 190), rect)
         if bw * k >= 6:
-            dr.rect(surf, (205, 222, 238), rect, 1)
+            dr.rect(surf, (0, 225, 255), rect, 1)
     if d["fontaine"]:
         fx, fy, fr = d["fontaine"]
         dr.circle(surf, (40, 100, 170), (int(ox + (fx - x0) * k), int(oy + (fy - y0) * k)), max(2, int(fr * k)))
@@ -2539,7 +2818,7 @@ def _arene_dessiner_joueurs(cibles, ox, oy):
         col = _mp_couleur(u)
         a = float(o.get("a", 0))
         dessiner_halo(sx, sy, 46, col, 0.45)
-        pygame.draw.ellipse(ecran, (30, 70, 36), (sx - 18, sy + 8, 36, 14))
+        pygame.draw.ellipse(ecran, (2, 4, 12), (sx - 18, sy + 8, 36, 14))
         if MODE_GRAPHIQUE == "REALISTE":
             spr = _mp_sprites(str(o.get("s", "")))
             img = spr[0] if math.cos(a) >= 0 else spr[1]
@@ -2777,7 +3056,7 @@ def jouer_arene():
     _arene_dessiner_joueurs(cibles, ox, oy)
     sx, sy = int(PARC["x"] + ox), int(PARC["y"] + oy)
     if not A["mort"]:
-        pygame.draw.ellipse(ecran, (30, 70, 36), (sx - 18, sy + 8, 36, 14))
+        pygame.draw.ellipse(ecran, (2, 4, 12), (sx - 18, sy + 8, 36, 14))
         if MODE_GRAPHIQUE == "REALISTE":
             img = img_joueur_droite if PARC["face"] else img_joueur_gauche
             ecran.blit(img, (sx - img.get_width() // 2, sy - img.get_height() // 2))
