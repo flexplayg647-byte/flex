@@ -6,22 +6,35 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Flex Cyberpunk - Admin</title>
 <style>
-:root{--bg:#05060f;--card:#0c1024;--line:#1b2450;--tx:#e8ecff;--mut:#8a94c8;--pink:#ff00b4;--cyan:#00ebff;--ok:#00ff80;--bad:#ff3a6e}
+:root{--bg:#05060f;--card:#0c1024;--line:#1b2450;--tx:#e8ecff;--mut:#8a94c8;--pink:#ff00b4;--cyan:#00ebff;--ok:#00ff80;--bad:#ff3a6e;--warn:#ffb347;--dev:#ff5a3c}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,Segoe UI,Roboto,sans-serif;padding:16px;padding-top:max(16px,env(safe-area-inset-top))}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,Segoe UI,Roboto,sans-serif;padding:16px;padding-top:max(16px,env(safe-area-inset-top));max-width:1100px;margin-left:auto;margin-right:auto}
 h1{font-size:22px;margin:0 0 4px;letter-spacing:1px}
 h1 span{color:var(--pink)}
 h2{font-size:15px;color:var(--cyan);margin:22px 0 8px;text-transform:uppercase;letter-spacing:1px}
 .sub{color:var(--mut);font-size:13px;margin-bottom:14px}
-button{background:var(--pink);color:#000;border:0;border-radius:10px;padding:12px 18px;font-size:16px;font-weight:700}
+button{background:var(--pink);color:#000;border:0;border-radius:10px;padding:12px 18px;font-size:16px;font-weight:700;cursor:pointer}
 button.alt{background:transparent;color:var(--cyan);border:2px solid var(--cyan)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.top{display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+/* onglets */
+.tabs{display:flex;gap:6px;overflow-x:auto;position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0 10px;margin:0 -4px 4px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:none;background:var(--card);color:var(--mut);border:1px solid var(--line);padding:10px 16px;font-size:14px;border-radius:999px;white-space:nowrap}
+.tabs button.on{background:var(--cyan);color:#000;border-color:var(--cyan)}
+.tabs button.dv.on{background:var(--dev);border-color:var(--dev);color:#fff}
+.tabs button.dv{color:var(--dev);border-color:#4a2118}
+.tabs button.dv.on{color:#fff}
+.tab h2:first-of-type{margin-top:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
 .card b{display:block;font-size:26px;color:var(--cyan)}
 .card small{color:var(--mut);font-size:12px}
-.bars{display:flex;align-items:flex-end;gap:4px;height:120px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 8px 6px}
+.card.go{cursor:pointer}
+.card.go:hover{border-color:var(--cyan)}
+.bars{display:flex;align-items:flex-end;gap:4px;height:120px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 8px 6px}
 .bar{flex:1;background:linear-gradient(var(--pink),#7a0058);border-radius:4px 4px 0 0;min-height:2px;position:relative}
-.bar i{position:absolute;top:-16px;left:0;right:0;text-align:center;font-style:normal;font-size:10px;color:var(--mut)}
+.bars.rv .bar{background:linear-gradient(var(--ok),#007a40)}
+.bar i{position:absolute;top:-16px;left:-4px;right:-4px;text-align:center;font-style:normal;font-size:10px;color:var(--mut);white-space:nowrap}
 .lab{display:flex;gap:4px;font-size:10px;color:var(--mut);margin-top:4px}
 .lab span{flex:1;text-align:center}
 .wrap{overflow-x:auto}
@@ -49,6 +62,7 @@ th{color:var(--mut);font-weight:600;font-size:12px}
 .pj{font-weight:800;color:#fff;font-size:13px}
 td.l,th.l{text-align:left}
 .ev{font-size:13px;color:var(--mut);padding:5px 0;border-bottom:1px solid var(--line)}
+.ev:last-child{border-bottom:0}
 input[type=search]{width:100%;padding:12px;font-size:15px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--tx);margin-bottom:8px}
 details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
 summary{cursor:pointer;font-weight:700;color:var(--cyan);font-size:14px}
@@ -61,6 +75,20 @@ details.dl summary{font-weight:400;color:var(--tx);line-height:1.5}
 details.dl summary .pj{font-size:14px}
 details.dl .det{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
 details.dl .det div{font-size:12px;color:var(--mut);padding:2px 0}
+/* état du système */
+.dg{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.4}
+.dg:last-child{border-bottom:0}
+.dg .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:3px;background:var(--mut)}
+.dg.ok .dot{background:var(--ok)}.dg.warn .dot{background:var(--warn)}.dg.ko .dot{background:var(--bad)}
+.dg b,.card .dg b{display:inline;font-size:14px;color:var(--tx)}
+.dg .sm{display:block;margin-top:2px}
+.note{font-size:12px;color:var(--mut);margin:6px 0 10px;line-height:1.45}
+.mb{display:inline-block;height:8px;border-radius:4px;background:var(--dev);vertical-align:middle;min-width:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chips button{padding:6px 12px;font-size:13px;background:var(--card);color:var(--mut);border:1px solid var(--line)}
+.chips button.on{background:var(--dev);color:#fff;border-color:var(--dev)}
+.dvh{color:var(--dev)}
+@media(min-width:700px){body{padding:24px}}
 </style>
 </head>
 <body>
@@ -74,84 +102,197 @@ details.dl .det div{font-size:12px;color:var(--mut);padding:2px 0}
 <div id="err" class="err hide"></div>
 
 <div id="dash" class="hide">
-  <div style="display:flex;gap:8px;margin-bottom:6px">
+  <div class="top">
     <button class="alt" id="btnRef">Actualiser</button>
     <button class="alt" id="btnOut">Déconnexion</button>
   </div>
   <div class="sub" id="maj"></div>
 
-  <h2>Revenus</h2>
-  <div class="pb" id="pb">
-    <button class="alt on" data-p="all">Tout</button>
-    <button class="alt" data-p="30">30 jours</button>
-    <button class="alt" data-p="7">7 jours</button>
-  </div>
-  <div id="rvErr" class="err hide"></div>
-  <div class="grid">
-    <div class="card"><b id="rvTot">-</b><small>revenus encaiss&eacute;s</small></div>
-    <div class="card"><b id="rvOk" style="color:var(--ok)">-</b><small>achats r&eacute;ussis</small></div>
-    <div class="card"><b id="rvKo" style="color:var(--bad)">-</b><small>achats &eacute;chou&eacute;s</small></div>
-    <div class="card"><b id="rvAt" style="color:#ffb347">-</b><small>abandonn&eacute;s / en attente</small></div>
-  </div>
-  <div class="sub" id="rvInfo" style="margin-top:6px"></div>
-  <h2>Derni&egrave;res ventes</h2>
-  <div class="card wrap">
-    <table class="rt">
-      <thead><tr><th class="l">Date</th><th>Montant</th><th class="l">Statut</th><th class="l">Acheteur</th><th class="l">Joueur</th></tr></thead>
-      <tbody id="rvVentes"><tr><td colspan="5" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
-    </table>
-  </div>
-  <h2>Skins activ&eacute;s dans le jeu</h2>
-  <div class="card wrap">
-    <table class="rt">
-      <thead><tr><th class="l">Date</th><th class="l">Joueur</th><th class="l">Skin</th><th class="l">Acheteur</th></tr></thead>
-      <tbody id="rvAct"><tr><td colspan="4" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
-    </table>
-  </div>
+  <nav class="tabs" id="tabs">
+    <button data-t="general">Général</button>
+    <button data-t="revenus">Revenus</button>
+    <button data-t="solo">Solo</button>
+    <button data-t="devil" class="dv">Devil</button>
+    <button data-t="joueurs">Joueurs</button>
+    <button data-t="activite">Activité</button>
+  </nav>
 
-  <h2>Top 10 des meilleurs joueurs</h2>
-  <div class="card" id="top"><div class="ev">Chargement...</div></div>
-  <div class="sub" id="nbj" style="margin-top:6px"></div>
+  <!-- ============ GÉNÉRAL ============ -->
+  <section class="tab" id="t-general">
+    <div id="perr-general"></div>
+    <h2>État du système</h2>
+    <div class="card" id="diag"><div class="ev">Chargement...</div></div>
 
-  <h2>Visiteurs uniques</h2>
-  <div class="grid">
-    <div class="card"><b id="v1">-</b><small>dernières 24 h</small></div>
-    <div class="card"><b id="v7">-</b><small>7 jours</small></div>
-    <div class="card"><b id="v30">-</b><small>30 jours</small></div>
-    <div class="card"><b id="vt">-</b><small>visites (30 jours)</small></div>
-  </div>
+    <h2>Chiffres clés</h2>
+    <div class="grid" id="kpi"></div>
 
-  <h2>Joueurs connectés (compte Google)</h2>
-  <div class="grid">
-    <div class="card"><b id="p1">-</b><small>dernières 24 h</small></div>
-    <div class="card"><b id="p7">-</b><small>7 jours</small></div>
-    <div class="card"><b id="p30">-</b><small>30 jours</small></div>
-    <div class="card"><b id="g7">-</b><small>parties lancées (7 j)</small></div>
-  </div>
+    <h2>Visiteurs par jour (14 jours)</h2>
+    <div class="bars" id="bars"></div>
+    <div class="lab" id="lab"></div>
 
-  <h2>Visiteurs par jour (14 jours)</h2>
-  <div class="bars" id="bars"></div>
-  <div class="lab" id="lab"></div>
+    <h2>Meilleurs joueurs</h2>
+    <div class="card" id="gTop"><div class="ev">Chargement...</div></div>
 
-  <h2>Joueurs connect&eacute;s (30 jours)</h2>
-  <input id="q" type="search" placeholder="Rechercher un pseudo ou un e-mail">
-  <div class="sub" id="notePro"></div>
-  <div class="card" id="joueurs"></div>
+    <h2>Dernières ventes</h2>
+    <div class="card wrap">
+      <table class="rt">
+        <thead><tr><th class="l">Date</th><th>Montant</th><th class="l">Statut</th><th class="l">Acheteur</th></tr></thead>
+        <tbody id="gVentes"></tbody>
+      </table>
+    </div>
 
-  <h2>Par mission (30 jours)</h2>
-  <div class="card wrap">
-    <table>
-      <thead><tr><th>Mission</th><th>Joueurs</th><th>Lanc&eacute;s</th><th>Gagn&eacute;s</th><th>Perdus</th><th>R&eacute;ussite</th><th>Bloqu&eacute;s</th></tr></thead>
-      <tbody id="lv"></tbody>
-    </table>
-  </div>
-  <div class="sub" style="margin-top:6px">Bloqu&eacute; = joueur qui a perdu cette mission et ne l'a jamais gagn&eacute;e.</div>
+    <h2>Dernière activité</h2>
+    <div class="card" id="gAct"><div class="ev">Chargement...</div></div>
+  </section>
 
-  <h2>D&eacute;tail par mission</h2>
-  <div id="detailLv"></div>
+  <!-- ============ REVENUS ============ -->
+  <section class="tab hide" id="t-revenus">
+    <div id="perr-revenus"></div>
+    <h2>Revenus</h2>
+    <div class="pb" id="pb">
+      <button class="alt on" data-p="all">Tout</button>
+      <button class="alt" data-p="30">30 jours</button>
+      <button class="alt" data-p="7">7 jours</button>
+    </div>
+    <div id="rvErr" class="err hide"></div>
+    <div class="grid">
+      <div class="card"><b id="rvTot">-</b><small>revenus encaiss&eacute;s</small></div>
+      <div class="card"><b id="rvOk" style="color:var(--ok)">-</b><small>achats r&eacute;ussis</small></div>
+      <div class="card"><b id="rvKo" style="color:var(--bad)">-</b><small>achats &eacute;chou&eacute;s</small></div>
+      <div class="card"><b id="rvAt" style="color:#ffb347">-</b><small>abandonn&eacute;s / en attente</small></div>
+      <div class="card"><b id="rvPan" style="color:var(--cyan)">-</b><small>panier moyen</small></div>
+      <div class="card"><b id="rvNbA" style="color:var(--cyan)">-</b><small>acheteurs diff&eacute;rents</small></div>
+    </div>
+    <div class="sub" id="rvInfo" style="margin-top:6px"></div>
 
-  <h2>Derni&egrave;re activit&eacute;</h2>
-  <div class="card" id="recent"></div>
+    <h2>Revenus par jour (14 jours)</h2>
+    <div class="bars rv" id="rvBars"></div>
+    <div class="lab" id="rvLab"></div>
+
+    <h2>Derni&egrave;res ventes</h2>
+    <div class="card wrap">
+      <table class="rt">
+        <thead><tr><th class="l">Date</th><th>Montant</th><th class="l">Statut</th><th class="l">Acheteur</th><th class="l">Joueur</th></tr></thead>
+        <tbody id="rvVentes"><tr><td colspan="5" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2>Qui a achet&eacute;</h2>
+    <div class="note">Acheteur = la personne qui a pay&eacute; sur Chariow. Joueur = le compte du jeu qui a activ&eacute; la cl&eacute;.</div>
+    <div class="card wrap">
+      <table class="rt">
+        <thead><tr><th class="l">Acheteur</th><th>Achats</th><th>Total</th><th class="l">Dernier achat</th><th class="l">Skins activ&eacute;s</th></tr></thead>
+        <tbody id="rvAch"><tr><td colspan="5" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2>Skins activ&eacute;s dans le jeu</h2>
+    <div class="card wrap">
+      <table class="rt">
+        <thead><tr><th class="l">Date</th><th class="l">Joueur</th><th class="l">Skin</th><th class="l">Acheteur</th></tr></thead>
+        <tbody id="rvAct"><tr><td colspan="4" style="text-align:center;color:#8a94c8">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+
+    <h2>Skins les plus activ&eacute;s</h2>
+    <div class="card wrap">
+      <table class="rt">
+        <thead><tr><th class="l">Skin</th><th>Activations</th></tr></thead>
+        <tbody id="rvTopSkins"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ SOLO ============ -->
+  <section class="tab hide" id="t-solo">
+    <div id="perr-solo"></div>
+    <h2>Mode solo (campagne Flex Cyberpunk)</h2>
+    <div class="grid" id="soloKpi"></div>
+    <div class="note">Chiffres sur 30 jours (et 7 jours quand c'est indiqu&eacute;). Seules les missions du mode solo sont comptées ici.</div>
+
+    <h2>Par mission (30 jours)</h2>
+    <div class="card wrap">
+      <table>
+        <thead><tr><th>Mission</th><th>Joueurs</th><th>Lanc&eacute;s</th><th>Gagn&eacute;s</th><th>Perdus</th><th>R&eacute;ussite</th><th>Bloqu&eacute;s</th></tr></thead>
+        <tbody id="lv"></tbody>
+      </table>
+    </div>
+    <div class="sub" style="margin-top:6px">Bloqu&eacute; = joueur qui a perdu cette mission et ne l'a jamais gagn&eacute;e.</div>
+
+    <h2>D&eacute;tail par mission</h2>
+    <div id="detailLv"></div>
+  </section>
+
+  <!-- ============ DEVIL ============ -->
+  <section class="tab hide" id="t-devil">
+    <div id="perr-devil"></div>
+    <h2 class="dvh">Mode DEVIL (missions troll)</h2>
+    <div id="dvAlert"></div>
+    <div class="grid" id="dvKpi"></div>
+    <div class="note" id="dvNote"></div>
+
+    <h2 class="dvh">Par mission (30 jours)</h2>
+    <div class="card wrap">
+      <table>
+        <thead><tr><th>Mission</th><th>Joueurs</th><th>Lanc&eacute;s</th><th>Gagn&eacute;s</th><th>Perdus*</th><th>R&eacute;ussite</th><th>Bloqu&eacute;s</th><th class="l">Joueurs</th></tr></thead>
+        <tbody id="dvLv"></tbody>
+      </table>
+    </div>
+    <div class="sub" style="margin-top:6px">Bloqu&eacute; = joueur qui a perdu cette mission et ne l'a jamais r&eacute;ussie.</div>
+
+    <h2 class="dvh">Qui a jou&eacute; / qui a perdu</h2>
+    <div class="chips" id="dvSort">
+      <button data-s="recent" class="on">R&eacute;cents</button>
+      <button data-s="win">Plus de victoires</button>
+      <button data-s="lose">Plus de d&eacute;faites</button>
+    </div>
+    <input id="qd" type="search" placeholder="Rechercher un pseudo ou un e-mail">
+    <div class="card" id="dvJoueurs"></div>
+
+    <h2 class="dvh">D&eacute;tail par mission</h2>
+    <div id="dvDetail"></div>
+
+    <h2 class="dvh">Chiffres exacts (sauvegardes)</h2>
+    <div class="note">Les d&eacute;faites ci-dessus sont limit&eacute;es (1 envoi toutes les 10 s). Le total exact des morts et la mission atteinte sont dans la sauvegarde de chaque joueur connect&eacute;. Cette lecture co&ucirc;te jusqu'&agrave; 300 lectures Firebase.</div>
+    <div class="pb"><button class="alt" id="btnSav">Charger les chiffres exacts</button></div>
+    <div id="dvSaves"></div>
+  </section>
+
+  <!-- ============ JOUEURS ============ -->
+  <section class="tab hide" id="t-joueurs">
+    <div id="perr-joueurs"></div>
+    <h2>Top 10 des meilleurs joueurs</h2>
+    <div class="card" id="top"><div class="ev">Chargement...</div></div>
+    <div class="sub" id="nbj" style="margin-top:6px"></div>
+
+    <h2>Visiteurs uniques</h2>
+    <div class="grid">
+      <div class="card"><b id="v1">-</b><small>derni&egrave;res 24 h</small></div>
+      <div class="card"><b id="v7">-</b><small>7 jours</small></div>
+      <div class="card"><b id="v30">-</b><small>30 jours</small></div>
+      <div class="card"><b id="vt">-</b><small>visites (30 jours)</small></div>
+    </div>
+
+    <h2>Joueurs connect&eacute;s (compte Google)</h2>
+    <div class="grid">
+      <div class="card"><b id="p1">-</b><small>derni&egrave;res 24 h</small></div>
+      <div class="card"><b id="p7">-</b><small>7 jours</small></div>
+      <div class="card"><b id="p30">-</b><small>30 jours</small></div>
+    </div>
+
+    <h2>Joueurs connect&eacute;s (30 jours)</h2>
+    <input id="qj" type="search" placeholder="Rechercher un pseudo ou un e-mail">
+    <div class="sub" id="notePro"></div>
+    <div class="card" id="joueurs"></div>
+  </section>
+
+  <!-- ============ ACTIVITÉ ============ -->
+  <section class="tab hide" id="t-activite">
+    <div id="perr-activite"></div>
+    <h2>Derni&egrave;re activit&eacute;</h2>
+    <input id="qa" type="search" placeholder="Rechercher un pseudo ou un e-mail">
+    <div class="card" id="recent"></div>
+  </section>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -162,22 +303,84 @@ var CFG={apiKey:"AIzaSyCVozZHuFiU0Ho64lJhpNkE2V7B9JdPVWw",authDomain:"flex-cyber
 firebase.initializeApp(CFG);
 var auth=firebase.auth(), db=firebase.firestore();
 var $=function(i){return document.getElementById(i);};
+var WORKER="https://flex-licence.flexplayg647.workers.dev";
+var NOMS_SKINS={recrue:"Recrue",sergent_du_desert:"Sergent du Désert",rodeur_urbain:"Rôdeur Urbain",fantassin_polaire:"Fantassin Polaire",chasseur_de_primes:"Chasseur de Primes",mercenaire_rouge:"Mercenaire Rouge",tireur_delite:"Tireur d'Élite",punk_anarchiste:"Punk Anarchiste",pilote_jet:"Pilote Jet",gladiateur:"Gladiateur",cow_boy_cyber:"Cow-boy Cyber",colosse_dacier:"Colosse d'Acier",cyber_ninja:"Cyber-Ninja",fantome:"Fantôme",samourai_neon:"Samouraï Néon",chevalier_toxique:"Chevalier Toxique",commandant_dore:"Commandant Doré",titan_solaire:"Titan Solaire",seigneur_du_vide:"Seigneur du Vide",eclaireur_bronze:"Éclaireur Bronze",eclaireuse:"Éclaireuse",amazone_des_neiges:"Amazone des Neiges",pilote_rose:"Pilote Rose",chasseresse_verte:"Chasseresse Verte",alchimiste:"Alchimiste",valkyrie:"Valkyrie",ninja_violette:"Ninja Violette",cyber_chat:"Cyber-Chat",reine_ecarlate:"Reine Écarlate",deesse_solaire:"Déesse Solaire"};
+var ERR_REV={scope_manquant:"Ta clé API Chariow n'a pas tous les droits. Dans Chariow : Paramètres, API Keys, modifie ta clé et ajoute « sales.read » et « customers.pii.read ».",interdit:"Réservé à l'administrateur.",chariow:"Chariow ne répond pas pour le moment.",reseau:"Serveur de licences injoignable (Cloudflare). Vérifie qu'il est à jour.",auth:"Reconnecte-toi.",serveur:"Erreur du serveur de licences."};
 
+/* ------------------------------------------------------------------ état */
+var PSEUDOS={}, EMAILS={};
+var ST={ev:[],tronque:false,evMax:5000,evOk:false,evErr:"",lect:0,
+        cls:{ok:null,liste:[],nb:0,err:""},prof:{ok:null},
+        rev:{etat:"charge",msg:"",diag:"",d:null},sav:null};
+var periode="all", ONGLET="general", devSort="recent";
+var ONGLETS=["general","revenus","solo","devil","joueurs","activite"];
+
+/* ------------------------------------------------------------------ outils */
+function esc(t){return String(t==null?"":t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function num(x){var n=Number(x);return isFinite(n)?n:0;}
+function nf(n){try{return Number(n).toLocaleString("fr-FR");}catch(e){return String(n);}}
+function pad2(n){return (n<10?"0":"")+n;}
+function jourCle(d){return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
+function uniq(arr){var s={};arr.forEach(function(x){if(x)s[x]=1;});return Object.keys(s).length;}
+function pct(a,b){return b?Math.round(a/b*100)+" %":"-";}
+function fmtMontant(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c}).format(v);}catch(e){return num(v).toFixed(2)+" "+c;}}
+function fmtDate(iso){var d=new Date(iso);return isNaN(d)?"-":d.toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
+function fmtH(ms){return new Date(ms).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
+function nomSkin(s){return NOMS_SKINS[s]||s||"-";}
+function nomJoueur(uid){return PSEUDOS[uid]||("joueur "+String(uid).slice(0,6));}
+function carte(val,lab,col,go){return '<div class="card'+(go?' go':'')+'"'+(go?' data-go="'+go+'"':'')+'><b'+(col?' style="color:'+col+'"':'')+'>'+val+'</b><small>'+lab+'</small></div>';}
+function ligneVide(n,txt){return "<tr><td colspan='"+n+"' style='text-align:center;color:#8a94c8'>"+txt+"</td></tr>";}
 function showErr(m){var e=$("err");e.textContent=m;e.classList.remove("hide");}
 function clearErr(){$("err").classList.add("hide");}
+function okVente(v){return v.statut==="completed"||v.statut==="settled";}
+function totalTexte(t){var k=Object.keys(t||{});return k.length?k.map(function(c){return fmtMontant(t[c],c);}).join(" + "):fmtMontant(0,"USD");}
 
+/* Une section qui plante n'empêche plus les autres de s'afficher : l'erreur est écrite en haut de l'onglet. */
+function sur(onglet,fn){
+  try{fn();}catch(e){
+    var el=$("perr-"+onglet);
+    if(el){el.innerHTML='<div class="err">Une section de cet onglet ne s\'affiche pas ('+esc((e&&e.message)||e)+'). Le reste fonctionne.</div>';}
+    if(window.console){console.error(onglet,e);}
+  }
+}
+
+/* ------------------------------------------------------------------ onglets */
+function ouvrirOnglet(n,pasDeHash){
+  if(ONGLETS.indexOf(n)<0){n="general";}
+  ONGLET=n;
+  var bs=document.querySelectorAll("#tabs button"),ps=document.querySelectorAll(".tab"),i;
+  for(i=0;i<bs.length;i++){bs[i].classList.toggle("on",bs[i].getAttribute("data-t")===n);}
+  for(i=0;i<ps.length;i++){ps[i].classList.toggle("hide",ps[i].id!=="t-"+n);}
+  try{localStorage.setItem("flex_admin_tab",n);}catch(e){}
+  if(!pasDeHash){try{history.replaceState(null,"","#"+n);}catch(e){}}
+  window.scrollTo(0,0);
+}
+document.addEventListener("click",function(ev){
+  var t=ev.target.closest?ev.target.closest("[data-t]"):null;
+  if(t&&t.parentNode&&t.parentNode.id==="tabs"){ouvrirOnglet(t.getAttribute("data-t"));return;}
+  var g=ev.target.closest?ev.target.closest("[data-go]"):null;
+  if(g){ouvrirOnglet(g.getAttribute("data-go"));return;}
+  var a=ev.target.closest?ev.target.closest("[data-act]"):null;
+  if(a&&a.getAttribute("data-act")==="plus"){
+    if(confirm("Cela lit jusqu'à 20 000 événements Firebase (quota gratuit : 50 000 lectures par jour). Continuer ?")){ST.evMax=20000;charger();}
+  }
+});
+
+/* ------------------------------------------------------------------ connexion */
 $("btnIn").onclick=function(){
   clearErr();
   auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function(e){showErr("Connexion impossible : "+(e.code||e));});
 };
 $("btnOut").onclick=function(){auth.signOut();};
 $("btnRef").onclick=function(){charger();};
-
 auth.onAuthStateChanged(function(u){
   if(u){
     $("who").textContent="Connecté : "+(u.email||u.displayName);
     $("login").classList.add("hide");
     $("dash").classList.remove("hide");
+    var h=(location.hash||"").replace("#",""),s="";
+    try{s=localStorage.getItem("flex_admin_tab")||"";}catch(e){}
+    ouvrirOnglet(ONGLETS.indexOf(h)>=0?h:(ONGLETS.indexOf(s)>=0?s:"general"),true);
     charger();
   }else{
     $("who").textContent="Connecte-toi avec ton compte Google administrateur.";
@@ -186,166 +389,241 @@ auth.onAuthStateChanged(function(u){
   }
 });
 
-function jourCle(d){return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
-function uniq(arr){var s={};arr.forEach(function(x){if(x)s[x]=1;});return Object.keys(s).length;}
-
-function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
-
+/* ------------------------------------------------------------------ chargement des données */
 function chargerClassement(){
   return db.collection("players").orderBy("wins","desc").limit(1000).get().then(function(snap){
+    ST.lect+=snap.size;
     var j=[];
-    snap.forEach(function(d){var x=d.data();PSEUDOS[d.id]=x.pseudo||"?";j.push({pseudo:x.pseudo||"?",photo:x.photo||"",w:x.wins||0,l:x.losses||0});});
-    var actifs=j.filter(function(x){return x.w+x.l>0;});
-    actifs.sort(function(a,b){return (b.w-a.w)||(a.l-b.l);});
-    var top=actifs.slice(0,10);
-    $("top").innerHTML=top.length?top.map(function(x,i){
-      var img=/^https:\/\//.test(x.photo)?'<img src="'+esc(x.photo)+'" referrerpolicy="no-referrer" alt="">':'<div class="av"></div>';
-      var medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1);
-      return '<div class="rk"><div class="n">'+medal+'</div>'+img+'<div class="nm">'+esc(x.pseudo)+'</div><div class="sc"><b>'+x.w+'</b> victoire'+(x.w>1?'s':'')+'<br>'+x.l+' défaite'+(x.l>1?'s':'')+'</div></div>';
-    }).join(""):'<div class="ev">Aucun joueur classé pour le moment.</div>';
-    $("nbj").textContent=j.length+" joueur(s) inscrit(s) avec un pseudo.";
-  }).catch(function(e){
-    $("top").innerHTML='<div class="ev">Classement indisponible : '+esc(e.code||e.message||e)+'</div>';
-  });
+    snap.forEach(function(d){var x=d.data();PSEUDOS[d.id]=x.pseudo||"?";j.push({uid:d.id,pseudo:x.pseudo||"?",photo:x.photo||"",w:x.wins||0,l:x.losses||0});});
+    ST.cls={ok:true,liste:j,nb:j.length,err:""};
+  }).catch(function(e){ST.cls={ok:false,liste:[],nb:0,err:(e&&(e.code||e.message))||String(e)};});
 }
-
-var WORKER="https://flex-licence.flexplayg647.workers.dev";
-var PSEUDOS={};
-var NOMS_SKINS={recrue:"Recrue",sergent_du_desert:"Sergent du Désert",rodeur_urbain:"Rôdeur Urbain",fantassin_polaire:"Fantassin Polaire",chasseur_de_primes:"Chasseur de Primes",mercenaire_rouge:"Mercenaire Rouge",tireur_delite:"Tireur d'Élite",punk_anarchiste:"Punk Anarchiste",pilote_jet:"Pilote Jet",gladiateur:"Gladiateur",cow_boy_cyber:"Cow-boy Cyber",colosse_dacier:"Colosse d'Acier",cyber_ninja:"Cyber-Ninja",fantome:"Fantôme",samourai_neon:"Samouraï Néon",chevalier_toxique:"Chevalier Toxique",commandant_dore:"Commandant Doré",titan_solaire:"Titan Solaire",seigneur_du_vide:"Seigneur du Vide",eclaireur_bronze:"Éclaireur Bronze",eclaireuse:"Éclaireuse",amazone_des_neiges:"Amazone des Neiges",pilote_rose:"Pilote Rose",chasseresse_verte:"Chasseresse Verte",alchimiste:"Alchimiste",valkyrie:"Valkyrie",ninja_violette:"Ninja Violette",cyber_chat:"Cyber-Chat",reine_ecarlate:"Reine Écarlate",deesse_solaire:"Déesse Solaire"};
-var periode="all";
-function pad2(n){return (n<10?"0":"")+n;}
-function fmtMontant(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c}).format(v);}catch(e){return v.toFixed(2)+" "+c;}}
-function fmtDate(iso){var d=new Date(iso);return isNaN(d)?"-":d.toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
-function nomJoueur(uid){return PSEUDOS[uid]||("joueur "+String(uid).slice(0,6));}
-var ERR_REV={scope_manquant:"Ta clé API Chariow n'a pas tous les droits. Dans Chariow : Paramètres, API Keys, modifie ta clé et ajoute « sales.read » et « customers.pii.read ».",interdit:"Réservé à l'administrateur.",chariow:"Chariow ne répond pas pour le moment.",reseau:"Serveur de licences injoignable (Cloudflare). Vérifie qu'il est à jour.",auth:"Reconnecte-toi.",serveur:"Erreur du serveur de licences."};
-function erreurRevenus(r){
-  var e=$("rvErr");e.textContent=ERR_REV[r&&r.error]||("Erreur : "+(r&&r.error));e.classList.remove("hide");
-  $("rvVentes").innerHTML="<tr><td colspan='5' style='text-align:center;color:#8a94c8'>Indisponible</td></tr>";
-  $("rvAct").innerHTML="<tr><td colspan='4' style='text-align:center;color:#8a94c8'>Indisponible</td></tr>";
-}
-function chargerRevenus(){
-  $("rvErr").classList.add("hide");
-  var from=null;
-  if(periode!=="all"){var d=new Date(Date.now()-(periode==="30"?30:7)*86400000);from=d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());}
-  auth.currentUser.getIdToken().then(function(t){
-    return fetch(WORKER+"/revenus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idToken:t,from:from})}).then(function(r){return r.json();});
-  }).then(function(r){if(!r||!r.ok){erreurRevenus(r);return;}afficherRevenus(r);}).catch(function(){erreurRevenus({error:"reseau"});});
-}
-function badge(st){
-  if(st==="completed"||st==="settled"){return "<span class='bd ok'>R&eacute;ussi</span>";}
-  if(st==="failed"){return "<span class='bd ko'>&Eacute;chou&eacute;</span>";}
-  if(st==="abandoned"){return "<span class='bd ab'>Abandonn&eacute;</span>";}
-  return "<span class='bd at'>En attente</span>";
-}
-function afficherRevenus(r){
-  var cles=Object.keys(r.total||{});
-  $("rvTot").textContent=cles.length?cles.map(function(c){return fmtMontant(r.total[c],c);}).join(" + "):fmtMontant(0,"USD");
-  $("rvOk").textContent=r.compte.reussi;$("rvKo").textContent=r.compte.echoue;$("rvAt").textContent=r.compte.abandonne+r.compte.attente;
-  $("rvInfo").textContent=(periode==="all"?"Depuis le début":(periode==="30"?"30 derniers jours":"7 derniers jours"))+(r.tronque?" - attention : liste tronquée (trop de ventes)":"");
-  var h=r.ventes.slice(0,60).map(function(v){
-    var ok=(v.statut==="completed"||v.statut==="settled");
-    var joueur="";
-    if(v.activations&&v.activations.length){
-      joueur=v.activations.map(function(a){return "<span class='pj'>"+esc(nomJoueur(a.uid))+"</span><br><span class='sm'>"+esc(NOMS_SKINS[a.skin]||a.skin)+"</span>";}).join("<br>");
-    }else if(ok){joueur="<span class='sm'>Cl&eacute; pas encore activ&eacute;e</span>";}
-    return "<tr><td class='l'>"+esc(fmtDate(v.date))+"</td><td>"+esc(fmtMontant(v.montant.v,v.montant.c||"USD"))+"</td><td class='l'>"+badge(v.statut)+(v.erreur?"<br><span class='sm'>"+esc(v.erreur)+"</span>":"")+"</td><td class='l'>"+esc(v.client.nom||"-")+(v.client.email?"<br><span class='sm'>"+esc(v.client.email)+"</span>":"")+"</td><td class='l'>"+joueur+"</td></tr>";
-  }).join("");
-  $("rvVentes").innerHTML=h||"<tr><td colspan='5' style='text-align:center;color:#8a94c8'>Aucune vente pour le moment</td></tr>";
-  var a=r.activations.slice(0,60).map(function(l){
-    return "<tr><td class='l'>"+esc(fmtDate(l.t))+"</td><td class='l'><span class='pj'>"+esc(nomJoueur(l.uid))+"</span></td><td class='l'>"+esc(NOMS_SKINS[l.skin]||l.skin)+"</td><td class='l'>"+esc(l.nom||"-")+"</td></tr>";
-  }).join("");
-  $("rvAct").innerHTML=a||"<tr><td colspan='4' style='text-align:center;color:#8a94c8'>Aucune activation pour le moment</td></tr>";
-}
-(function(){
-  var bs=document.querySelectorAll("#pb button"),i;
-  for(i=0;i<bs.length;i++){(function(b){b.onclick=function(){
-    var k;for(k=0;k<bs.length;k++){bs[k].classList.remove("on");}
-    b.classList.add("on");periode=b.getAttribute("data-p");
-    if(auth.currentUser){chargerRevenus();}
-  };})(bs[i]);}
-})();
-
-var EMAILS={}, PROFILS_OK=false, JOUEURS=[];
 function chargerProfils(){
   EMAILS={};
   return db.collection("profils").limit(3000).get().then(function(snap){
+    ST.lect+=snap.size;
     snap.forEach(function(d){var x=d.data();EMAILS[d.id]={email:x.email||"",nom:x.nom||""};});
-    PROFILS_OK=true;
-  }).catch(function(){PROFILS_OK=false;});
+    ST.prof={ok:true};
+  }).catch(function(){ST.prof={ok:false};});
 }
-function infoJ(uid){
-  var pr=EMAILS[uid]||{};
-  return {pseudo:PSEUDOS[uid]||"",email:pr.email||"",nom:pr.nom||""};
+function lireEvenements(max){
+  var depuis=firebase.firestore.Timestamp.fromDate(new Date(Date.now()-30*86400000));
+  var out=[],last=null,tronque=false;
+  function page(){
+    var n=Math.min(5000,max-out.length);
+    var q=db.collection("events").where("t",">=",depuis).orderBy("t","desc");
+    if(last){q=q.startAfter(last);}
+    return q.limit(n).get().then(function(snap){
+      ST.lect+=snap.size;
+      snap.forEach(function(d){var x=d.data();if(x.t){out.push({t:x.t.toDate(),type:x.type,lvl:x.lvl||0,vid:x.vid,uid:x.uid});}});
+      last=snap.docs[snap.docs.length-1];
+      if(snap.size>=n){if(out.length>=max){tronque=true;return;}return page();}
+    });
+  }
+  return page().then(function(){return {ev:out,tronque:tronque};});
 }
+
+/* --- revenus : le serveur de licences peut renvoyer des ventes incomplètes (paiement abandonné, sans client ni montant) */
+function normVente(v){
+  v=v||{};var m=v.montant,c=v.client||{},mo=(m&&typeof m==="object");
+  return {date:v.date||v.created_at||"",statut:v.statut||"",erreur:v.erreur||"",
+    montant:{v:num(mo?m.v:m),c:(mo&&m.c)||"USD"},
+    client:{nom:c.nom||"",email:c.email||""},
+    activations:Array.isArray(v.activations)?v.activations:[]};
+}
+function normRev(j){
+  var ventes=(Array.isArray(j.ventes)?j.ventes:[]).map(normVente),cp=j.compte||{};
+  var d={total:(j.total&&typeof j.total==="object")?j.total:{},
+    compte:{reussi:num(cp.reussi),echoue:num(cp.echoue),abandonne:num(cp.abandonne),attente:num(cp.attente)},
+    tronque:!!j.tronque,ventes:ventes,activations:Array.isArray(j.activations)?j.activations:[],note:""};
+  var sc=d.compte.reussi+d.compte.echoue+d.compte.abandonne+d.compte.attente;
+  if(!sc&&ventes.length){
+    ventes.forEach(function(v){
+      if(okVente(v)){d.compte.reussi++;}else if(v.statut==="failed"){d.compte.echoue++;}
+      else if(v.statut==="abandoned"){d.compte.abandonne++;}else{d.compte.attente++;}
+    });
+    d.note="Compteurs recalculés à partir des ventes reçues.";
+  }
+  if(!Object.keys(d.total).length){
+    ventes.forEach(function(v){if(okVente(v)){d.total[v.montant.c]=(d.total[v.montant.c]||0)+v.montant.v;}});
+    if(Object.keys(d.total).length){d.note=(d.note?d.note+" ":"")+"Total recalculé à partir des ventes reçues.";}
+  }
+  return d;
+}
+function chargerRevenus(){
+  ST.rev={etat:"charge",msg:"",diag:"",d:null};rendreTout();
+  var from=null;
+  if(periode!=="all"){var dd=new Date(Date.now()-(periode==="30"?30:7)*86400000);from=dd.getFullYear()+"-"+pad2(dd.getMonth()+1)+"-"+pad2(dd.getDate());}
+  return auth.currentUser.getIdToken().then(function(t){
+    return fetch(WORKER+"/revenus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idToken:t,from:from})});
+  }).then(function(res){
+    return res.text().then(function(txt){var j=null;try{j=JSON.parse(txt);}catch(e){}return {http:res.status,j:j,brut:txt};});
+  }).then(function(o){
+    if(!o.j){ST.rev={etat:"erreur",msg:"Le serveur de licences a renvoyé une réponse illisible (HTTP "+o.http+").",diag:String(o.brut).slice(0,160),d:null};return;}
+    if(!o.j.ok){var c=o.j.error;ST.rev={etat:"erreur",msg:ERR_REV[c]||("Erreur : "+c),diag:"code "+c+" · HTTP "+o.http+(o.j.detail?" · "+o.j.detail:""),d:null};return;}
+    try{ST.rev={etat:"ok",msg:"",diag:"HTTP "+o.http,d:normRev(o.j)};}
+    catch(e){ST.rev={etat:"erreur",msg:"Les données de ventes reçues sont inattendues.",diag:String((e&&e.message)||e),d:null};}
+  }).catch(function(e){
+    ST.rev={etat:"erreur",msg:ERR_REV.reseau,diag:String((e&&e.message)||e),d:null};
+  }).then(function(){rendreTout();});
+}
+
+function charger(){
+  clearErr();ST.lect=0;ST.sav=null;
+  $("maj").textContent="Chargement...";
+  var base=Promise.all([chargerClassement(),chargerProfils()]);
+  base.then(function(){rendreTout();return chargerRevenus();});
+  base.then(function(){return lireEvenements(ST.evMax);}).then(function(r){
+    ST.ev=r.ev;ST.tronque=r.tronque;ST.evOk=true;ST.evErr="";majHeure();rendreTout();
+  }).catch(function(e){
+    ST.evOk=false;ST.evErr=(e&&(e.code||e.message))||String(e);
+    if(e&&e.code==="permission-denied"){showErr("Accès refusé : ce compte n'est pas l'administrateur.");}
+    else{showErr("Erreur : "+(e&&e.code||"")+" "+((e&&e.message)||e));}
+    rendreTout();
+  });
+  rendreTout();
+}
+function majHeure(){
+  $("maj").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR")+" · ≈ "+nf(ST.lect)+" lectures Firebase"+(ST.tronque?" - attention : données tronquées ("+nf(ST.evMax)+" événements)":"");
+}
+
+/* ------------------------------------------------------------------ calculs */
+function dansMs(ev,ms){var n=Date.now();return ev.filter(function(e){return n-e.t.getTime()<=ms;});}
+function cleActeur(e){return e.uid||("v:"+(e.vid||"?"));}
+/* Agrège les événements d'un mode (solo ou Devil) : totaux, une ligne par acteur, une ligne par mission. */
+function agreger(ev,T){
+  var A={s:0,w:0,l:0,o:0,acteurs:{},lv:{}};
+  ev.forEach(function(e){
+    if(e.type!==T.s&&e.type!==T.w&&e.type!==T.l&&e.type!==T.o){return;}
+    var k=cleActeur(e),t=e.t.getTime();
+    var a=A.acteurs[k]=A.acteurs[k]||{k:k,s:0,w:0,l:0,o:0,last:0,maxWin:-1,lv:{}};
+    if(t>a.last){a.last=t;}
+    if(e.type===T.o){a.o++;A.o++;return;}
+    var L=A.lv[e.lvl]=A.lv[e.lvl]||{s:0,w:0,l:0,pl:{}};
+    var p=L.pl[k]=L.pl[k]||{s:0,w:0,l:0},q=a.lv[e.lvl]=a.lv[e.lvl]||{s:0,w:0,l:0};
+    if(e.type===T.s){A.s++;L.s++;p.s++;a.s++;q.s++;}
+    else if(e.type===T.w){A.w++;L.w++;p.w++;a.w++;q.w++;if(e.lvl>a.maxWin){a.maxWin=e.lvl;}}
+    else{A.l++;L.l++;p.l++;a.l++;q.l++;}
+  });
+  return A;
+}
+var T_SOLO={s:"level_start",w:"level_win",l:"level_lose",o:"__none"};
+var T_DEV={s:"devil_start",w:"devil_win",l:"devil_lose",o:"devil_open"};
+function bloquees(a){return Object.keys(a.lv).map(Number).filter(function(l){return a.lv[l].w===0&&a.lv[l].l>0;}).sort(function(x,y){return x-y;});}
+function nbBloques(L){return Object.keys(L.pl).filter(function(k){return L.pl[k].w===0&&L.pl[k].l>0;}).length;}
+function nbActeurs(A){return Object.keys(A.acteurs).filter(function(k){var a=A.acteurs[k];return a.s+a.w+a.l>0;}).length;}
+
+/* ------------------------------------------------------------------ blocs d'affichage partagés */
+function infoJ(uid){var pr=EMAILS[uid]||{};return {pseudo:PSEUDOS[uid]||"",email:pr.email||"",nom:pr.nom||""};}
 function blocJoueur(k){
   if(String(k).indexOf("v:")===0){return '<span class="pj">Invité</span> <span class="sm">(appareil '+esc(String(k).slice(2,8))+')</span>';}
-  var j=infoJ(k);
-  var titre=j.pseudo||j.nom||("joueur "+String(k).slice(0,6));
+  var j=infoJ(k),titre=j.pseudo||j.nom||("joueur "+String(k).slice(0,6));
   var sous=j.email?esc(j.email):'<i>e-mail pas encore enregistré</i>';
   var nomSup=(j.pseudo&&j.nom)?' <span class="sm">('+esc(j.nom)+')</span>':"";
   return '<span class="pj">'+esc(titre)+'</span>'+nomSup+'<br><span class="sm">'+sous+'</span>';
 }
-function fmtH(ms){return new Date(ms).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}
-function rendreJoueurs(){
-  var q=($("q").value||"").toLowerCase().trim();
-  var l=JOUEURS.filter(function(o){
-    if(!q){return true;}
-    var j=infoJ(o.uid);
-    return (j.pseudo+" "+j.email+" "+j.nom).toLowerCase().indexOf(q)>=0;
-  });
-  $("joueurs").innerHTML=l.length?l.slice(0,100).map(function(o){
-    return '<div class="pjl">'+blocJoueur(o.uid)+'<br><span class="sm">Dernière activité : '+fmtH(o.last)+' · Mission max gagnée : '+(o.maxWin>=0?(o.maxWin+1):"aucune")+' · Parties : '+o.s+' ('+o.w+' V / '+o.l+' D) · Connexions : '+o.logins+'</span></div>';
-  }).join("")+(l.length>100?'<div class="sm" style="margin-top:6px">… et '+(l.length-100)+' autres (utilise la recherche)</div>':""):'<div class="ev">Aucun joueur connecté sur cette période.</div>';
-  rendreActivite();
+function correspond(k,q){
+  if(!q){return true;}
+  var j=infoJ(k);return (j.pseudo+" "+j.email+" "+j.nom).toLowerCase().indexOf(q)>=0;
 }
-
-var ACT=[], ANON=0;
-function rendreActivite(){
-  var q=($("q").value||"").toLowerCase().trim();
-  var l=ACT.filter(function(g){
-    if(!q){return true;}
-    var j=infoJ(g.uid);
-    return (j.pseudo+" "+j.email+" "+j.nom).toLowerCase().indexOf(q)>=0;
+function detailMissions(A,cible,vide){
+  var cles=Object.keys(A.lv).map(Number).sort(function(a,b){return a-b;});
+  $(cible).innerHTML=cles.length?cles.map(function(k){
+    var o=A.lv[k],fin=o.w+o.l,bl=nbBloques(o);
+    var ks=Object.keys(o.pl).sort(function(a,b){return (o.pl[b].l-o.pl[a].l)||(o.pl[b].s-o.pl[a].s);});
+    var lignes=ks.slice(0,40).map(function(u){
+      var p=o.pl[u],bloque=(p.w===0&&p.l>0);
+      return '<div class="pjl">'+blocJoueur(u)+(bloque?'<span class="tag">BLOQUÉ</span>':"")+'<br><span class="sm">Lancés : '+p.s+' · Gagnés : '+p.w+' · Perdus : '+p.l+'</span></div>';
+    }).join("")+(ks.length>40?'<div class="sm">… et '+(ks.length-40)+' autres joueurs</div>':"");
+    return '<details><summary>Mission '+(k+1)+' · '+ks.length+' joueur'+(ks.length>1?"s":"")+' · '+pct(o.w,fin)+' de réussite'+(bl?' · '+bl+' bloqué'+(bl>1?"s":""):"")+'</summary>'+lignes+'</details>';
+  }).join(""):'<div class="ev">'+vide+'</div>';
+}
+function tableMissions(A,cible,avecBarre){
+  var cles=Object.keys(A.lv).map(Number).sort(function(a,b){return a-b;});
+  var maxJ=1;cles.forEach(function(k){maxJ=Math.max(maxJ,Object.keys(A.lv[k].pl).length);});
+  $(cible).innerHTML=cles.length?cles.map(function(k){
+    var o=A.lv[k],fin=o.w+o.l,bl=nbBloques(o),nj=Object.keys(o.pl).length;
+    return "<tr><td>Mission "+(k+1)+"</td><td>"+nj+"</td><td>"+o.s+"</td><td class='ok'>"+o.w+"</td><td class='bad'>"+o.l+"</td><td>"+pct(o.w,fin)+"</td><td class='"+(bl?"bad":"")+"'>"+bl+"</td>"+
+      (avecBarre?"<td class='l'><span class='mb' style='width:"+Math.max(3,Math.round(nj/maxJ*80))+"px'></span></td>":"")+"</tr>";
+  }).join(""):ligneVide(avecBarre?8:7,"Pas encore de données");
+}
+var VERBES={level_start:"a lancé la Mission ",level_win:"a gagné la Mission ",level_lose:"a perdu la Mission ",
+            devil_start:"a lancé la mission DEVIL ",devil_win:"a réussi la mission DEVIL ",devil_lose:"est tombé à la mission DEVIL "};
+function texteAct(e){
+  if(e.type==="login"){return "s'est connecté";}
+  if(e.type==="devil_open"){return "a ouvert le mode DEVIL";}
+  return VERBES[e.type]?VERBES[e.type]+(e.lvl+1):e.type;
+}
+function listeActivite(cible,q,limite,compte){
+  var ev=ST.ev,now=Date.now(),D=86400000,gr={},ordre=[];
+  ev.forEach(function(e){
+    if(!e.uid||e.type==="visit"){return;}
+    var g=gr[e.uid];
+    if(!g){g=gr[e.uid]={uid:e.uid,acts:[],j:{conn:0,ls:0,gw:0,pl:0,ds:0,dw:0,dl:0}};ordre.push(e.uid);}
+    if(g.acts.length<10){g.acts.push(e);}
+    if(now-e.t.getTime()<=D){
+      if(e.type==="login"){g.j.conn++;}else if(e.type==="level_start"){g.j.ls++;}else if(e.type==="level_win"){g.j.gw++;}
+      else if(e.type==="level_lose"){g.j.pl++;}else if(e.type==="devil_start"){g.j.ds++;}else if(e.type==="devil_win"){g.j.dw++;}else if(e.type==="devil_lose"){g.j.dl++;}
+    }
   });
-  var verbes={level_start:"a lancé",level_win:"a gagné",level_lose:"a perdu"};
-  function texteAct(e){return e.type==="login"?"s'est connecté":((verbes[e.type]||e.type)+" la Mission "+(e.lvl+1));}
-  $("recent").innerHTML=(l.length?l.slice(0,25).map(function(g){
-    var d=g.jour, e0=g.acts[0];
-    var resume="24 h : "+d.conn+" connexion"+(d.conn>1?"s":"")+" · "+d.lances+" mission"+(d.lances>1?"s":"")+" lancée"+(d.lances>1?"s":"")+" · "+d.gagnes+" gagnée"+(d.gagnes>1?"s":"")+" · "+d.perdus+" perdue"+(d.perdus>1?"s":"");
+  var l=ordre.map(function(u){return gr[u];}).filter(function(g){return correspond(g.uid,q);});
+  var anon=ev.filter(function(e){return !e.uid&&e.type==="visit";}).length;
+  $(cible).innerHTML=(l.length?l.slice(0,limite).map(function(g){
+    var d=g.j,e0=g.acts[0];
+    var resume="24 h : "+d.conn+" connexion"+(d.conn>1?"s":"")+" · Solo "+d.ls+" lancée"+(d.ls>1?"s":"")+", "+d.gw+" gagnée"+(d.gw>1?"s":"")+", "+d.pl+" perdue"+(d.pl>1?"s":"")+
+      " · DEVIL "+d.ds+" lancée"+(d.ds>1?"s":"")+", "+d.dw+" réussie"+(d.dw>1?"s":"")+", "+d.dl+" défaite"+(d.dl>1?"s":"");
     var det=g.acts.map(function(e){return "<div>"+fmtH(e.t.getTime())+" — "+esc(texteAct(e))+"</div>";}).join("");
     return '<details class="dl"><summary>'+blocJoueur(g.uid)+'<br><span class="act">'+esc(texteAct(e0))+'</span> <span class="sm">· '+fmtH(e0.t.getTime())+'</span><br><span class="sm">'+esc(resume)+'</span></summary><div class="det">'+det+'</div></details>';
-  }).join("")+(l.length>25?'<div class="sm" style="margin-top:6px">… et '+(l.length-25)+' autres joueurs (utilise la recherche)</div>':""):'<div class="ev">Aucun joueur connecté sur cette période.</div>')
-  +'<div class="ev">'+ANON+' visite(s) sans compte Google sur 30 jours. Touche un joueur pour voir ses 10 dernières actions.</div>';
+  }).join("")+(l.length>limite?'<div class="sm" style="margin-top:6px">… et '+(l.length-limite)+' autres joueurs (utilise la recherche dans l\'onglet Activité)</div>':""):'<div class="ev">Aucun joueur connecté sur cette période.</div>')
+  +(compte?'<div class="ev">'+anon+' visite(s) sans compte Google sur 30 jours. Touche un joueur pour voir ses 10 dernières actions.</div>':"");
+}
+function classementHtml(n){
+  var j=ST.cls.liste.filter(function(x){return x.w+x.l>0;}).sort(function(a,b){return (b.w-a.w)||(a.l-b.l);}).slice(0,n);
+  if(ST.cls.ok===false){return '<div class="ev">Classement indisponible : '+esc(ST.cls.err)+'</div>';}
+  return j.length?j.map(function(x,i){
+    var img=/^https:\/\//.test(x.photo)?'<img src="'+esc(x.photo)+'" referrerpolicy="no-referrer" alt="">':'<div class="av"></div>';
+    var medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":(i+1);
+    return '<div class="rk"><div class="n">'+medal+'</div>'+img+'<div class="nm">'+esc(x.pseudo)+'</div><div class="sc"><b>'+x.w+'</b> victoire'+(x.w>1?'s':'')+'<br>'+x.l+' défaite'+(x.l>1?'s':'')+'</div></div>';
+  }).join(""):'<div class="ev">Aucun joueur classé pour le moment.</div>';
 }
 
-function charger(){
-  clearErr();
-  var pp=chargerClassement(), pf=chargerProfils();
-  pp.then(chargerRevenus,chargerRevenus);
-  var depuis=new Date(Date.now()-30*86400000);
-  Promise.all([pp,pf]).then(function(){return db.collection("events").where("t",">=",firebase.firestore.Timestamp.fromDate(depuis)).orderBy("t","desc").limit(5000).get();}).then(function(snap){
-    var ev=[];
-    snap.forEach(function(d){var x=d.data();if(x.t){ev.push({t:x.t.toDate(),type:x.type,lvl:x.lvl||0,vid:x.vid,uid:x.uid});}});
-    afficher(ev, snap.size>=5000);
-  }).catch(function(e){
-    if(e.code==="permission-denied"){showErr("Accès refusé : ce compte n'est pas l'administrateur.");}
-    else{showErr("Erreur : "+(e.code||"")+" "+(e.message||e));}
-  });
-}
+/* ------------------------------------------------------------------ rendu : GÉNÉRAL */
+function rendreGeneral(){
+  $("perr-general").innerHTML="";
+  var ev=ST.ev,rv=ST.rev,dg=[];
+  function ligne(etat,titre,detail){dg.push('<div class="dg '+etat+'"><span class="dot"></span><div><b>'+titre+'</b><span class="sm">'+detail+'</span></div></div>');}
+  if(!ST.evOk){ligne(ST.evErr?"ko":"warn","Événements du jeu",ST.evErr?"Erreur : "+esc(ST.evErr):"Chargement...");}
+  else if(ST.tronque){ligne("warn","Événements du jeu",nf(ev.length)+" événements lus : l'historique de 30 jours est coupé, les chiffres sont partiels. "+(ST.evMax<20000?'<button class="alt" data-act="plus" style="padding:4px 10px;font-size:12px;margin-top:4px">Charger plus (jusqu\'à 20 000)</button>':"Limite de 20 000 atteinte."));}
+  else{ligne("ok","Événements du jeu",nf(ev.length)+" événements sur 30 jours (complet).");}
+  if(rv.etat==="charge"){ligne("warn","Revenus","Chargement...");}
+  else if(rv.etat==="erreur"){ligne("ko","Revenus",esc(rv.msg)+'<br>Détail : '+esc(rv.diag));}
+  else{ligne("ok","Revenus",rv.d.ventes.length+" vente(s) reçue(s) du serveur de licences ("+esc(rv.diag)+")."+(rv.d.note?" "+esc(rv.d.note):""));}
+  ligne(ST.cls.ok===false?"ko":(ST.cls.ok?"ok":"warn"),"Classement des joueurs",ST.cls.ok===false?esc(ST.cls.err):(ST.cls.ok?nf(ST.cls.nb)+" joueur(s) avec un pseudo.":"Chargement..."));
+  ligne(ST.prof.ok===false?"warn":(ST.prof.ok?"ok":"warn"),"E-mails des joueurs",ST.prof.ok===false?"Indisponibles : mets à jour les règles Firestore (collection profils) et republie le jeu.":(ST.prof.ok?"OK":"Chargement..."));
+  if(ST.evOk){
+    var nd=ev.filter(function(e){return e.type.indexOf("devil_")===0;}).length;
+    ligne(nd?"ok":"warn","Statistiques DEVIL",nd?nf(nd)+" événement(s) DEVIL reçu(s).":"Aucun événement DEVIL reçu : publie la dernière version du jeu et vérifie que les règles Firestore acceptent devil_open, devil_start, devil_win et devil_lose.");
+  }
+  ligne(ST.lect>15000?"warn":"ok","Lectures Firebase de ce chargement","≈ "+nf(ST.lect)+" (quota gratuit : 50 000 par jour). Évite d'actualiser trop souvent.");
+  $("diag").innerHTML=dg.join("");
 
-function afficher(ev, tronque){
-  var now=Date.now(), H=3600000, D=86400000;
-  function dans(ms){return ev.filter(function(e){return now-e.t.getTime()<=ms;});}
-  var e1=dans(D), e7=dans(7*D), e30=ev;
+  var e1=dansMs(ev,86400000),e7=dansMs(ev,7*86400000);
   function vis(a){return uniq(a.map(function(e){return e.vid;}));}
   function pl(a){return uniq(a.map(function(e){return e.uid;}));}
-  $("v1").textContent=vis(e1); $("v7").textContent=vis(e7); $("v30").textContent=vis(e30);
-  $("vt").textContent=e30.filter(function(e){return e.type==="visit";}).length;
-  $("p1").textContent=pl(e1); $("p7").textContent=pl(e7); $("p30").textContent=pl(e30);
-  $("g7").textContent=e7.filter(function(e){return e.type==="level_start";}).length;
+  var s7=agreger(e7,T_SOLO),d7=agreger(e7,T_DEV);
+  var rvOk=(rv.etat==="ok");
+  var lib=periode==="all"?"depuis le début":(periode==="30"?"30 jours":"7 jours");
+  $("kpi").innerHTML=
+    carte(rvOk?totalTexte(rv.d.total):"-","revenus ("+lib+")","var(--ok)","revenus")+
+    carte(rvOk?rv.d.compte.reussi:"-","achats réussis","var(--ok)","revenus")+
+    carte(vis(e1),"visiteurs (24 h)",null,"joueurs")+
+    carte(vis(e7),"visiteurs (7 jours)",null,"joueurs")+
+    carte(pl(e7),"joueurs connectés (7 j)",null,"joueurs")+
+    carte(s7.s,"parties solo lancées (7 j)",null,"solo")+
+    carte(nbActeurs(d7),"joueurs DEVIL (7 j)","var(--dev)","devil")+
+    carte(d7.w,"missions DEVIL réussies (7 j)","var(--dev)","devil");
 
-  // courbe 14 jours
-  var jours=[], i;
+  var D=86400000,now=Date.now(),jours=[],i;
   for(i=13;i>=0;i--){jours.push(new Date(now-i*D));}
   var par={};
   ev.forEach(function(e){var k=jourCle(e.t);(par[k]=par[k]||{})[e.vid]=1;});
@@ -354,68 +632,213 @@ function afficher(ev, tronque){
   $("bars").innerHTML=vals.map(function(v){return '<div class="bar" style="height:'+Math.max(2,Math.round(v/mx*95))+'px"><i>'+(v||"")+'</i></div>';}).join("");
   $("lab").innerHTML=jours.map(function(d){return "<span>"+d.getDate()+"</span>";}).join("");
 
-  // ---- joueurs connectés (une ligne par joueur)
+  $("gTop").innerHTML=classementHtml(3)+'<div class="sm" style="margin-top:6px"><a href="#joueurs" data-go="joueurs" style="color:var(--cyan)">Voir tout le classement</a></div>';
+  if(rvOk){
+    $("gVentes").innerHTML=rv.d.ventes.slice(0,5).map(function(v){
+      return "<tr><td class='l'>"+esc(fmtDate(v.date))+"</td><td>"+esc(fmtMontant(v.montant.v,v.montant.c))+"</td><td class='l'>"+badge(v.statut)+"</td><td class='l'>"+esc(v.client.nom||v.client.email||"-")+"</td></tr>";
+    }).join("")||ligneVide(4,"Aucune vente pour le moment");
+  }else{$("gVentes").innerHTML=ligneVide(4,rv.etat==="charge"?"Chargement...":"Indisponible (voir État du système)");}
+  listeActivite("gAct","",5,false);
+}
+
+/* ------------------------------------------------------------------ rendu : REVENUS */
+function badge(st){
+  if(st==="completed"||st==="settled"){return "<span class='bd ok'>R&eacute;ussi</span>";}
+  if(st==="failed"){return "<span class='bd ko'>&Eacute;chou&eacute;</span>";}
+  if(st==="abandoned"){return "<span class='bd ab'>Abandonn&eacute;</span>";}
+  return "<span class='bd at'>En attente</span>";
+}
+function rendreRevenus(){
+  $("perr-revenus").innerHTML="";
+  var R=ST.rev,err=$("rvErr");
+  var ids=["rvTot","rvOk","rvKo","rvAt","rvPan","rvNbA"];
+  if(R.etat==="charge"){
+    ids.forEach(function(i){$(i).textContent="-";});err.classList.add("hide");
+    $("rvVentes").innerHTML=ligneVide(5,"Chargement...");$("rvAch").innerHTML=ligneVide(5,"Chargement...");$("rvAct").innerHTML=ligneVide(4,"Chargement...");$("rvTopSkins").innerHTML=ligneVide(2,"Chargement...");$("rvBars").innerHTML="";$("rvLab").innerHTML="";
+    return;
+  }
+  if(R.etat==="erreur"){
+    err.innerHTML=esc(R.msg)+'<br><span class="sm">Détail technique : '+esc(R.diag)+'</span>';err.classList.remove("hide");
+    ids.forEach(function(i){$(i).textContent="-";});
+    $("rvVentes").innerHTML=ligneVide(5,"Indisponible");$("rvAch").innerHTML=ligneVide(5,"Indisponible");$("rvAct").innerHTML=ligneVide(4,"Indisponible");$("rvTopSkins").innerHTML=ligneVide(2,"Indisponible");$("rvBars").innerHTML="";$("rvLab").innerHTML="";
+    $("rvInfo").textContent="";
+    return;
+  }
+  err.classList.add("hide");
+  var d=R.d,reussies=d.ventes.filter(okVente);
+  $("rvTot").textContent=totalTexte(d.total);
+  $("rvOk").textContent=d.compte.reussi;$("rvKo").textContent=d.compte.echoue;$("rvAt").textContent=d.compte.abandonne+d.compte.attente;
+  var somme=0,devs={};reussies.forEach(function(v){somme+=v.montant.v;devs[v.montant.c]=1;});
+  var cd=Object.keys(devs);
+  $("rvPan").textContent=(reussies.length&&cd.length===1)?fmtMontant(somme/reussies.length,cd[0]):"-";
+  var ach={};
+  reussies.forEach(function(v){
+    var k=(v.client.email||v.client.nom||"inconnu").toLowerCase();
+    var o=ach[k]=ach[k]||{nom:v.client.nom,email:v.client.email,n:0,tot:{},last:0,skins:{}};
+    o.n++;o.tot[v.montant.c]=(o.tot[v.montant.c]||0)+v.montant.v;
+    var t=new Date(v.date).getTime();if(t>o.last){o.last=t;}
+    v.activations.forEach(function(a){if(a&&a.skin){o.skins[a.skin]=1;}});
+  });
+  $("rvNbA").textContent=Object.keys(ach).length;
+  $("rvInfo").textContent=(periode==="all"?"Depuis le début":(periode==="30"?"30 derniers jours":"7 derniers jours"))+(d.tronque?" - attention : liste tronquée (trop de ventes)":"")+(d.note?" - "+d.note:"");
+
+  // revenus par jour (14 jours, une seule devise)
+  var D=86400000,now=Date.now(),jours=[],i;
+  for(i=13;i>=0;i--){jours.push(new Date(now-i*D));}
+  if(cd.length<=1){
+    var pj={};reussies.forEach(function(v){var dt=new Date(v.date);if(!isNaN(dt)){var k=jourCle(dt);pj[k]=(pj[k]||0)+v.montant.v;}});
+    var vals=jours.map(function(x){return pj[jourCle(x)]||0;}),mx=Math.max.apply(null,vals.concat([0.01]));
+    $("rvBars").innerHTML=vals.map(function(v){return '<div class="bar" style="height:'+Math.max(2,Math.round(v/mx*95))+'px"><i>'+(v?Math.round(v*10)/10:"")+'</i></div>';}).join("");
+    $("rvLab").innerHTML=jours.map(function(x){return "<span>"+x.getDate()+"</span>";}).join("");
+  }else{$("rvBars").innerHTML='<div class="ev" style="width:100%">Plusieurs devises : graphique non affiché.</div>';$("rvLab").innerHTML="";}
+
+  $("rvVentes").innerHTML=d.ventes.slice(0,60).map(function(v){
+    var ok=okVente(v),joueur="";
+    if(v.activations.length){
+      joueur=v.activations.map(function(a){return "<span class='pj'>"+esc(nomJoueur(a.uid))+"</span><br><span class='sm'>"+esc(nomSkin(a.skin))+"</span>";}).join("<br>");
+    }else if(ok){joueur="<span class='sm'>Cl&eacute; pas encore activ&eacute;e</span>";}
+    return "<tr><td class='l'>"+esc(fmtDate(v.date))+"</td><td>"+esc(fmtMontant(v.montant.v,v.montant.c))+"</td><td class='l'>"+badge(v.statut)+(v.erreur?"<br><span class='sm'>"+esc(v.erreur)+"</span>":"")+"</td><td class='l'>"+esc(v.client.nom||"-")+(v.client.email?"<br><span class='sm'>"+esc(v.client.email)+"</span>":"")+"</td><td class='l'>"+joueur+"</td></tr>";
+  }).join("")||ligneVide(5,"Aucune vente pour le moment");
+
+  var lst=Object.keys(ach).map(function(k){return ach[k];}).sort(function(a,b){return b.last-a.last;});
+  $("rvAch").innerHTML=lst.map(function(o){
+    var sk=Object.keys(o.skins).map(nomSkin).join(", ");
+    return "<tr><td class='l'><span class='pj'>"+esc(o.nom||"-")+"</span>"+(o.email?"<br><span class='sm'>"+esc(o.email)+"</span>":"")+"</td><td>"+o.n+"</td><td>"+esc(totalTexte(o.tot))+"</td><td class='l'>"+(o.last?esc(fmtH(o.last)):"-")+"</td><td class='l'>"+(sk?esc(sk):"<span class='sm'>aucun</span>")+"</td></tr>";
+  }).join("")||ligneVide(5,"Aucun achat réussi sur cette période");
+
+  $("rvAct").innerHTML=d.activations.slice(0,60).map(function(l){
+    return "<tr><td class='l'>"+esc(fmtDate(l.t))+"</td><td class='l'><span class='pj'>"+esc(nomJoueur(l.uid))+"</span></td><td class='l'>"+esc(nomSkin(l.skin))+"</td><td class='l'>"+esc(l.nom||"-")+"</td></tr>";
+  }).join("")||ligneVide(4,"Aucune activation pour le moment");
+  var cs={};d.activations.forEach(function(a){if(a&&a.skin){cs[a.skin]=(cs[a.skin]||0)+1;}});
+  $("rvTopSkins").innerHTML=Object.keys(cs).sort(function(a,b){return cs[b]-cs[a];}).slice(0,10).map(function(s){return "<tr><td class='l'>"+esc(nomSkin(s))+"</td><td>"+cs[s]+"</td></tr>";}).join("")||ligneVide(2,"Aucune activation");
+}
+
+/* ------------------------------------------------------------------ rendu : SOLO */
+function rendreSolo(){
+  $("perr-solo").innerHTML="";
+  if(!ST.evOk){$("soloKpi").innerHTML="";$("lv").innerHTML=ligneVide(7,ST.evErr?"Indisponible":"Chargement...");$("detailLv").innerHTML="";return;}
+  var A=agreger(ST.ev,T_SOLO),A7=agreger(dansMs(ST.ev,7*86400000),T_SOLO);
+  $("soloKpi").innerHTML=carte(nf(A.s),"parties lancées (30 j)")+carte(nf(A7.s),"parties lancées (7 j)")+carte(nf(A.w),"missions gagnées","var(--ok)")+carte(nf(A.l),"missions perdues","var(--bad)")+carte(pct(A.w,A.w+A.l),"taux de réussite")+carte(nbActeurs(A),"joueurs différents (30 j)");
+  tableMissions(A,"lv",false);
+  detailMissions(A,"detailLv","Pas encore de données.");
+}
+
+/* ------------------------------------------------------------------ rendu : DEVIL */
+function rendreDevil(){
+  $("perr-devil").innerHTML="";
+  if(!ST.evOk){$("dvKpi").innerHTML="";$("dvLv").innerHTML=ligneVide(8,ST.evErr?"Indisponible":"Chargement...");$("dvJoueurs").innerHTML="";$("dvDetail").innerHTML="";rendreSavesDevil();return;}
+  var A=agreger(ST.ev,T_DEV),A7=agreger(dansMs(ST.ev,7*86400000),T_DEV);
+  var total=A.s+A.w+A.l+A.o;
+  $("dvAlert").innerHTML=total?"":'<div class="err" style="border-color:var(--warn);color:#ffd9a0;background:#2a1a08">Aucun événement DEVIL reçu sur 30 jours. Vérifie que la dernière version du jeu est publiée, qu\'un joueur connecté a ouvert le mode, et que les règles Firestore acceptent les types devil_open, devil_start, devil_win et devil_lose.</div>';
+  var maxW=-1,nbBl=0,k;
+  for(k in A.acteurs){var a=A.acteurs[k];if(a.maxWin>maxW){maxW=a.maxWin;}if(bloquees(a).length){nbBl++;}}
+  $("dvKpi").innerHTML=
+    carte(nbActeurs(A)+" / "+Object.keys(A.acteurs).length,"ont joué / ont ouvert le mode","var(--dev)")+
+    carte(nf(A.s),"parties lancées (30 j)")+
+    carte(nf(A.w),"missions réussies","var(--ok)")+
+    carte("≥ "+nf(A.l),"défaites enregistrées*","var(--bad)")+
+    carte(pct(A.w,A.w+A.l),"taux de réussite")+
+    carte(maxW>=0?"Mission "+(maxW+1):"-","mission la plus loin réussie","var(--dev)")+
+    carte(nbBl,"joueurs bloqués","var(--bad)")+
+    carte(nbActeurs(A7),"joueurs (7 jours)")+
+    carte(nf(A7.w)+" / ≥ "+nf(A7.l),"réussies / défaites (7 j)");
+  $("dvNote").textContent="* Les défaites sont envoyées au plus une fois toutes les 10 secondes par joueur : le vrai nombre est plus élevé (chiffres exacts tout en bas). Les joueurs sans compte Google sont comptés par appareil.";
+  tableMissions(A,"dvLv",true);
+
+  var q=($("qd").value||"").toLowerCase().trim();
+  var l=Object.keys(A.acteurs).map(function(k){return A.acteurs[k];}).filter(function(a){return a.s+a.w+a.l+a.o>0&&(a.k.indexOf("v:")===0?!q:correspond(a.k,q));});
+  l.sort(function(a,b){return devSort==="win"?((b.w-a.w)||(b.last-a.last)):devSort==="lose"?((b.l-a.l)||(b.last-a.last)):(b.last-a.last);});
+  $("dvJoueurs").innerHTML=l.length?l.slice(0,100).map(function(a){
+    var bl=bloquees(a);
+    return '<div class="pjl">'+blocJoueur(a.k)+(bl.length?'<span class="tag">BLOQUÉ M'+(bl[bl.length-1]+1)+'</span>':"")+'<br><span class="sm">Lancés : '+a.s+' · Réussis : '+a.w+' · Défaites : ≥ '+a.l+' · Mission max réussie : '+(a.maxWin>=0?(a.maxWin+1):"aucune")+' · Dernière activité : '+fmtH(a.last)+'</span></div>';
+  }).join("")+(l.length>100?'<div class="sm" style="margin-top:6px">… et '+(l.length-100)+' autres (utilise la recherche)</div>':""):'<div class="ev">Aucun joueur DEVIL sur cette période.</div>';
+  detailMissions(A,"dvDetail","Pas encore de données.");
+  rendreSavesDevil();
+}
+function chargerSavesDevil(){
+  $("dvSaves").innerHTML='<div class="ev">Chargement...</div>';
+  db.collection("saves").limit(300).get().then(function(snap){
+    ST.lect+=snap.size;
+    var l=[];
+    snap.forEach(function(d){
+      var x=d.data()||{},f=x.files||{},raw=f["progression_devil.json"],j=null;
+      if(!raw){return;}
+      try{j=JSON.parse(raw);}catch(e){}
+      if(j){l.push({uid:d.id,niveau:num(j.niveau),morts:num(j.morts)});}
+    });
+    ST.sav={ok:true,l:l,n:snap.size};
+  }).catch(function(e){ST.sav={ok:false,err:(e&&(e.code||e.message))||String(e)};}).then(function(){rendreSavesDevil();majHeure();});
+}
+function rendreSavesDevil(){
+  var S=ST.sav,el=$("dvSaves");
+  if(!S){el.innerHTML="";return;}
+  if(!S.ok){el.innerHTML='<div class="err">Lecture impossible ('+esc(S.err)+'). '+(S.err==="permission-denied"?"Les règles Firestore n'autorisent pas l'administrateur à lire les sauvegardes (collection saves).":"")+'</div>';return;}
+  var l=S.l.slice().sort(function(a,b){return (b.niveau-a.niveau)||(b.morts-a.morts);});
+  var morts=0;l.forEach(function(o){morts+=o.morts;});
+  el.innerHTML='<div class="grid">'+carte(l.length,"joueurs avec une progression DEVIL","var(--dev)")+carte(nf(morts),"morts au total (exact)","var(--bad)")+carte(l.length?Math.round(morts/l.length):"-","morts par joueur (moyenne)")+'</div>'+
+    '<div class="card" style="margin-top:10px">'+(l.length?l.slice(0,100).map(function(o){
+      return '<div class="pjl">'+blocJoueur(o.uid)+'<br><span class="sm">Missions réussies : '+o.niveau+' · En cours : mission '+(o.niveau+1)+' · Morts : '+nf(o.morts)+'</span></div>';
+    }).join(""):'<div class="ev">Aucune sauvegarde DEVIL trouvée ('+S.n+' sauvegarde(s) lue(s)).</div>')+'</div>';
+}
+
+/* ------------------------------------------------------------------ rendu : JOUEURS / ACTIVITÉ */
+function rendreJoueurs(){
+  $("perr-joueurs").innerHTML="";
+  $("top").innerHTML=classementHtml(10);
+  $("nbj").textContent=ST.cls.ok?ST.cls.nb+" joueur(s) inscrit(s) avec un pseudo.":"";
+  if(!ST.evOk){$("joueurs").innerHTML='<div class="ev">'+(ST.evErr?"Indisponible":"Chargement...")+'</div>';return;}
+  var ev=ST.ev,e1=dansMs(ev,86400000),e7=dansMs(ev,7*86400000);
+  function vis(a){return uniq(a.map(function(e){return e.vid;}));}
+  function pl(a){return uniq(a.map(function(e){return e.uid;}));}
+  $("v1").textContent=vis(e1);$("v7").textContent=vis(e7);$("v30").textContent=vis(ev);
+  $("vt").textContent=ev.filter(function(e){return e.type==="visit";}).length;
+  $("p1").textContent=pl(e1);$("p7").textContent=pl(e7);$("p30").textContent=pl(ev);
   var pj={};
   ev.forEach(function(e){
     if(!e.uid){return;}
-    var o=pj[e.uid]=pj[e.uid]||{uid:e.uid,s:0,w:0,l:0,last:0,logins:0,maxWin:-1};
-    var t=e.t.getTime(); if(t>o.last){o.last=t;}
-    if(e.type==="level_start"){o.s++;}
-    else if(e.type==="level_win"){o.w++; if(e.lvl>o.maxWin){o.maxWin=e.lvl;}}
-    else if(e.type==="level_lose"){o.l++;}
-    else if(e.type==="login"){o.logins++;}
+    var o=pj[e.uid]=pj[e.uid]||{uid:e.uid,s:0,w:0,l:0,last:0,logins:0,maxWin:-1,ds:0,dw:0,dl:0};
+    var t=e.t.getTime();if(t>o.last){o.last=t;}
+    if(e.type==="level_start"){o.s++;}else if(e.type==="level_win"){o.w++;if(e.lvl>o.maxWin){o.maxWin=e.lvl;}}
+    else if(e.type==="level_lose"){o.l++;}else if(e.type==="login"){o.logins++;}
+    else if(e.type==="devil_start"){o.ds++;}else if(e.type==="devil_win"){o.dw++;}else if(e.type==="devil_lose"){o.dl++;}
   });
-  JOUEURS=Object.keys(pj).map(function(k){return pj[k];}).sort(function(a,b){return b.last-a.last;});
-  $("q").oninput=rendreJoueurs;
-  rendreJoueurs();
-  $("notePro").textContent=PROFILS_OK?"":"E-mails indisponibles : mets à jour les règles Firestore (collection profils) et republie le jeu.";
-
-  // ---- par mission (le jeu enregistre le niveau à partir de 0 : on affiche Mission = niveau + 1)
-  var lv={};
-  ev.forEach(function(e){
-    if(e.type==="level_start"||e.type==="level_win"||e.type==="level_lose"){
-      var o=lv[e.lvl]=lv[e.lvl]||{s:0,w:0,l:0,pl:{}};
-      var k=e.uid||("v:"+(e.vid||"?"));
-      var p=o.pl[k]=o.pl[k]||{s:0,w:0,l:0};
-      if(e.type==="level_start"){o.s++;p.s++;} else if(e.type==="level_win"){o.w++;p.w++;} else {o.l++;p.l++;}
-    }
-  });
-  var cles=Object.keys(lv).map(Number).sort(function(a,b){return a-b;});
-  function nbBloques(o){return Object.keys(o.pl).filter(function(k){return o.pl[k].w===0&&o.pl[k].l>0;}).length;}
-  $("lv").innerHTML=cles.length?cles.map(function(k){
-    var o=lv[k], fin=o.w+o.l, tx=fin?Math.round(o.w/fin*100):null, bl=nbBloques(o);
-    return "<tr><td>Mission "+(k+1)+"</td><td>"+Object.keys(o.pl).length+"</td><td>"+o.s+"</td><td class='ok'>"+o.w+"</td><td class='bad'>"+o.l+"</td><td>"+(tx===null?"-":tx+" %")+"</td><td class='"+(bl?"bad":"")+"'>"+bl+"</td></tr>";
-  }).join(""):"<tr><td colspan='7' style='text-align:center;color:#8a94c8'>Pas encore de données</td></tr>";
-  $("detailLv").innerHTML=cles.length?cles.map(function(k){
-    var o=lv[k], fin=o.w+o.l, tx=fin?Math.round(o.w/fin*100):null, bl=nbBloques(o);
-    var ks=Object.keys(o.pl).sort(function(a,b){return (o.pl[b].l-o.pl[a].l)||(o.pl[b].s-o.pl[a].s);});
-    var lignes=ks.slice(0,40).map(function(u){
-      var p=o.pl[u], bloque=(p.w===0&&p.l>0);
-      return '<div class="pjl">'+blocJoueur(u)+(bloque?'<span class="tag">BLOQUÉ</span>':"")+'<br><span class="sm">Lancés : '+p.s+' · Gagnés : '+p.w+' · Perdus : '+p.l+'</span></div>';
-    }).join("")+(ks.length>40?'<div class="sm">… et '+(ks.length-40)+' autres joueurs</div>':"");
-    return '<details><summary>Mission '+(k+1)+' · '+ks.length+' joueur'+(ks.length>1?"s":"")+' · '+(tx===null?"-":tx+" %")+' de réussite'+(bl?' · '+bl+' bloqué'+(bl>1?"s":""):"")+'</summary>'+lignes+'</details>';
-  }).join(""):'<div class="ev">Pas encore de données.</div>';
-
-  // ---- dernière activité : une ligne par joueur (le plus récent d'abord), détail à l'ouverture
-  var gr={}, ordre=[];
-  ev.forEach(function(e){
-    if(!e.uid||e.type==="visit"){return;}
-    var g=gr[e.uid];
-    if(!g){g=gr[e.uid]={uid:e.uid,acts:[],jour:{conn:0,lances:0,gagnes:0,perdus:0}};ordre.push(e.uid);}
-    if(g.acts.length<10){g.acts.push(e);}
-    if(now-e.t.getTime()<=D){
-      if(e.type==="login"){g.jour.conn++;}
-      else if(e.type==="level_start"){g.jour.lances++;}
-      else if(e.type==="level_win"){g.jour.gagnes++;}
-      else if(e.type==="level_lose"){g.jour.perdus++;}
-    }
-  });
-  ACT=ordre.map(function(u){return gr[u];});
-  ANON=ev.filter(function(e){return !e.uid&&e.type==="visit";}).length;
-  rendreActivite();
-
-  $("maj").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR")+(tronque?" - attention : données tronquées (5 000 événements)":"");
+  var J=Object.keys(pj).map(function(k){return pj[k];}).sort(function(a,b){return b.last-a.last;});
+  var q=($("qj").value||"").toLowerCase().trim();
+  var l=J.filter(function(o){return correspond(o.uid,q);});
+  $("joueurs").innerHTML=l.length?l.slice(0,100).map(function(o){
+    return '<div class="pjl">'+blocJoueur(o.uid)+'<br><span class="sm">Dernière activité : '+fmtH(o.last)+' · Solo : mission max gagnée '+(o.maxWin>=0?(o.maxWin+1):"aucune")+', '+o.s+' parties ('+o.w+' V / '+o.l+' D) · DEVIL : '+o.ds+' lancées, '+o.dw+' réussies, ≥ '+o.dl+' défaites · Connexions : '+o.logins+'</span></div>';
+  }).join("")+(l.length>100?'<div class="sm" style="margin-top:6px">… et '+(l.length-100)+' autres (utilise la recherche)</div>':""):'<div class="ev">Aucun joueur connecté sur cette période.</div>';
+  $("notePro").textContent=ST.prof.ok===false?"E-mails indisponibles : mets à jour les règles Firestore (collection profils) et republie le jeu.":"";
 }
+function rendreActivite(){
+  $("perr-activite").innerHTML="";
+  if(!ST.evOk){$("recent").innerHTML='<div class="ev">'+(ST.evErr?"Indisponible":"Chargement...")+'</div>';return;}
+  listeActivite("recent",($("qa").value||"").toLowerCase().trim(),25,true);
+}
+
+function rendreTout(){
+  sur("general",rendreGeneral);sur("revenus",rendreRevenus);sur("solo",rendreSolo);
+  sur("devil",rendreDevil);sur("joueurs",rendreJoueurs);sur("activite",rendreActivite);
+}
+
+/* ------------------------------------------------------------------ commandes */
+(function(){
+  var bs=document.querySelectorAll("#pb button"),i;
+  for(i=0;i<bs.length;i++){(function(b){b.onclick=function(){
+    var k;for(k=0;k<bs.length;k++){bs[k].classList.remove("on");}
+    b.classList.add("on");periode=b.getAttribute("data-p");
+    if(auth.currentUser){chargerRevenus();}
+  };})(bs[i]);}
+  var ds=document.querySelectorAll("#dvSort button");
+  for(i=0;i<ds.length;i++){(function(b){b.onclick=function(){
+    var k;for(k=0;k<ds.length;k++){ds[k].classList.remove("on");}
+    b.classList.add("on");devSort=b.getAttribute("data-s");sur("devil",rendreDevil);
+  };})(ds[i]);}
+  $("qj").oninput=function(){sur("joueurs",rendreJoueurs);};
+  $("qa").oninput=function(){sur("activite",rendreActivite);};
+  $("qd").oninput=function(){sur("devil",rendreDevil);};
+  $("btnSav").onclick=chargerSavesDevil;
+})();
 </script>
 </body>
 </html>
