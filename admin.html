@@ -366,6 +366,22 @@ document.addEventListener("click",function(ev){
   }
 });
 
+/* ------------------------------------------------------------------ accès réservé à l'administrateur */
+/* L'e-mail n'est pas écrit en clair dans cette page publique : on compare son empreinte SHA-256.
+   Ce contrôle évite d'afficher le tableau de bord aux autres comptes ; la vraie protection des données
+   reste dans les règles Firestore (fonction admin()) et dans le serveur de revenus. */
+var ADMIN_HASH="6770ec09230c17e3ac72498eff65862b2d1f11968346fa318b7cebb9e88f3752";
+function sha256Hex(t){
+  if(!(window.crypto&&window.crypto.subtle&&window.TextEncoder)){return Promise.resolve("");}
+  return window.crypto.subtle.digest("SHA-256",new TextEncoder().encode(t)).then(function(b){
+    return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join("");
+  });
+}
+function verifierAdmin(u){
+  if(!u||!u.email||!u.emailVerified){return Promise.resolve(false);}
+  return sha256Hex(String(u.email).trim().toLowerCase()).then(function(h){return h===ADMIN_HASH;});
+}
+
 /* ------------------------------------------------------------------ connexion */
 $("btnIn").onclick=function(){
   clearErr();
@@ -374,19 +390,29 @@ $("btnIn").onclick=function(){
 $("btnOut").onclick=function(){auth.signOut();};
 $("btnRef").onclick=function(){charger();};
 auth.onAuthStateChanged(function(u){
-  if(u){
+  if(!u){
+    $("who").textContent="Connecte-toi avec ton compte Google administrateur.";
+    $("login").classList.remove("hide");
+    $("dash").classList.add("hide");
+    return;
+  }
+  $("login").classList.add("hide");
+  $("dash").classList.add("hide");
+  $("who").textContent="Vérification du compte...";
+  verifierAdmin(u).then(function(ok){
+    if(!ok){
+      showErr("Accès refusé : ce compte Google n'est pas l'administrateur.");
+      auth.signOut();                       // aucune donnée n'est chargée pour un autre compte
+      return;
+    }
+    clearErr();
     $("who").textContent="Connecté : "+(u.email||u.displayName);
-    $("login").classList.add("hide");
     $("dash").classList.remove("hide");
     var h=(location.hash||"").replace("#",""),s="";
     try{s=localStorage.getItem("flex_admin_tab")||"";}catch(e){}
     ouvrirOnglet(ONGLETS.indexOf(h)>=0?h:(ONGLETS.indexOf(s)>=0?s:"general"),true);
     charger();
-  }else{
-    $("who").textContent="Connecte-toi avec ton compte Google administrateur.";
-    $("login").classList.remove("hide");
-    $("dash").classList.add("hide");
-  }
+  });
 });
 
 /* ------------------------------------------------------------------ chargement des données */
