@@ -3635,7 +3635,7 @@ def chemin_donnees(nom):
 # ==================== PROTECTION DU JEU (dissuasion) ====================
 # Empreinte du code officiel : calculée à la livraison. Si main.py est modifié, le jeu affiche « VERSION MODIFIÉE ».
 # (Tu modifies toi-même le code ? Lance le jeu, copie « Empreinte actuelle » affichée dans la console, colle-la ci-dessous.)
-EMPREINTE_OFFICIELLE = "bef14668bc6fca362360cebe25f264aaadcd927ee7f82b8f53d4664a1dc15cf7"
+EMPREINTE_OFFICIELLE = "8dab48080207a2804f6d29540e03e628ce8aa40564b78a95394fc9854bd761d3"
 
 
 def _empreinte_du_fichier():
@@ -4908,7 +4908,8 @@ DEVIL_RELANCE_MORT_MS = 900     # idem pour les autres morts
 DEVIL = {"actif": False, "max": 0, "morts": 0, "morts_total": 0, "niveau_courant": -1,
          "trous": set(), "effondres": set(), "chute": None, "resets": 0, "gel": 0, "tp": 0,
          "sorties": [], "idx_sortie": 0, "rng": random.Random(1), "props": [],
-         "relance_t": None, "musique": False, "musique_ko": False, "duck_fin": None}
+         "relance_t": None, "musique": False, "musique_ko": False, "duck_fin": None, "stat_open": False, "stat_lose_t": -99999}
+DEVIL_STAT_LOSE_MS = 10000      # statistiques : au plus 1 défaite envoyée toutes les 10 s (les morts s'enchaînent, on protège le quota Firebase)
 DEVIL_COULEURS = [(255, 40, 70), (160, 70, 255), (255, 0, 180), (255, 140, 40)]
 
 
@@ -5109,10 +5110,14 @@ def devil_ouvrir():
     n, m = devil_charger()
     DEVIL["max"], DEVIL["morts_total"], DEVIL["niveau_courant"] = n, m, -1
     DEVIL["actif"] = True
+    if not DEVIL["stat_open"]:
+        DEVIL["stat_open"] = True
+        _stat("devil_open", n)                              # stats : le joueur a ouvert le mode (lvl = mission atteinte)
 
 
 def devil_lancer(idx):
     reinitialiser_partie(False, niveau_cible=idx)
+    _stat("devil_start", idx)                               # stats : mission lancée depuis la ligne des missions
 
 
 def _devil_teleporter_core():
@@ -5275,7 +5280,11 @@ def devil_mort():
     devil_sauvegarder()
     if DEVIL["chute"] is None:
         creer_explosion(joueur_x, joueur_y, ROUGE_ALERTE, 46, 9.0, 12.0)
-    DEVIL["relance_t"] = pygame.time.get_ticks() + (DEVIL_RELANCE_MS if DEVIL["chute"] is not None else DEVIL_RELANCE_MORT_MS)
+    maintenant = pygame.time.get_ticks()
+    DEVIL["relance_t"] = maintenant + (DEVIL_RELANCE_MS if DEVIL["chute"] is not None else DEVIL_RELANCE_MORT_MS)
+    if maintenant - DEVIL["stat_lose_t"] >= DEVIL_STAT_LOSE_MS:
+        DEVIL["stat_lose_t"] = maintenant
+        _stat("devil_lose", niveau_actuel)                  # stats : défaite (le total exact des morts est dans progression_devil.json)
     _devil_jingle("defaite")
 
 
@@ -5284,6 +5293,7 @@ def devil_victoire():
     if niveau_actuel + 1 > DEVIL["max"]:
         DEVIL["max"] = niveau_actuel + 1                    # la mission suivante est débloquée dès la victoire
     devil_sauvegarder()
+    _stat("devil_win", niveau_actuel)                       # stats : mission réussie
     _devil_jingle("victoire")
 
 
