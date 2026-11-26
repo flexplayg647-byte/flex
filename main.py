@@ -3635,7 +3635,7 @@ def chemin_donnees(nom):
 # ==================== PROTECTION DU JEU (dissuasion) ====================
 # Empreinte du code officiel : calculée à la livraison. Si main.py est modifié, le jeu affiche « VERSION MODIFIÉE ».
 # (Tu modifies toi-même le code ? Lance le jeu, copie « Empreinte actuelle » affichée dans la console, colle-la ci-dessous.)
-EMPREINTE_OFFICIELLE = "f7438d1c835b07e41f975ca7a8919e0c383baf36336448344e9c82b3902c47ea"
+EMPREINTE_OFFICIELLE = "bef14668bc6fca362360cebe25f264aaadcd927ee7f82b8f53d4664a1dc15cf7"
 
 
 def _empreinte_du_fichier():
@@ -4894,7 +4894,728 @@ def sauvegarder_progression(niveau):
         print(f"⚠️ Impossible de sauvegarder la progression : {e}")
 
 
+# ==================== EXTENSION : MODE DEVIL ====================
+# Mode à part, façon « troll » : missions infinies, SANS drones, SANS boss, SANS chrono, SANS pouvoirs,
+# avec des pièges imprévisibles : décryptage qui retombe à 99 %, clé qui s'enfuit, sol qui disparaît, fausses portes.
+# Chaque mission est TOUJOURS la même (graine fixe) : le piège est injuste la 1re fois, mais on peut le mémoriser.
+# Décor : une salle 30 x 18 cases (image salle_devil.png étirée dessus). Sauvegarde séparée (progression_devil.json).
+# Sons : ambiance_devil en boucle pendant les missions, victoire_devil / defaite_devil à chaque issue (.ogg sur Online).
+CHEMIN_DEVIL = chemin_donnees("progression_devil.json")
+DEVIL_COLONNES, DEVIL_LIGNES, DEVIL_BORD = 30, 18, 2        # salle : 30 x 18 cases, murs de 2 cases (comme sur l'image)
+DEVIL_CHUTE_MS = 750            # durée de la chute dans le vide avant la défaite
+DEVIL_RELANCE_MS = 650          # délai avant le redémarrage automatique (après une chute)
+DEVIL_RELANCE_MORT_MS = 900     # idem pour les autres morts
+DEVIL = {"actif": False, "max": 0, "morts": 0, "morts_total": 0, "niveau_courant": -1,
+         "trous": set(), "effondres": set(), "chute": None, "resets": 0, "gel": 0, "tp": 0,
+         "sorties": [], "idx_sortie": 0, "rng": random.Random(1), "props": [],
+         "relance_t": None, "musique": False, "musique_ko": False, "duck_fin": None}
+DEVIL_COULEURS = [(255, 40, 70), (160, 70, 255), (255, 0, 180), (255, 140, 40)]
+
+
+def devil_charger():
+    """Retourne (mission atteinte, total des morts) depuis la sauvegarde signée du mode Devil."""
+    d, statut = lire_json_signe(CHEMIN_DEVIL)
+    if statut == "altere":
+        signaler_sauvegarde_alteree()
+        return 0, 0
+    if d is None:
+        return 0, 0
+    try:
+        return max(0, int(d.get("niveau", 0))), max(0, int(d.get("morts", 0)))
+    except Exception as e:
+        print(f"⚠️ Sauvegarde Devil illisible : {e}")
+        return 0, 0
+
+
+def devil_sauvegarder():
+    try:
+        ecrire_json_signe(CHEMIN_DEVIL, {"niveau": DEVIL["max"], "morts": DEVIL["morts_total"]})
+    except Exception as e:
+        print(f"⚠️ Impossible de sauvegarder le mode Devil : {e}")
+
+
+def _devil_types(niveau):
+    """Pièges actifs sur une mission : un par mission au début (appris un à un), puis des combinaisons de plus en plus vicieuses."""
+    base = ["hack", "core", "fausse", "sol"]
+    if niveau < 4:
+        return [base[niveau]]
+    r = random.Random(niveau * 977 + 5)
+    return r.sample(base, min(4, 2 + (niveau - 4) // 4))
+
+
+def _devil_bfs(grille, depart, bloques=()):
+    """Cases atteignables depuis `depart` (sans traverser les murs, les portes ni les cases `bloques`)."""
+    vu, file, i = {depart}, [depart], 0
+    while i < len(file):
+        r, c = file[i]
+        i += 1
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            n = (r + dr, c + dc)
+            if n not in vu and n not in bloques and 0 <= n[0] < len(grille) and 0 <= n[1] < len(grille[0]) and grille[n[0]][n[1]] in (0, 2):
+                vu.add(n)
+                file.append(n)
+    return vu
+
+
+def _devil_interieur(porte, lignes, colonnes):
+    """Case de la salle située juste devant une porte (les portes sont sur la rangée intérieure des murs)."""
+    r, c = porte
+    if r == DEVIL_BORD - 1:
+        return (r + 1, c)
+    if r == lignes - DEVIL_BORD:
+        return (r - 1, c)
+    if c == DEVIL_BORD - 1:
+        return (r, c + 1)
+    return (r, c - 1)
+
+
+def devil_generer_niveau(niveau):
+    """Une SALLE de 30 x 18 cases : murs de 2 cases, caisses d'angle (dessinées sur l'image), mobilier qui sert d'obstacles,
+    une clé à trouver, une porte à atteindre."""
+    graine = 7919 * (niveau + 1) + 4242
+    for tentative in range(60):
+        rng = random.Random(graine + tentative * 7919)          # 1re tentative = disposition normale ; sinon on en retire une autre
+        colonnes, lignes, B = DEVIL_COLONNES, DEVIL_LIGNES, DEVIL_BORD
+        grille = [[1] * colonnes for _ in range(lignes)]
+        for r in range(B, lignes - B):
+            for c in range(B, colonnes - B):
+                grille[r][c] = 0
+        depart = (lignes // 2, B)
+
+        props = []
+        for r, c in ((B, B), (B, colonnes - B - 2), (lignes - B - 2, B), (lignes - B - 2, colonnes - B - 2)):
+            for i in range(2):                                  # les 4 grosses caisses d'angle de l'image
+                for j in range(2):
+                    grille[r + i][c + j] = 1
+            props.append((r, c, 2, 2, "coin", 0))
+
+        nb_obstacles, posees = min(8 + niveau * 2, 36), 0       # mobilier : de plus en plus nombreux
+        for _ in range(nb_obstacles * 10):
+            if posees >= nb_obstacles:
+                break
+            h, w = rng.choice([(1, 1), (1, 1), (1, 2), (2, 1), (2, 2), (1, 3), (3, 1)])
+            r, c = rng.randint(B, lignes - B - h), rng.randint(B + 2, colonnes - B - w)
+            cases = [(r + i, c + j) for i in range(h) for j in range(w)]
+            if not all(grille[a][b] == 0 and abs(a - depart[0]) + abs(b - depart[1]) >= 3 for a, b in cases):
+                continue
+            if (h, w) == (1, 1):
+                genre = rng.choice(["caisse", "baril", "chaise", "caisse"])
+            elif (h, w) in ((1, 2), (2, 1)):
+                genre = "banc"
+            elif (h, w) == (2, 2):
+                genre = "clim"
+            else:
+                genre = rng.choice(["etagere", "banc"])
+            for a, b in cases:
+                grille[a][b] = 1
+            props.append((r, c, h, w, genre, rng.randrange(4)))
+            posees += 1
+        libres = _devil_bfs(grille, depart)
+        for r in range(B, lignes - B):                          # poches fermées : on les bouche
+            for c in range(B, colonnes - B):
+                if grille[r][c] == 0 and (r, c) not in libres:
+                    grille[r][c] = 1
+                    props.append((r, c, 1, 1, "caisse", rng.randrange(4)))
+
+        types = _devil_types(niveau)
+        resets = min(1 + niveau // 10, 3) if "hack" in types else 0
+        nb_tp = min(1 + niveau // 8, 3) if "core" in types else 0
+        nb_fausses = min(1 + niveau // 9, 3) if "fausse" in types else 0
+        nb_sols = min(2 + niveau // 2, 10) if "sol" in types else 0
+
+        # emplacements de portes : rangée intérieure des murs, avec une case libre juste devant
+        emplacements = []
+        for c in range(B + 1, colonnes - B - 1):
+            emplacements += [(B - 1, c), (lignes - B, c)]
+        for r in range(B + 1, lignes - B - 1):
+            emplacements.append((r, colonnes - B))
+            if abs(r - depart[0]) > 2:
+                emplacements.append((r, B - 1))
+        emplacements = [p for p in emplacements if _devil_interieur(p, lignes, colonnes) in libres]
+        droite = [p for p in emplacements if p[1] == colonnes - B]
+        if not droite:
+            continue                                        # mur de droite bouché par le mobilier : nouvelle disposition
+        premiere = rng.choice(sorted(droite))                   # la porte « évidente », à droite
+        devant0 = _devil_interieur(premiere, lignes, colonnes)
+
+        def _loin(p, q):                                        # hors de vue l'un de l'autre (la caméra suit le joueur)
+            return abs(p[1] - q[1]) >= 11 or abs(p[0] - q[0]) >= 6
+        cands = sorted(p for p in libres if _loin(p, depart) and _loin(p, devant0))
+        if not cands:
+            cands = sorted(p for p in libres if abs(p[0] - depart[0]) + abs(p[1] - depart[1]) >= 5)
+        if droite and cands:                                # une porte à droite et une clé possibles : disposition valide
+            break
+    cle = rng.choice(cands)
+
+    sorties = [premiere]
+    if nb_fausses:                                          # fausses portes, puis la vraie, cachée loin d'elles
+        def _dist(p, q):
+            return abs(p[0] - q[0]) + abs(p[1] - q[1])
+        for _ in range(nb_fausses):
+            reste = [p for p in sorted(emplacements) if p not in sorties and all(_dist(p, q) >= 10 for q in sorties)]
+            if len(sorties) < nb_fausses and reste:
+                sorties.append(rng.choice(reste))
+        reste = sorted((p for p in emplacements if p not in sorties), key=lambda p: -min(_dist(p, q) for q in sorties))
+        sorties.append(rng.choice(reste[:max(1, len(reste) // 4)]) if reste else premiere)
+        sorties = list(dict.fromkeys(sorties))
+    devants = {_devil_interieur(p, lignes, colonnes) for p in sorties}
+
+    trous = []                                              # sol qui disparaît : salle ouverte, donc toujours contournable
+    if nb_sols:
+        a, b = cle, devant0
+
+        def _vers_segment(p):
+            dx, dy = b[1] - a[1], b[0] - a[0]
+            t = max(0.0, min(1.0, ((p[1] - a[1]) * dx + (p[0] - a[0]) * dy) / float(dx * dx + dy * dy or 1)))
+            return math.hypot(p[1] - (a[1] + t * dx), p[0] - (a[0] + t * dy))
+        cands = [p for p in sorted(libres) if abs(p[0] - depart[0]) + abs(p[1] - depart[1]) > 3 and abs(p[0] - cle[0]) + abs(p[1] - cle[1]) > 2
+                 and p not in devants and grille[p[0]][p[1]] == 0]
+        cands.sort(key=_vers_segment)                       # les pièges se placent surtout sur le trajet clé -> porte
+        pool = cands[:max(nb_sols * 3, len(cands) // 6)]
+        rng.shuffle(pool)
+        for p in pool:
+            if len(trous) >= nb_sols:
+                break
+            if any(abs(p[0] - q[0]) + abs(p[1] - q[1]) < 3 for q in trous):
+                continue
+            ok = _devil_bfs(grille, depart, set(trous) | {p})
+            if cle in ok and all(d in ok for d in devants):
+                trous.append(p)
+
+    grille[cle[0]][cle[1]] = 2
+    grille[sorties[0][0]][sorties[0][1]] = 3                # seule la 1re porte est visible : la vraie est cachée dans un mur
+
+    if DEVIL["niveau_courant"] != niveau:
+        DEVIL["morts"] = 0
+    DEVIL.update(niveau_courant=niveau, trous=set(trous), effondres=set(), chute=None, resets=resets, gel=0, tp=nb_tp,
+                 sorties=sorties, idx_sortie=0, rng=random.Random(graine + 99), props=props, relance_t=None)
+    _devil_fond_pour(colonnes * TAILLE_CASE, lignes * TAILLE_CASE)        # image + décor préparés ici (écran de chargement)
+
+    cycle = niveau // len(NOMS)
+    suffixe = f" [CYCLE {cycle + 1}]" if cycle > 0 else ""
+    return {"carte": grille, "couleur_mur": DEVIL_COULEURS[niveau % len(DEVIL_COULEURS)],
+            "nom": f"MISSION {niveau + 1:02d} : {NOMS[niveau % len(NOMS)]}{suffixe}",
+            "nb_ennemis": 0, "vitesse_ennemis": 1.0, "depart": depart, "est_boss": False,
+            "core_cell": cle, "sortie_cell": sorties[0]}
+
+
+def _niv_max():
+    """Mission la plus avancée du mode actif (Devil ou solo) : sert à l'écran des missions."""
+    return DEVIL["max"] if DEVIL["actif"] else niveau_max_atteint
+
+
+def devil_ouvrir():
+    """Clic sur l'icône DEVIL : charge la sauvegarde du mode, puis on affiche la ligne des missions (comme le solo)."""
+    n, m = devil_charger()
+    DEVIL["max"], DEVIL["morts_total"], DEVIL["niveau_courant"] = n, m, -1
+    DEVIL["actif"] = True
+
+
+def devil_lancer(idx):
+    reinitialiser_partie(False, niveau_cible=idx)
+
+
+def _devil_teleporter_core():
+    global pos_core_x, pos_core_y
+    r0, c0 = niveau_data["core_cell"]
+    interdits = set(DEVIL["sorties"]) | DEVIL["trous"] | DEVIL["effondres"] | {tuple(niveau_data["depart"]), (r0, c0)}
+    atteignables = _devil_bfs(CARTE, tuple(niveau_data["depart"]), DEVIL["trous"] | DEVIL["effondres"])
+    libres = [(r, c) for r, ligne in enumerate(CARTE) for c, v in enumerate(ligne) if v == 0 and (r, c) not in interdits and (r, c) in atteignables]
+    loin = [p for p in libres if math.hypot(p[0] - r0, p[1] - c0) >= 7]
+    if not loin:
+        loin = sorted(libres, key=lambda p: -math.hypot(p[0] - r0, p[1] - c0))[:10]
+    if not loin:
+        return
+    loin.sort()
+    r1, c1 = DEVIL["rng"].choice(loin)
+    CARTE[r0][c0] = 0
+    CARTE[r1][c1] = 2
+    niveau_data["core_cell"] = (r1, c1)
+    pos_core_x, pos_core_y = c1 * TAILLE_CASE + TAILLE_CASE / 2, r1 * TAILLE_CASE + TAILLE_CASE / 2
+    DEVIL["tp"] -= 1
+    creer_explosion(c0 * TAILLE_CASE + TAILLE_CASE / 2, r0 * TAILLE_CASE + TAILLE_CASE / 2, VIOLET_CYBER, 34, 8.0, 8.0)
+    creer_explosion(pos_core_x, pos_core_y, VIOLET_CYBER, 20, 5.0, 0.0)
+    if SON_ACTIF:
+        son_echec.play()
+
+
+def _devil_fausse_sortie(cy, cx):
+    global pos_sortie_x, pos_sortie_y, joueur_x, joueur_y
+    ir, ic = _devil_interieur((cy, cx), len(CARTE), len(CARTE[0]))
+    joueur_x, joueur_y = ic * TAILLE_CASE + TAILLE_CASE / 2, ir * TAILLE_CASE + TAILLE_CASE / 2   # le joueur est repoussé dans la salle
+    CARTE[cy][cx] = 1                                       # la fausse porte disparaît : le mur se referme
+    DEVIL["idx_sortie"] += 1
+    nr, nc = DEVIL["sorties"][DEVIL["idx_sortie"]]
+    CARTE[nr][nc] = 3
+    niveau_data["sortie_cell"] = (nr, nc)
+    pos_sortie_x, pos_sortie_y = nc * TAILLE_CASE + TAILLE_CASE / 2, nr * TAILLE_CASE + TAILLE_CASE / 2
+    creer_explosion(cx * TAILLE_CASE + TAILLE_CASE / 2, cy * TAILLE_CASE + TAILLE_CASE / 2, ROUGE_ALERTE, 34, 8.0, 9.0)
+    creer_explosion(pos_sortie_x, pos_sortie_y, VERT_FLUO, 20, 5.0, 0.0)
+    if SON_ACTIF:
+        son_echec.play()
+
+
+def devil_pas(cx, cy):
+    """Un pas de logique du mode Devil (appelé à la place du bloc hack/sortie du solo)."""
+    global jauge_hack, hack_reussi, partie_gagnee, partie_perdue, message_defaite, joueur_x, joueur_y
+    now = pygame.time.get_ticks()
+    if DEVIL["chute"] is not None:                          # le joueur tombe : plus rien ne bouge, puis défaite
+        if now - DEVIL["chute"]["t0"] >= DEVIL_CHUTE_MS and not partie_perdue:
+            partie_perdue = True
+            message_defaite = ""
+        return
+    if not (0 <= cx < len(CARTE[0]) and 0 <= cy < len(CARTE)) or _collision_reelle(joueur_x, joueur_y):
+        dr, dc = niveau_data["depart"]                      # sécurité : jamais coincé dans un mur
+        joueur_x, joueur_y = dc * TAILLE_CASE + TAILLE_CASE / 2, dr * TAILLE_CASE + TAILLE_CASE / 2
+        return
+
+    if (cy, cx) in DEVIL["trous"]:                          # PIÈGE : le sol disparaît
+        DEVIL["trous"].discard((cy, cx))
+        DEVIL["effondres"].add((cy, cx))
+        DEVIL["chute"] = {"t0": now}
+        creer_explosion(cx * TAILLE_CASE + TAILLE_CASE / 2, cy * TAILLE_CASE + TAILLE_CASE / 2, (110, 70, 170), 30, 6.0, 7.0)
+        return
+
+    if DEVIL["tp"] > 0 and not hack_reussi and math.hypot(joueur_x - pos_core_x, joueur_y - pos_core_y) < TAILLE_CASE * 2.2:
+        _devil_teleporter_core()                            # PIÈGE : la clé s'enfuit quand on s'approche
+        jauge_hack = 0.0
+        return
+
+    if DEVIL["gel"] > 0 and not hack_reussi:                # PIÈGE : le hack se bloque à 99 % puis retombe à 0
+        DEVIL["gel"] -= 1
+        jauge_hack = 99.0
+        if DEVIL["gel"] == 0:
+            jauge_hack = 0.0
+            DEVIL["resets"] -= 1
+            creer_explosion(joueur_x, joueur_y, ROSE_SYNTH, 30, 7.0, 9.0)
+            if SON_ACTIF:
+                son_echec.play()
+    elif CARTE[cy][cx] == 2 and not hack_reussi:
+        jauge_hack = min(jauge_hack + 0.7 * _hack(), 100.0)
+        if DEVIL["resets"] > 0 and jauge_hack >= 99.0:
+            jauge_hack, DEVIL["gel"] = 99.0, 40
+        elif jauge_hack >= 100.0:
+            hack_reussi = True
+    elif not hack_reussi:
+        jauge_hack = max(jauge_hack - 0.3, 0.0)
+
+    if CARTE[cy][cx] == 3 and hack_reussi and not partie_gagnee:
+        if DEVIL["idx_sortie"] < len(DEVIL["sorties"]) - 1:
+            _devil_fausse_sortie(cy, cx)                    # PIÈGE : fausse porte, la vraie est cachée ailleurs
+        else:
+            partie_gagnee = True
+
+
+# ---------------------------------------------------------------- sons
+def _devil_volume_musique(facteur=1.0):
+    try:
+        vm = PARAMS["vol_musique"] / 10.0
+        pygame.mixer.music.set_volume(vm * facteur)
+        if vm <= 0:
+            pygame.mixer.music.pause()                      # musique coupée dans les réglages
+        else:
+            pygame.mixer.music.unpause()
+    except Exception as e:
+        print(f"⚠️ Volume musique Devil : {e}")
+
+
+def devil_musique(actif):
+    """Ambiance Devil en boucle pendant les missions ; la musique normale du jeu revient en quittant le mode."""
+    try:
+        if actif:
+            pygame.mixer.music.load(_asset("ambiance_devil.ogg" if IS_WEB else "ambiance_devil.mp3"))
+            pygame.mixer.music.play(-1)
+            DEVIL["musique"] = True
+            _devil_volume_musique()
+        else:
+            DEVIL["musique"], DEVIL["duck_fin"] = False, None
+            if MUSIQUE_ACTIVE:
+                pygame.mixer.music.load(_asset("musique_ambiance.ogg" if IS_WEB else "musique_ambiance.mp3"))
+                if musique_lancee:
+                    pygame.mixer.music.play(-1)
+                appliquer_audio()
+            else:
+                pygame.mixer.music.stop()
+    except Exception as e:
+        print(f"⚠️ Musique Devil : {e}")
+        DEVIL["musique_ko"] = bool(actif)
+        DEVIL["musique"] = False
+
+
+_DEVIL_SONS = {"essai": False, "victoire": None, "defaite": None}
+
+
+def _devil_jingle(nom):
+    """Jingle de fin (victoire_devil / defaite_devil) ; la musique baisse le temps qu'il joue."""
+    if not SON_ACTIF:
+        return
+    try:
+        if not _DEVIL_SONS["essai"]:
+            _DEVIL_SONS["essai"] = True
+            for cle in ("victoire", "defaite"):
+                try:
+                    _DEVIL_SONS[cle] = pygame.mixer.Sound(_asset(cle + "_devil." + ("ogg" if IS_WEB else "mp3")))
+                except Exception as e:
+                    print(f"⚠️ Son Devil indisponible ({cle}) : {e}")
+        s = _DEVIL_SONS[nom]
+        if s is None:
+            return
+        s.set_volume(min(1.0, 0.9 * PARAMS["vol_effets"] / 10.0))
+        s.play()
+        if DEVIL["musique"]:
+            _devil_volume_musique(0.2)
+            DEVIL["duck_fin"] = pygame.time.get_ticks() + int(s.get_length() * 1000) + 200
+    except Exception as e:
+        print(f"⚠️ Jingle Devil : {e}")
+
+
+def devil_mort():
+    DEVIL["morts"] += 1
+    DEVIL["morts_total"] += 1
+    devil_sauvegarder()
+    if DEVIL["chute"] is None:
+        creer_explosion(joueur_x, joueur_y, ROUGE_ALERTE, 46, 9.0, 12.0)
+    DEVIL["relance_t"] = pygame.time.get_ticks() + (DEVIL_RELANCE_MS if DEVIL["chute"] is not None else DEVIL_RELANCE_MORT_MS)
+    _devil_jingle("defaite")
+
+
+def devil_victoire():
+    FIN["t0"] = pygame.time.get_ticks()
+    if niveau_actuel + 1 > DEVIL["max"]:
+        DEVIL["max"] = niveau_actuel + 1                    # la mission suivante est débloquée dès la victoire
+    devil_sauvegarder()
+    _devil_jingle("victoire")
+
+
+def devil_hook():
+    """Appelé à chaque image en mission : ambiance, fin de la sourdine, redémarrage automatique après une mort."""
+    now = pygame.time.get_ticks()
+    if not DEVIL["musique"] and not DEVIL["musique_ko"]:
+        devil_musique(True)
+    if DEVIL["duck_fin"] is not None and now >= DEVIL["duck_fin"]:
+        DEVIL["duck_fin"] = None
+        _devil_volume_musique()
+    if DEVIL["relance_t"] is not None and partie_perdue and now >= DEVIL["relance_t"]:
+        DEVIL["relance_t"] = None
+        reinitialiser_partie(False)
+
+
+# ---------------------------------------------------------------- décor
+_DEVIL_TUILES = {}
+_DEVIL_PROPS = {}
+_DEVIL_FOND = {"img": None, "essai": False, "cache": None, "cle": None}
+
+
+def _devil_tuile(nom):
+    """Tuiles du décor, dessinées une seule fois (sol et murs de secours si l'image de salle est absente, portes)."""
+    s = _DEVIL_TUILES.get(nom)
+    if s is not None:
+        return s
+    T = TAILLE_CASE
+    d = pygame.draw
+    if nom in ("porte_fermee", "porte_ouverte"):            # une vraie porte coulissante en acier
+        s = pygame.Surface((T, T), pygame.SRCALPHA)
+        d.rect(s, (52, 56, 66), (4, 2, 92, 96), border_radius=6)
+        d.rect(s, (22, 24, 30), (10, 8, 80, 84), border_radius=4)
+        if nom == "porte_fermee":
+            d.rect(s, (104, 112, 126), (10, 8, 80, 84), border_radius=4)
+            for y in (22, 40, 58, 76):
+                d.line(s, (78, 86, 98), (14, y), (86, y), 2)
+            for i in range(8):                              # bande de danger en bas du battant
+                d.rect(s, (235, 190, 40) if i % 2 == 0 else (30, 30, 34), (10 + i * 10, 84, 10, 8))
+            d.rect(s, (30, 32, 38), (60, 38, 22, 30), border_radius=3)
+            d.circle(s, (255, 50, 60), (71, 48), 4)
+            d.rect(s, (255, 50, 60), (30, 3, 40, 5), border_radius=2)
+        else:
+            d.rect(s, (104, 112, 126), (10, 8, 16, 84))
+            d.rect(s, (30, 130, 90), (26, 8, 64, 84))
+            d.rect(s, (90, 240, 170), (34, 14, 48, 72))
+            d.rect(s, (60, 255, 140), (30, 3, 40, 5), border_radius=2)
+        s = s.convert_alpha()
+    else:
+        s = pygame.Surface((T, T))
+        if nom in ("solA", "solB"):
+            s.fill((150, 152, 160) if nom == "solA" else (158, 160, 168))
+            d.rect(s, (120, 122, 132), (0, 0, T, T), 1)
+        elif nom == "mur":
+            s.fill((58, 62, 72))
+            d.rect(s, (40, 44, 52), (0, 0, T, T), 3)
+            d.line(s, (84, 88, 100), (0, T // 2), (T, T // 2), 2)
+        s = s.convert()
+    _DEVIL_TUILES[nom] = s
+    return s
+
+
+def _devil_prop_surf(genre, h, w, var):
+    """Mobilier vu de dessus (caisse, baril rouillé, chaise, banc, climatiseur abîmé, étagère rouillée), dessiné une seule fois."""
+    cle = (genre, h, w, var)
+    s = _DEVIL_PROPS.get(cle)
+    if s is not None:
+        return s
+    T, d = TAILLE_CASE, pygame.draw
+    W, H = w * T, h * T
+    rouille, acier = (150, 70, 30), (74, 78, 88)
+    s = pygame.Surface((W, H), pygame.SRCALPHA)
+    if genre == "coin":                                     # grosse caisse d'angle (déjà sur l'image ; sert si l'image manque)
+        d.rect(s, (46, 48, 56), (6, 6, W - 12, H - 12), border_radius=6)
+        for k in range(5):
+            d.line(s, (235, 190, 40), (14 + k * 40, H - 14), (14 + k * 40 + 70, 14), 6)
+        d.rect(s, (20, 22, 26), (6, 6, W - 12, H - 12), 4, border_radius=6)
+    elif genre == "caisse":
+        d.rect(s, (0, 0, 0, 80), (12, 14, W - 14, H - 14), border_radius=6)
+        d.rect(s, (112, 84, 52), (6, 6, W - 14, H - 14), border_radius=4)
+        for i in range(1, 4):
+            d.line(s, (82, 60, 36), (8, 6 + i * (H - 14) // 4), (W - 10, 6 + i * (H - 14) // 4), 2)
+        d.rect(s, (66, 46, 28), (6, 6, W - 14, H - 14), 4, border_radius=4)
+        d.line(s, (66, 46, 28), (10, 10), (W - 12, H - 12), 3)
+        d.circle(s, rouille + (140,), (W // 3 + var * 6, H // 2), 13)
+        d.circle(s, rouille + (110,), (W // 2 + 12, H // 3), 8)
+    elif genre == "baril":
+        d.ellipse(s, (0, 0, 0, 90), (14, 16, W - 18, H - 18))
+        couleur = [(150, 64, 32), (70, 96, 124), (132, 56, 28), (96, 100, 60)][var]
+        d.circle(s, couleur, (W // 2, H // 2), 40)
+        d.circle(s, (couleur[0] // 2, couleur[1] // 2, couleur[2] // 2), (W // 2, H // 2), 40, 5)
+        d.circle(s, (min(255, couleur[0] + 30), min(255, couleur[1] + 30), min(255, couleur[2] + 30)), (W // 2, H // 2), 26)
+        d.circle(s, (couleur[0] // 2, couleur[1] // 2, couleur[2] // 2), (W // 2, H // 2), 26, 3)
+        d.circle(s, rouille + (150,), (W // 2 + 14, H // 2 - 12), 9)
+        d.circle(s, (30, 30, 34), (W // 2 - 8, H // 2 + 6), 5)
+    elif genre == "chaise":
+        c = pygame.Surface((W, H), pygame.SRCALPHA)
+        d.rect(c, (0, 0, 0, 80), (22, 22, 60, 56), border_radius=8)
+        d.rect(c, (70, 80, 112), (20, 28, 58, 52), border_radius=8)
+        d.rect(c, (46, 52, 76), (20, 14, 58, 14), border_radius=5)
+        for x, y in ((22, 78), (70, 78), (22, 30), (70, 30)):
+            d.circle(c, (30, 30, 36), (x, y), 4)
+        s = pygame.transform.rotate(c, 90 * var)
+    elif genre in ("banc", "etagere"):
+        L = max(W, H)
+        c = pygame.Surface((L, T), pygame.SRCALPHA)
+        d.rect(c, (0, 0, 0, 80), (12, 22, L - 14, 60), border_radius=6)
+        if genre == "banc":
+            d.rect(c, (128, 96, 62), (8, 24, L - 16, 50), border_radius=5)
+            for x in range(8, L - 8, 26):
+                d.line(c, (84, 58, 34), (x, 26), (x, 72), 2)
+            d.rect(c, (70, 48, 30), (8, 24, L - 16, 50), 3, border_radius=5)
+            d.rect(c, acier, (14, 72, 12, 14))
+            d.rect(c, acier, (L - 26, 72, 12, 14))
+            d.circle(c, rouille + (150,), (L // 2 + 10, 50), 9)
+        else:
+            d.rect(c, (74, 60, 52), (6, 14, L - 12, 72), border_radius=4)
+            for x in range(6, L - 6, 50):
+                d.line(c, (130, 66, 32), (x, 14), (x, 86), 4)
+            d.line(c, (130, 66, 32), (6, 50), (L - 6, 50), 4)
+            for i in range((L // T)):
+                d.rect(c, (150, 120, 80), (14 + i * T + (var * 7) % 20, 22 + (i * 17 + var * 9) % 30, 40, 34))
+            d.rect(c, (130, 66, 32), (6, 14, L - 12, 72), 4, border_radius=4)
+        s = pygame.transform.rotate(c, 90) if h > w else c
+    elif genre == "clim":                                   # climatiseur abîmé
+        d.rect(s, (0, 0, 0, 90), (14, 16, W - 16, H - 16), border_radius=10)
+        d.rect(s, (156, 160, 166), (8, 8, W - 16, H - 16), border_radius=10)
+        d.rect(s, (66, 70, 78), (8, 8, W - 16, H - 16), 5, border_radius=10)
+        d.circle(s, (40, 44, 52), (W // 2, H // 2), 62)
+        d.circle(s, (90, 94, 100), (W // 2, H // 2), 62, 4)
+        for k in range(6):
+            a = math.radians(60 * k + 17 * var)
+            d.line(s, (120, 124, 132), (W // 2, H // 2), (W // 2 + int(56 * math.cos(a)), H // 2 + int(56 * math.sin(a))), 6)
+        d.circle(s, (90, 94, 100), (W // 2, H // 2), 11)
+        d.polygon(s, (30, 30, 36), [(W - 70, 12), (W - 12, 12), (W - 12, 64), (W - 40, 40)])        # panneau arraché
+        d.line(s, (36, 38, 44), (30, 24), (74, 80), 3)                                              # fissure
+        d.polygon(s, rouille + (150,), [(20, H - 40), (80, H - 36), (70, H - 14), (22, H - 14)])
+        d.rect(s, rouille + (120,), (W // 2 + 20, H - 50, 22, 36))
+        d.circle(s, (255, 60, 60), (22, 22), 5)
+    s = s.convert_alpha()
+    _DEVIL_PROPS[cle] = s
+    return s
+
+
+def _devil_decorer(fond, niveau):
+    """Petits détails d'ambiance sur le sol de la salle (taches, huile, rouille, fissures, câbles, papiers), toujours les mêmes pour une mission."""
+    rng = random.Random(niveau * 131 + 17)
+    T, B = TAILLE_CASE, DEVIL_BORD
+    x0, y0, x1, y1 = B * T + 40, B * T + 40, (DEVIL_COLONNES - B) * T - 40, (DEVIL_LIGNES - B) * T - 40
+    d = pygame.draw
+
+    def poser(surf, x, y):
+        fond.blit(surf, (x - surf.get_width() // 2, y - surf.get_height() // 2))
+
+    for _ in range(16):                                     # taches sombres
+        w, h = rng.randint(50, 150), rng.randint(40, 110)
+        t = pygame.Surface((w, h), pygame.SRCALPHA)
+        d.ellipse(t, (34, 34, 44, rng.randint(28, 60)), (0, 0, w, h))
+        poser(t, rng.randint(x0, x1), rng.randint(y0, y1))
+    for _ in range(7):                                      # flaques d'huile
+        w, h = rng.randint(50, 110), rng.randint(36, 80)
+        t = pygame.Surface((w, h), pygame.SRCALPHA)
+        d.ellipse(t, (18, 18, 26, 120), (0, 0, w, h))
+        d.ellipse(t, (150, 160, 190, 55), (w // 5, h // 5, w // 3, h // 4))
+        poser(t, rng.randint(x0, x1), rng.randint(y0, y1))
+    for _ in range(12):                                     # rouille
+        t = pygame.Surface((90, 70), pygame.SRCALPHA)
+        for _k in range(5):
+            d.circle(t, (150, 70, 30, rng.randint(40, 90)), (rng.randint(16, 74), rng.randint(14, 56)), rng.randint(6, 16))
+        poser(t, rng.randint(x0, x1), rng.randint(y0, y1))
+    for _ in range(9):                                      # fissures
+        x, y = rng.randint(x0, x1), rng.randint(y0, y1)
+        pts = [(x, y)]
+        for _k in range(rng.randint(4, 7)):
+            x, y = x + rng.randint(-34, 34), y + rng.randint(8, 30) * rng.choice([-1, 1])
+            pts.append((x, y))
+        d.lines(fond, (60, 62, 72), False, pts, 3)
+        d.lines(fond, (176, 178, 188), False, [(px + 2, py + 2) for px, py in pts], 1)
+    for _ in range(6):                                      # câbles qui traînent
+        x, y = rng.randint(x0, x1), rng.randint(y0, y1)
+        pts = [(x, y)]
+        for _k in range(6):
+            x, y = x + rng.randint(-60, 60), y + rng.randint(-40, 40)
+            pts.append((min(x1, max(x0, x)), min(y1, max(y0, y))))
+        d.lines(fond, (28, 28, 34), False, pts, 5)
+        d.lines(fond, (70, 70, 84), False, pts, 1)
+    for _ in range(12):                                     # papiers et débris
+        t = pygame.Surface((26, 18), pygame.SRCALPHA)
+        d.rect(t, (214, 212, 200, 230), (0, 0, 26, 18))
+        d.line(t, (120, 120, 130), (3, 6), (22, 6), 1)
+        d.line(t, (120, 120, 130), (3, 11), (16, 11), 1)
+        poser(pygame.transform.rotate(t, rng.randint(0, 359)), rng.randint(x0, x1), rng.randint(y0, y1))
+    for _ in range(5):                                      # marques de brûlure
+        t = pygame.Surface((80, 80), pygame.SRCALPHA)
+        for r in (34, 24, 14):
+            d.circle(t, (10, 10, 14, 55), (40, 40), r)
+        poser(t, rng.randint(x0, x1), rng.randint(y0, y1))
+    for _ in range(7):                                      # dalles abîmées
+        cx, cy = rng.randrange(B, DEVIL_COLONNES - B), rng.randrange(B, DEVIL_LIGNES - B)
+        t = pygame.Surface((T, T), pygame.SRCALPHA)
+        d.rect(t, (40, 40, 50, 40), (0, 0, T, T))
+        d.line(t, (50, 52, 62, 200), (8, 12), (T - 14, T - 20), 2)
+        fond.blit(t, (cx * T, cy * T))
+
+
+def _devil_fond_pour(w, h):
+    """Image de la salle (salle_devil.png, ou .jpg / .jpeg / .webp), étirée exactement sur toute la salle + décor de la mission.
+    Retourne None s'il n'y a pas d'image : le jeu dessine alors un décor de secours."""
+    if not _DEVIL_FOND["essai"]:
+        _DEVIL_FOND["essai"] = True
+        for nom in ("salle_devil.png", "salle_devil.jpg", "salle_devil.jpeg", "salle_devil.webp"):
+            chemin = _asset(nom)
+            if os.path.exists(chemin):
+                try:
+                    _DEVIL_FOND["img"] = pygame.image.load(chemin).convert()
+                    break
+                except Exception as e:
+                    print(f"⚠️ Image de salle illisible ({nom}) : {e}")
+    if _DEVIL_FOND["img"] is None:
+        return None
+    cle = (DEVIL["niveau_courant"], w, h)
+    if _DEVIL_FOND["cle"] != cle:
+        try:
+            _DEVIL_FOND["cache"] = None                     # libère l'ancienne salle avant d'en préparer une autre
+            fond = pygame.transform.smoothscale(_DEVIL_FOND["img"], (w, h))
+            _devil_decorer(fond, max(0, DEVIL["niveau_courant"]))
+            _DEVIL_FOND["cache"], _DEVIL_FOND["cle"] = fond, cle
+        except Exception as e:
+            print(f"⚠️ Image de salle inutilisable : {e}")
+            _DEVIL_FOND["img"] = _DEVIL_FOND["cache"] = None
+            return None
+    return _DEVIL_FOND["cache"]
+
+
+def _devil_dessiner_cle(cx, cy, t_ms):
+    y = cy + int(4 * math.sin(t_ms / 260.0))
+    c = (255, 215, 60)
+    pygame.draw.ellipse(ecran, (30, 30, 40), (cx - 26, cy + 18, 52, 12))
+    pygame.draw.circle(ecran, c, (cx - 16, y), 14, 6)
+    pygame.draw.rect(ecran, c, (cx - 4, y - 3, 34, 6))
+    pygame.draw.rect(ecran, c, (cx + 20, y, 6, 12))
+    pygame.draw.rect(ecran, c, (cx + 10, y, 6, 9))
+    pygame.draw.circle(ecran, (255, 250, 200), (cx - 16, y), 14, 2)
+
+
+def devil_dessiner_carte(ox, oy, l0, l1, c0, c1, t_ms):
+    """Dessine la salle Devil à la place du labyrinthe du solo. Retourne les halos à tracer par-dessus."""
+    T, demi, B = TAILLE_CASE, TAILLE_CASE // 2, DEVIL_BORD
+    nl, nc = len(CARTE), len(CARTE[0])
+    lueurs = []
+    fond = _devil_fond_pour(nc * T, nl * T)
+    larg_e, haut_e = ecran.get_size()
+    if fond is not None:                                    # image de la salle : on n'en dessine que la partie visible
+        vx0, vy0 = max(0, -ox), max(0, -oy)
+        vx1, vy1 = min(nc * T, larg_e - ox), min(nl * T, haut_e - oy)
+        if vx1 > vx0 and vy1 > vy0:
+            ecran.blit(fond, (ox + vx0, oy + vy0), (vx0, vy0, vx1 - vx0, vy1 - vy0))
+    for li in range(l0, l1):
+        ligne = CARTE[li]
+        for ci in range(c0, c1):
+            case = ligne[ci]
+            rx, ry = ci * T + ox, li * T + oy
+            bord = li < B or li >= nl - B or ci < B or ci >= nc - B
+            if case == 1:
+                if fond is None:                            # décor de secours (sans image)
+                    ecran.blit(_devil_tuile("mur" if bord else "solA"), (rx, ry))
+                continue                                    # le mobilier est dessiné plus bas
+            if case == 3:
+                if fond is None:
+                    ecran.blit(_devil_tuile("mur"), (rx, ry))
+                ecran.blit(_devil_tuile("porte_ouverte" if hack_reussi else "porte_fermee"), (rx, ry))
+                lueurs.append((rx + demi, ry + demi, 95, VERT_FLUO if hack_reussi else ROUGE_ALERTE, 0.32 + 0.18 * math.sin(t_ms / 250.0)))
+                continue
+            if fond is None:
+                ecran.blit(_devil_tuile("solA" if (li + ci) % 2 else "solB"), (rx, ry))
+            if (li, ci) in DEVIL["effondres"]:
+                devil_dessiner_trou(rx, ry)
+            elif case == 2 and not hack_reussi:
+                _devil_dessiner_cle(rx + demi, ry + demi, t_ms)
+                lueurs.append((rx + demi, ry + demi, 110, JAUNE_CYBER, 0.5 + 0.2 * math.sin(t_ms / 300.0)))
+    for (r, c, h, w, genre, var) in DEVIL["props"]:         # mobilier : obstacles de la salle
+        if genre == "coin" and fond is not None:
+            continue
+        x, y = c * T + ox, r * T + oy
+        if x + w * T < 0 or y + h * T < 0 or x > larg_e or y > haut_e:
+            continue
+        ecran.blit(_devil_prop_surf(genre, h, w, var), (x, y))
+    return lueurs
+
+
+def devil_dessiner_trou(rx, ry):
+    DRAW.rect(ecran, (2, 2, 8), (rx, ry, TAILLE_CASE, TAILLE_CASE))
+    DRAW.rect(ecran, (150, 30, 60), (rx + 1, ry + 1, TAILLE_CASE - 2, TAILLE_CASE - 2), 2)
+    DRAW.line(ecran, (60, 20, 90), (rx + 12, ry + 16), (rx + TAILLE_CASE - 18, ry + TAILLE_CASE - 12), 2)
+    DRAW.line(ecran, (60, 20, 90), (rx + TAILLE_CASE - 14, ry + 12), (rx + 20, ry + TAILLE_CASE - 20), 2)
+
+
+def devil_dessiner_chute(jx, jy):
+    """Le joueur rétrécit, tourne et s'enfonce dans le vide."""
+    p = min(1.0, (pygame.time.get_ticks() - DEVIL["chute"]["t0"]) / float(DEVIL_CHUTE_MS))
+    k = max(0.06, 1.0 - p)
+    if MODE_GRAPHIQUE == "REALISTE":
+        w, h = img_joueur_actuel.get_size()
+        s = pygame.transform.rotate(pygame.transform.smoothscale(img_joueur_actuel, (max(2, int(w * k)), max(2, int(h * k)))), p * 300)
+        ecran.blit(s, (jx - s.get_width() // 2, jy - s.get_height() // 2 + int(p * 36)))
+    else:
+        taille = max(3, int(TAILLE_PERSO * k))
+        DRAW.rect(ecran, VERT_FLUO, (jx - taille // 2, jy - taille // 2 + int(p * 36), taille, taille))
+
+
+def devil_dessiner_fin():
+    cx = LARGEUR // 2
+    if partie_gagnee:
+        t = pygame.time.get_ticks() - FIN["t0"]
+        ecran.blit(obtenir_voile(LARGEUR, HAUTEUR, (4, 12, 14, 170)), (0, 0))
+        dessiner_confettis(t)
+        y_btn = rect_bouton_suivant.y
+        y_haut, y_bas = y_btn - 160, y_btn + 90
+        _panneau_fin(VERT_FLUO, y_haut, y_bas, t / 420.0)
+        if t < 380:
+            return
+        dessiner_titre_glitch("DATA SECURED !", police_victoire, cx, y_haut + 18)
+        if t >= DELAI_BOUTONS_FIN:
+            bouton_neon(rect_bouton_rejouer, BLEU_CYBER, "REJOUE", police_bouton)
+            bouton_neon(rect_bouton_suivant, VERT_FLUO, "SUIVANT", police_bouton, plein=True, pulse=True)
+    elif partie_perdue:                                     # mort : simple voile rouge, la mission redémarre toute seule
+        ecran.blit(obtenir_voile(LARGEUR, HAUTEUR, (22, 0, 6, 130)), (0, 0))
+
+
 def generer_niveau(niveau):
+    if DEVIL["actif"]:
+        return devil_generer_niveau(niveau)
     largeur_cellules = min(8 + niveau, 34)
     hauteur_cellules = min(6 + niveau, 22)
     grille = generer_labyrinthe(largeur_cellules, hauteur_cellules)
@@ -5055,7 +5776,11 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
         niveau_actuel = niveau_cible
     elif passer_au_suivant:
         niveau_actuel += 1
-        if niveau_actuel > niveau_max_atteint:
+        if DEVIL["actif"]:
+            if niveau_actuel > DEVIL["max"]:
+                DEVIL["max"] = niveau_actuel
+            devil_sauvegarder()
+        elif niveau_actuel > niveau_max_atteint:
             niveau_max_atteint = niveau_actuel
             sauvegarder_progression(niveau_max_atteint)
 
@@ -5089,6 +5814,8 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
     else:
         temps_restant_frames = DUREE_MISSION_FRAMES
     temps_restant_frames += STATS["chrono"]
+    if DEVIL["actif"]:
+        temps_restant_frames = 10 ** 9                      # Devil : aucun chrono
     plafond_temps_frames = int(temps_restant_frames * 1.65)
     liste_potions = []
     minuteur_potion = random.randint(300, 600)
@@ -5109,7 +5836,8 @@ def reinitialiser_partie(passer_au_suivant=False, niveau_cible=None):
         img_joueur_actuel = img_joueur_droite
     _appliquer_skin()
     _init_pouvoirs()
-    _stat("level_start", niveau_actuel)
+    if not DEVIL["actif"]:
+        _stat("level_start", niveau_actuel)
 # 5. SYSTÈME DE PROFIL JOUEUR 
 CHEMIN_PROFIL = chemin_donnees("profil_flex.json")
 NATIONALITES = ["France", "Belgique", "Suisse", "Canada", "Maroc", "Algérie", "Tunisie",
@@ -5401,7 +6129,14 @@ rect_icone_params = pygame.Rect(130, 30, 70, 70)
 rect_icone_classement = pygame.Rect(220, 30, 70, 70)
 rect_icone_skins = pygame.Rect(310, 30, 70, 70)
 rect_icone_defis = pygame.Rect(400, 30, 70, 70)
-rect_icone_install = pygame.Rect(490, 30, 70, 70)
+rect_icone_devil = pygame.Rect(490, 30, 70, 70)
+rect_icone_install = pygame.Rect(580, 30, 70, 70)
+# Rangée d'icônes du menu : Infos passe à droite (à côté du Profil) ; à gauche les icônes présentes se serrent sans trou
+# (Online : Classement et Skins s'ajoutent ; sur Pygame elles n'existent pas, donc pas de vide)
+rect_icone_infos.x = rect_icone_profil.x - 90
+for _i, _r in enumerate([rect_icone_params] + ([rect_icone_classement, rect_icone_skins] if IS_WEB else [])
+                        + [rect_icone_defis, rect_icone_devil, rect_icone_install]):
+    _r.x = 40 + 90 * _i
 rect_recharger_photo = pygame.Rect(LARGEUR // 2 - 140, 280, 280, 45)
 rect_champ_pseudo = pygame.Rect(LARGEUR // 2 - 220, 350, 440, 60)
 rect_fleche_gauche = pygame.Rect(LARGEUR // 2 - 220, 450, 60, 60)
@@ -6656,11 +7391,12 @@ def dessiner_commandes(mx, my, tir_actif):
     DRAW.circle(ecran, (0, 120, 190), (mx_j, my_j), JOY_RAYON_MANETTE)
     DRAW.circle(ecran, CYAN_NEON, (mx_j, my_j), max(2, JOY_RAYON_MANETTE - 4))
     DRAW.circle(ecran, (215, 250, 255), (mx_j - int(8 * kj), my_j - int(9 * kj)), max(2, int(9 * kj)))
-    ecran.blit(SURF_BTN_TIR, (BTN_TIR_X - BTN_TIR_RAYON - 6, BTN_TIR_Y - BTN_TIR_RAYON - 6))
-    dessiner_halo(BTN_TIR_X, BTN_TIR_Y, int((85 if tir_actif else 70) * kt), ROUGE_ALERTE, 0.95 if tir_actif else 0.35)
-    DRAW.circle(ecran, ROUGE_ALERTE, (BTN_TIR_X, BTN_TIR_Y), BTN_TIR_RAYON, 5)
-    tt = rendu_texte(police_bouton, "TIR", True, BLANC_NEON)
-    ecran.blit(tt, (BTN_TIR_X - tt.get_width() // 2, BTN_TIR_Y - tt.get_height() // 2))
+    if not DEVIL["actif"]:                                   # Devil : pas de tir
+        ecran.blit(SURF_BTN_TIR, (BTN_TIR_X - BTN_TIR_RAYON - 6, BTN_TIR_Y - BTN_TIR_RAYON - 6))
+        dessiner_halo(BTN_TIR_X, BTN_TIR_Y, int((85 if tir_actif else 70) * kt), ROUGE_ALERTE, 0.95 if tir_actif else 0.35)
+        DRAW.circle(ecran, ROUGE_ALERTE, (BTN_TIR_X, BTN_TIR_Y), BTN_TIR_RAYON, 5)
+        tt = rendu_texte(police_bouton, "TIR", True, BLANC_NEON)
+        ecran.blit(tt, (BTN_TIR_X - tt.get_width() // 2, BTN_TIR_Y - tt.get_height() // 2))
 
 
 # ===== POUVOIRS DEBUT
@@ -6712,7 +7448,7 @@ _voile_ralenti = None
 
 def _init_pouvoirs():
     """Prépare les pouvoirs du personnage équipé au début de chaque niveau."""
-    cfg = POUVOIRS_SKINS.get(_skin_courant or "", {}) if IS_WEB else {}
+    cfg = POUVOIRS_SKINS.get(_skin_courant or "", {}) if (IS_WEB and not DEVIL["actif"]) else {}
     slots = [a for a in ACTIONS_ACTIVES if a in cfg][:3]
     POUV.clear()
     POUV.update(cfg=cfg, slots=slots, boss_boucliers=cfg.get("bouclier", 0), survie=cfg.get("survie", 0),
@@ -7181,7 +7917,7 @@ def _in_cibles():
             return _in_rects("rect_pause_continuer", "rect_pause_rejouer", "rect_pause_params", "rect_pause_quitter")
         return []
     if e == ETAT_MENU:
-        noms = ["rect_bouton_jouer", "rect_bouton_aide", "rect_bouton_boutique", "rect_icone_profil", "rect_icone_infos", "rect_icone_params", "rect_icone_defis"]
+        noms = ["rect_bouton_jouer", "rect_bouton_aide", "rect_bouton_boutique", "rect_icone_profil", "rect_icone_infos", "rect_icone_params", "rect_icone_defis", "rect_icone_devil"]
         if IS_WEB:
             noms += ["rect_bouton_multi", "rect_icone_classement", "rect_icone_skins"]
             if _inst_visible:
@@ -7189,7 +7925,7 @@ def _in_cibles():
         return _in_rects(*noms)
     if e == ETAT_NIVEAUX:
         pts = _in_rects("rect_retour_niveaux")
-        for idx in range(0, niveau_max_atteint + 1):
+        for idx in range(0, _niv_max() + 1):
             x = NIVEAU_MARGE_GAUCHE + idx * NIVEAU_NODE_ESPACEMENT + defilement_niveaux
             if -NIVEAU_NODE_RAYON <= x <= LARGEUR + NIVEAU_NODE_RAYON:
                 pts.append((x, HAUTEUR // 2 + int(60 * math.sin(idx * 0.9))))
@@ -8014,7 +8750,7 @@ for _k in range(36):
 
 
 def _v3_actif():
-    return PARAMS.get("vue", 0) == 1 and not MP["actif"]      # multijoueur : vue du dessus uniquement
+    return PARAMS.get("vue", 0) == 1 and not MP["actif"] and not DEVIL["actif"]      # multijoueur : vue du dessus uniquement
 
 
 def _v3_mix(a, b, k):
@@ -8482,7 +9218,7 @@ def _v3_regarder(dx, dy):
 
 def basculer_vue():
     """Bouton 2D/3D : passe de la vue du dessus à la vue 3e personne (et inversement). Ignore le 2e événement d'un même toucher."""
-    if MP["actif"]:                      # multijoueur : la vue du dessus reste imposée
+    if MP["actif"] or DEVIL["actif"]:    # multijoueur et Devil : la vue du dessus reste imposée
         return
     now = pygame.time.get_ticks()
     if now - VUE["t_bascule"] < 450:
@@ -9398,6 +10134,10 @@ async def main():
                 _cible = TRANS["cible"]
                 TRANS["cible"] = None
                 if _cible is not None:
+                    if _cible[0] in ("commencer", "parc", "arene", "multi", "niveau"):
+                        DEVIL["actif"] = False               # on quitte le mode Devil
+                    if DEVIL["musique"] and _cible[0] not in ("rejouer", "suivant", "devil_niveau", "params", "retour_jeu"):
+                        devil_musique(False)                 # on quitte les missions : la musique normale revient
                     if _cible[0] == "etat":
                         etat_actuel = _cible[1]
                         if etat_actuel == ETAT_AIDE:
@@ -9434,9 +10174,22 @@ async def main():
                             pygame.mixer.music.play(-1)
                             musique_lancee = True
                             appliquer_audio()
+                    elif _cible[0] == "devil":
+                        devil_ouvrir()
+                        defilement_niveaux = min(0, LARGEUR / 2 - NIVEAU_MARGE_GAUCHE - DEVIL["max"] * NIVEAU_NODE_ESPACEMENT)
+                        etat_actuel = ETAT_NIVEAUX
+                    elif _cible[0] == "devil_niveau":
+                        devil_lancer(_cible[1])
+                        etat_actuel = ETAT_JEU
+                        en_pause = False
+                        if MUSIQUE_ACTIVE and not musique_lancee:
+                            pygame.mixer.music.play(-1)
+                            musique_lancee = True
+                            appliquer_audio()
                     elif _cible[0] == "quitter_partie":
                         mp_quitter()
                         reinitialiser_partie(False)
+                        DEVIL["actif"] = False
                         etat_actuel = ETAT_MENU
                         en_pause = False
                     elif _cible[0] == "rejouer":
@@ -9473,6 +10226,8 @@ async def main():
                 _ouvrir_skins()
             elif IS_WEB and _inst_visible and rect_icone_install.collidepoint(clic_x, clic_y):
                 _ouvrir_install()
+            elif rect_icone_devil.collidepoint(clic_x, clic_y):
+                lancer_transition(("devil",))
             elif rect_icone_params.collidepoint(clic_x, clic_y):
                 lancer_transition(("params", ETAT_MENU))
         elif etat_actuel == ETAT_NIVEAUX and clic_detecte:
@@ -9480,14 +10235,14 @@ async def main():
                 lancer_transition(("etat", ETAT_MENU))
             else:
                 idx_min_clic = max(0, int((-defilement_niveaux - 150) / NIVEAU_NODE_ESPACEMENT))
-                idx_max_clic = min(niveau_max_atteint + 30, int((LARGEUR - defilement_niveaux + 150) / NIVEAU_NODE_ESPACEMENT))
+                idx_max_clic = min(_niv_max() + 30, int((LARGEUR - defilement_niveaux + 150) / NIVEAU_NODE_ESPACEMENT))
                 for idx in range(idx_min_clic, idx_max_clic + 1):
-                    if idx > niveau_max_atteint:
+                    if idx > _niv_max():
                         continue
                     x_node_clic = NIVEAU_MARGE_GAUCHE + idx * NIVEAU_NODE_ESPACEMENT + defilement_niveaux
                     y_node_clic = HAUTEUR // 2 + int(60 * math.sin(idx * 0.9))
                     if math.hypot(clic_x - x_node_clic, clic_y - y_node_clic) <= NIVEAU_NODE_RAYON + 10:
-                        lancer_transition(("niveau", idx))
+                        lancer_transition(("devil_niveau" if DEVIL["actif"] else "niveau", idx))
                         break
         elif etat_actuel == ETAT_MULTI and clic_detecte and rect_retour_niveaux.collidepoint(clic_x, clic_y):
             mp_quitter()
@@ -9539,7 +10294,7 @@ async def main():
                     if SON_ACTIF:
                         son_echec.play()
 
-                if niveau_actuel >= NIVEAU_APPARITION_POTIONS:
+                if niveau_actuel >= NIVEAU_APPARITION_POTIONS and not DEVIL["actif"]:
                     minuteur_potion -= 1
                     if minuteur_potion <= 0 and len(liste_potions) < 3:
                         px_potion, py_potion = position_spawn_potion(CARTE)
@@ -9583,6 +10338,8 @@ async def main():
                         elif _im[0] > 0.2:
                             img_joueur_actuel = img_joueur_droite
 
+                if DEVIL["actif"] and DEVIL["chute"] is not None:
+                    dx, dy = 0, 0                          # Devil : le joueur tombe dans le vide
                 _v3_x0, _v3_y0 = joueur_x, joueur_y
                 if _v3_actif():
                     dx, dy, angle_visée_x, angle_visée_y = _v3_controle(_im)
@@ -9602,7 +10359,7 @@ async def main():
                     else:
                         minuteur_cadence_tir -= 1
 
-                if tirer_balle:
+                if tirer_balle and not DEVIL["actif"]:
                     if SON_ACTIF:
                         son_tir.play()
                     cible, dist_min = None, 900
@@ -9719,7 +10476,9 @@ async def main():
                         boules_feu.remove(boule)
 
                 cx, cy = int(joueur_x // TAILLE_CASE), int(joueur_y // TAILLE_CASE)
-                if 0 <= cx < len(CARTE[0]) and 0 <= cy < len(CARTE):
+                if DEVIL["actif"]:
+                    devil_pas(cx, cy)
+                elif 0 <= cx < len(CARTE[0]) and 0 <= cy < len(CARTE):
                     core_accessible = (not boss_actif) or boss_vaincu
                     if CARTE[cy][cx] == 2 and not hack_reussi and core_accessible:
                         jauge_hack = min(jauge_hack + 0.7 * _hack(), 100.0)
@@ -9737,18 +10496,26 @@ async def main():
             _mp_tick()
         _tm1 = _time.perf_counter()
         if etat_actuel == ETAT_JEU:
+            if DEVIL["actif"]:
+                devil_hook()
             if partie_perdue and not mort_fx_faite:
-                creer_explosion(joueur_x, joueur_y, ROUGE_ALERTE, 46, 9.0, 12.0)
                 mort_fx_faite = True
-                demarrer_ecran_fin(False)
-                accorder_recompense(False)
+                if DEVIL["actif"]:
+                    devil_mort()
+                else:
+                    creer_explosion(joueur_x, joueur_y, ROUGE_ALERTE, 46, 9.0, 12.0)
+                    demarrer_ecran_fin(False)
+                    accorder_recompense(False)
             elif not partie_perdue:
                 mort_fx_faite = False
             if partie_gagnee and not victoire_fx_faite:
                 creer_explosion(joueur_x, joueur_y, VERT_FLUO, 50, 8.0, 4.0)
                 victoire_fx_faite = True
-                demarrer_ecran_fin(True)
-                accorder_recompense(True)
+                if DEVIL["actif"]:
+                    devil_victoire()
+                else:
+                    demarrer_ecran_fin(True)
+                    accorder_recompense(True)
             elif not partie_gagnee:
                 victoire_fx_faite = False
             if boss_actif and boss_vaincu and not boss_fx_faite:
@@ -9836,6 +10603,18 @@ async def main():
             t_de = rendu_texte(police_petite, "DÉFIS", True, VERT_FLUO)
             ecran.blit(t_de, (cx_d - t_de.get_width() // 2, rect_icone_defis.bottom + 6))
 
+            cx_v, cy_v = rect_icone_devil.center                                 # extension : mode DEVIL
+            dessiner_halo(cx_v, cy_v, 60, ROSE_SYNTH, 0.45, 2)
+            DRAW.circle(ecran, GRIS_HACKER, (cx_v, cy_v), 35)
+            DRAW.circle(ecran, ROSE_SYNTH, (cx_v, cy_v), 35, 3)
+            DRAW.polygon(ecran, ROSE_SYNTH, [(cx_v - 25, cy_v - 12), (cx_v - 30, cy_v - 38), (cx_v - 8, cy_v - 25)])
+            DRAW.polygon(ecran, ROSE_SYNTH, [(cx_v + 25, cy_v - 12), (cx_v + 30, cy_v - 38), (cx_v + 8, cy_v - 25)])
+            DRAW.circle(ecran, ROSE_SYNTH, (cx_v - 10, cy_v - 4), 4)
+            DRAW.circle(ecran, ROSE_SYNTH, (cx_v + 10, cy_v - 4), 4)
+            pygame.draw.arc(ecran, ROSE_SYNTH, (cx_v - 14, cy_v - 4, 28, 20), math.pi + 0.35, 2 * math.pi - 0.35, 3)
+            t_dv = rendu_texte(police_petite, "DEVIL", True, ROSE_SYNTH)
+            ecran.blit(t_dv, (cx_v - t_dv.get_width() // 2, rect_icone_devil.bottom + 6))
+
             if IS_WEB:
                 cx_t, cy_t = rect_icone_classement.center
                 dessiner_halo(cx_t, cy_t, 60, JAUNE_CYBER, 0.45, 2)
@@ -9870,10 +10649,11 @@ async def main():
 
         elif etat_actuel == ETAT_NIVEAUX:
             dessiner_fond_menu()
+            _nm = _niv_max()
             dessiner_titre_glitch("MISSIONS", police_titre, LARGEUR // 2, 50)
 
             idx_min_affiche = max(0, int((-defilement_niveaux - 150) / NIVEAU_NODE_ESPACEMENT))
-            idx_max_affiche = min(niveau_max_atteint + 30, int((LARGEUR - defilement_niveaux + 150) / NIVEAU_NODE_ESPACEMENT))
+            idx_max_affiche = min(_nm + 30, int((LARGEUR - defilement_niveaux + 150) / NIVEAU_NODE_ESPACEMENT))
 
             points_chemin = []
             for idx in range(idx_min_affiche, idx_max_affiche + 1):
@@ -9888,28 +10668,28 @@ async def main():
             for idx in range(idx_min_affiche, idx_max_affiche + 1):
                 x_node = int(NIVEAU_MARGE_GAUCHE + idx * NIVEAU_NODE_ESPACEMENT + defilement_niveaux)
                 y_node = HAUTEUR // 2 + int(60 * math.sin(idx * 0.9))
-                est_boss_node = (idx + 1) % 5 == 0
+                est_boss_node = (idx + 1) % 5 == 0 and not DEVIL["actif"]
                 pulsation_node = 0
 
-                if idx < niveau_max_atteint:
+                if idx < _nm:
                     couleur_node = VERT_FLUO
-                elif idx == niveau_max_atteint:
+                elif idx == _nm:
                     pulsation_node = 4 * math.sin(pygame.time.get_ticks() / 200)
                     couleur_node = VIOLET_CYBER if est_boss_node else BLEU_CYBER
                 else:
                     couleur_node = GRIS_HACKER
 
                 rayon_affiche = NIVEAU_NODE_RAYON + int(pulsation_node)
-                if idx <= niveau_max_atteint:
+                if idx <= _nm:
                     dessiner_halo(x_node, y_node, 65, couleur_node, 0.6)
                 DRAW.circle(ecran, (8, 8, 16), (x_node, y_node), rayon_affiche)
-                DRAW.circle(ecran, couleur_node, (x_node, y_node), rayon_affiche, 5 if idx == niveau_max_atteint else 4)
+                DRAW.circle(ecran, couleur_node, (x_node, y_node), rayon_affiche, 5 if idx == _nm else 4)
 
-                if idx > niveau_max_atteint:
+                if idx > _nm:
                     DRAW.rect(ecran, GRIS_HACKER, (x_node - 13, y_node - 4, 26, 22), border_radius=4)
                     DRAW.arc(ecran, GRIS_HACKER, (x_node - 11, y_node - 24, 22, 26), 3.4, 6.0, 3)
                 else:
-                    if idx < niveau_max_atteint:
+                    if idx < _nm:
                         DRAW.lines(ecran, NOIR_ESPACE, False, [
                             (x_node - 13, y_node),
                             (x_node - 3, y_node + 10),
@@ -10116,8 +10896,11 @@ async def main():
             if _v3_actif():
                 dessiner_vue_3d(t_ms)
             else:
-                dessiner_fond_ville(ox, oy, t_ms, (ox, oy, len(CARTE[0]) * TAILLE_CASE, len(CARTE) * TAILLE_CASE))
-                dessiner_cadre_carte(ox, oy, 0)
+                if DEVIL["actif"]:
+                    ecran.fill((7, 3, 14))
+                else:
+                    dessiner_fond_ville(ox, oy, t_ms, (ox, oy, len(CARTE[0]) * TAILLE_CASE, len(CARTE) * TAILLE_CASE))
+                    dessiner_cadre_carte(ox, oy, 0)
                 nb_lignes_carte, nb_colonnes_carte = len(CARTE), len(CARTE[0])
                 colonne_min = max(0, int((-ox) // TAILLE_CASE) - 1)
                 colonne_max = min(nb_colonnes_carte, int((LARGEUR - ox) // TAILLE_CASE) + 2)
@@ -10127,60 +10910,64 @@ async def main():
                 lueurs = []
                 demi = TAILLE_CASE // 2
                 ombres_actives = bool(PARAMS["ombres"]) and QUALITE["niveau"] >= 1
-                for li in range(ligne_min, ligne_max):
-                    lg = CARTE[li]
-                    for ci in range(colonne_min, colonne_max):
-                        case = lg[ci]
-                        rx, ry = ci * TAILLE_CASE + ox, li * TAILLE_CASE + oy
-                        if case == 1:
-                            masque = 0
-                            if li > 0 and CARTE[li - 1][ci] != 1:
-                                masque |= 1
-                            if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] != 1:
-                                masque |= 2
-                            if ci > 0 and lg[ci - 1] != 1:
-                                masque |= 4
-                            if ci < nb_colonnes_carte - 1 and lg[ci + 1] != 1:
-                                masque |= 8
-                            ecran.blit(tuile_mur(COULEUR_MUR, masque), (rx, ry))
-                            continue
-
-                        ms = 0
-                        if ombres_actives:
-                            if li > 0 and CARTE[li - 1][ci] == 1:
-                                ms |= 1
-                            if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] == 1:
-                                ms |= 2
-                            if ci > 0 and lg[ci - 1] == 1:
-                                ms |= 4
-                            if ci < nb_colonnes_carte - 1 and lg[ci + 1] == 1:
-                                ms |= 8
-                        ecran.blit(tuile_sol(COULEUR_MUR, (li + ci) % 2, ms), (rx, ry))
-                        if case == 2:
-                            if boss_actif and not boss_vaincu:
-                                p_core = 0.6 + 0.4 * math.sin(t_ms / 180.0)
-                                DRAW.rect(ecran, eclaircir(ROUGE_ALERTE, p_core), (rx + 3, ry + 3, TAILLE_CASE - 6, TAILLE_CASE - 6), 5)
-                                DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + 12, ry + 12), (rx + TAILLE_CASE - 12, ry + TAILLE_CASE - 12), 3)
-                                DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + TAILLE_CASE - 12, ry + 12), (rx + 12, ry + TAILLE_CASE - 12), 3)
-                                lueurs.append((rx + demi, ry + demi, 110, ROUGE_ALERTE, 0.55 * p_core))
-                            else:
-                                if MODE_GRAPHIQUE == "REALISTE":
-                                    ecran.blit(img_core, (rx, ry))
+                if DEVIL["actif"]:
+                    lueurs += devil_dessiner_carte(ox, oy, ligne_min, ligne_max, colonne_min, colonne_max, t_ms)
+                else:
+                    for li in range(ligne_min, ligne_max):
+                        lg = CARTE[li]
+                        for ci in range(colonne_min, colonne_max):
+                            case = lg[ci]
+                            rx, ry = ci * TAILLE_CASE + ox, li * TAILLE_CASE + oy
+                            if case == 1:
+                                masque = 0
+                                if li > 0 and CARTE[li - 1][ci] != 1:
+                                    masque |= 1
+                                if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] != 1:
+                                    masque |= 2
+                                if ci > 0 and lg[ci - 1] != 1:
+                                    masque |= 4
+                                if ci < nb_colonnes_carte - 1 and lg[ci + 1] != 1:
+                                    masque |= 8
+                                ecran.blit(tuile_mur(COULEUR_MUR, masque), (rx, ry))
+                                continue
+    
+                            ms = 0
+                            if ombres_actives:
+                                if li > 0 and CARTE[li - 1][ci] == 1:
+                                    ms |= 1
+                                if li < nb_lignes_carte - 1 and CARTE[li + 1][ci] == 1:
+                                    ms |= 2
+                                if ci > 0 and lg[ci - 1] == 1:
+                                    ms |= 4
+                                if ci < nb_colonnes_carte - 1 and lg[ci + 1] == 1:
+                                    ms |= 8
+                            ecran.blit(tuile_sol(COULEUR_MUR, (li + ci) % 2, ms), (rx, ry))
+                            if case == 2:
+                                if boss_actif and not boss_vaincu:
+                                    p_core = 0.6 + 0.4 * math.sin(t_ms / 180.0)
+                                    DRAW.rect(ecran, eclaircir(ROUGE_ALERTE, p_core), (rx + 3, ry + 3, TAILLE_CASE - 6, TAILLE_CASE - 6), 5)
+                                    DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + 12, ry + 12), (rx + TAILLE_CASE - 12, ry + TAILLE_CASE - 12), 3)
+                                    DRAW.line(ecran, eclaircir(ROUGE_ALERTE, 0.35), (rx + TAILLE_CASE - 12, ry + 12), (rx + 12, ry + TAILLE_CASE - 12), 3)
+                                    lueurs.append((rx + demi, ry + demi, 110, ROUGE_ALERTE, 0.55 * p_core))
                                 else:
-                                    DRAW.rect(ecran, VIOLET_CYBER, (rx, ry, TAILLE_CASE, TAILLE_CASE))
-                                couleur_lueur_core = VERT_FLUO if hack_reussi else VIOLET_CYBER
-                                lueurs.append((rx + demi, ry + demi, 120, couleur_lueur_core, 0.5 + 0.2 * math.sin(t_ms / 300.0)))
-                        elif case == 3:
-                            col_sortie = VERT_FLUO if hack_reussi else ROUGE_ALERTE
-                            p_sortie = 0.55 + 0.45 * math.sin(t_ms / (200.0 if hack_reussi else 350.0))
-                            DRAW.rect(ecran, melange(NOIR_ESPACE, col_sortie, 0.18), (rx + 4, ry + 4, TAILLE_CASE - 8, TAILLE_CASE - 8))
-                            for k_cadre in range(3):
-                                DRAW.rect(ecran, eclaircir(col_sortie, max(0.0, p_sortie - k_cadre * 0.2)),
-                                                 (rx + 4 + k_cadre * 8, ry + 4 + k_cadre * 8,
-                                                  TAILLE_CASE - 8 - k_cadre * 16, TAILLE_CASE - 8 - k_cadre * 16), 3)
-                            lueurs.append((rx + demi, ry + demi, 100, col_sortie, 0.35 + 0.35 * p_sortie))
+                                    if MODE_GRAPHIQUE == "REALISTE":
+                                        ecran.blit(img_core, (rx, ry))
+                                    else:
+                                        DRAW.rect(ecran, VIOLET_CYBER, (rx, ry, TAILLE_CASE, TAILLE_CASE))
+                                    couleur_lueur_core = VERT_FLUO if hack_reussi else VIOLET_CYBER
+                                    lueurs.append((rx + demi, ry + demi, 120, couleur_lueur_core, 0.5 + 0.2 * math.sin(t_ms / 300.0)))
+                            elif case == 3:
+                                col_sortie = VERT_FLUO if hack_reussi else ROUGE_ALERTE
+                                p_sortie = 0.55 + 0.45 * math.sin(t_ms / (200.0 if hack_reussi else 350.0))
+                                DRAW.rect(ecran, melange(NOIR_ESPACE, col_sortie, 0.18), (rx + 4, ry + 4, TAILLE_CASE - 8, TAILLE_CASE - 8))
+                                for k_cadre in range(3):
+                                    DRAW.rect(ecran, eclaircir(col_sortie, max(0.0, p_sortie - k_cadre * 0.2)),
+                                                     (rx + 4 + k_cadre * 8, ry + 4 + k_cadre * 8,
+                                                      TAILLE_CASE - 8 - k_cadre * 16, TAILLE_CASE - 8 - k_cadre * 16), 3)
+                                lueurs.append((rx + demi, ry + demi, 100, col_sortie, 0.35 + 0.35 * p_sortie))
 
-                dessiner_cadre_carte(ox, oy, 1)
+                if not DEVIL["actif"]:
+                    dessiner_cadre_carte(ox, oy, 1)
                 if ombres_actives:
                     if not partie_perdue:
                         dessiner_ombre(joueur_x + ox + 5, joueur_y + oy + 16, TAILLE_PERSO + 14, 22)
@@ -10265,7 +11052,9 @@ async def main():
                     _mp_dessiner_autres(ox, oy)
                 if not partie_perdue:
                     jx_e, jy_e = int(joueur_x + ox), int(joueur_y + oy) + int(3 * math.sin(t_ms / 230.0))
-                    if ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0:          # clignote après un coup encaissé
+                    if DEVIL["chute"] is not None:
+                        devil_dessiner_chute(jx_e, jy_e)
+                    elif ETAT_JOUEUR["invuln"] <= 0 or (t_ms // 90) % 2 == 0:          # clignote après un coup encaissé
                         if MODE_GRAPHIQUE == "REALISTE":
                             if POUV.get("t_phase", 0) > 0:
                                 img_joueur_actuel.set_alpha(120)                  # phase : le joueur devient transparent
@@ -10311,7 +11100,7 @@ async def main():
                     DRAW.rect(ecran, BLEU_CYBER, (BTN_PAUSE_X - 11, BTN_PAUSE_Y - 12, 7, 24))
                     DRAW.rect(ecran, BLEU_CYBER, (BTN_PAUSE_X + 4, BTN_PAUSE_Y - 12, 7, 24))
 
-            if not partie_gagnee and not partie_perdue:
+            if not partie_gagnee and not partie_perdue and not DEVIL["actif"]:
                 dessiner_halo(BTN_VUE_X, BTN_VUE_Y, 52, BLEU_CYBER, 0.5, 2)
                 DRAW.circle(ecran, (10, 10, 20), (BTN_VUE_X, BTN_VUE_Y), BTN_PAUSE_RAYON)
                 DRAW.circle(ecran, BLEU_CYBER, (BTN_VUE_X, BTN_VUE_Y), BTN_PAUSE_RAYON, 3)
@@ -10325,17 +11114,19 @@ async def main():
             else:
                 info_drones = rendu_texte(police_petite, 
                     f"DRONES ACTIFS : {len(liste_ennemis)}   EN APPROCHE : {ennemis_restants_a_spawner}", True, ROUGE_ALERTE)
-            ecran.blit(info_drones, (40, 80))
+            if not DEVIL["actif"]:                                   # Devil : pas de drones
+                ecran.blit(info_drones, (40, 80))
             dessiner_hud_boutique()
 
-            secondes_restantes = max(0, temps_restant_frames // 60)
-            couleur_timer = ROUGE_ALERTE if secondes_restantes <= 10 else VERT_FLUO
-            texte_timer = rendu_texte(police_bouton, f"TEMPS : {secondes_restantes:02d}s", True, couleur_timer)
-            rect_timer = texte_timer.get_rect(topleft=(LARGEUR // 2 - texte_timer.get_width() // 2, 100)).inflate(44, 14)
-            DRAW.rect(ecran, (8, 10, 20), rect_timer, border_radius=14)
-            clignote = 1.0 if secondes_restantes > 10 else 0.6 + 0.4 * math.sin(t_ms / 110.0)
-            DRAW.rect(ecran, eclaircir(couleur_timer, clignote), rect_timer, width=2, border_radius=14)
-            ecran.blit(texte_timer, (LARGEUR // 2 - texte_timer.get_width() // 2, 100))
+            if not DEVIL["actif"]:                                   # Devil : pas de chrono
+                secondes_restantes = max(0, temps_restant_frames // 60)
+                couleur_timer = ROUGE_ALERTE if secondes_restantes <= 10 else VERT_FLUO
+                texte_timer = rendu_texte(police_bouton, f"TEMPS : {secondes_restantes:02d}s", True, couleur_timer)
+                rect_timer = texte_timer.get_rect(topleft=(LARGEUR // 2 - texte_timer.get_width() // 2, 100)).inflate(44, 14)
+                DRAW.rect(ecran, (8, 10, 20), rect_timer, border_radius=14)
+                clignote = 1.0 if secondes_restantes > 10 else 0.6 + 0.4 * math.sin(t_ms / 110.0)
+                DRAW.rect(ecran, eclaircir(couleur_timer, clignote), rect_timer, width=2, border_radius=14)
+                ecran.blit(texte_timer, (LARGEUR // 2 - texte_timer.get_width() // 2, 100))
             if jauge_hack > 0 and not hack_reussi:
                 bx0, by0, bw, bh = LARGEUR // 2 - 175, 45, 350, 30
                 largeur_rempli = int(jauge_hack * 3.5)
@@ -10368,7 +11159,9 @@ async def main():
                 dessiner_commandes(manette_x, manette_y, tir_maintenu)
             _dessiner_pouvoirs_hud(ox, oy, t_ms)
 
-            if partie_gagnee:
+            if DEVIL["actif"]:
+                devil_dessiner_fin()
+            elif partie_gagnee:
                 dessiner_ecran_victoire()
             elif partie_perdue:
                 dessiner_ecran_defaite()
