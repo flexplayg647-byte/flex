@@ -3635,7 +3635,7 @@ def chemin_donnees(nom):
 # ==================== PROTECTION DU JEU (dissuasion) ====================
 # Empreinte du code officiel : calculée à la livraison. Si main.py est modifié, le jeu affiche « VERSION MODIFIÉE ».
 # (Tu modifies toi-même le code ? Lance le jeu, copie « Empreinte actuelle » affichée dans la console, colle-la ci-dessous.)
-EMPREINTE_OFFICIELLE = "8dab48080207a2804f6d29540e03e628ce8aa40564b78a95394fc9854bd761d3"
+EMPREINTE_OFFICIELLE = "513aea85f0181ffd4c35e3ce890ca1cfd015be5561e377a158e20c5237fca526"
 
 
 def _empreinte_du_fichier():
@@ -4156,8 +4156,37 @@ _ecran_precoce()
 
 
 # 2. CHARGEMENT DES SONS (fichiers déposés dans le dossier du jeu)
-try:
+def _init_audio():
+    """Sur le web, l'audio tourne dans le même fil que le jeu : avec le tampon par défaut (512 échantillons, ~11 ms) la moindre
+    image lente le vide et le son devient saccadé. pygame.init() ayant déjà démarré le mixeur, on l'arrête et on le relance avec
+    un tampon plus grand. Réglable dans l'adresse pour comparer sur le téléphone : ...?abuf=2048, 4096 ou 8192.
+    PC / Pydroid : rien ne change. Si le réglage est refusé, on revient au réglage d'origine."""
+    if IS_WEB:
+        tampon = 4096
+        try:
+            m = re.search(r"abuf=(\d+)", str(_pfs.window.location.search))
+            if m and int(m.group(1)) in (512, 1024, 2048, 4096, 8192, 16384):
+                tampon = int(m.group(1))
+        except Exception:
+            pass
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.quit()
+            pygame.mixer.pre_init(44100, -16, 2, tampon)
+            pygame.mixer.init()
+            print(f"🔊 Audio web : tampon de {tampon} échantillons")
+            return
+        except Exception as e:
+            print(f"⚠️ Audio web : tampon {tampon} refusé ({e}), réglage par défaut")
+            try:
+                pygame.mixer.quit()
+            except Exception:
+                pass
     pygame.mixer.init()
+
+
+try:
+    _init_audio()
     son_tir = pygame.mixer.Sound(_asset("tir.wav"))
     son_explosion = pygame.mixer.Sound(_asset("explosion.ogg" if IS_WEB else "explosion.mp3"))
     son_echec = pygame.mixer.Sound(_asset("echec.wav"))
