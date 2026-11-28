@@ -3635,7 +3635,7 @@ def chemin_donnees(nom):
 # ==================== PROTECTION DU JEU (dissuasion) ====================
 # Empreinte du code officiel : calculée à la livraison. Si main.py est modifié, le jeu affiche « VERSION MODIFIÉE ».
 # (Tu modifies toi-même le code ? Lance le jeu, copie « Empreinte actuelle » affichée dans la console, colle-la ci-dessous.)
-EMPREINTE_OFFICIELLE = "30462ef12e212412d42b1eaaa8347ceaf53cbeb8068499582ff097dd1fcc2a44"
+EMPREINTE_OFFICIELLE = "2fa253e408ed5dc2e6046ba386b14936e175b21379c8a5190b2c081c910a1d58"
 
 
 def _empreinte_du_fichier():
@@ -3713,14 +3713,17 @@ sys.excepthook = _journal_erreur
 
 # 1. INITIALISATION DE PYGAME & PLEIN ÉCRAN
 if IS_WEB:
-    # Son saccadé : un tampon audio plus grand peut aider. À ESSAYER seulement via l'adresse ...?abuf=4096 (ou 2048, 8192).
-    # Par défaut rien ne change. (La 1re tentative arrêtait puis relançait le mixeur après pygame.init() : cela faisait
-    # planter le démarrage avec « divide by zero ». Ici le réglage est posé AVANT pygame.init(), sans arrêter le mixeur.)
+    # Son saccadé : tampon audio plus grand (4096 par défaut), posé AVANT pygame.init() sans arrêter le mixeur.
+    # (Arrêter puis relancer le mixeur après pygame.init() faisait planter le démarrage : « divide by zero ».)
+    # Pour comparer : ...?abuf=2048 ou ...?abuf=8192 ; ...?abuf=0 pour revenir au réglage d'origine.
     try:
         import platform as _pfa
+        _tampon = 4096
         _ma = re.search(r"abuf=(\d+)", str(_pfa.window.location.search))
-        if _ma and int(_ma.group(1)) in (1024, 2048, 4096, 8192):
-            pygame.mixer.pre_init(44100, -16, 2, int(_ma.group(1)))
+        if _ma and int(_ma.group(1)) in (0, 1024, 2048, 4096, 8192):
+            _tampon = int(_ma.group(1))
+        if _tampon:
+            pygame.mixer.pre_init(44100, -16, 2, _tampon)
     except Exception:
         pass
 pygame.init()
